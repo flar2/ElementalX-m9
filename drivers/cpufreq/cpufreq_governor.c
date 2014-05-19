@@ -405,6 +405,11 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_LIMITS:
+		mutex_lock(&dbs_data->mutex);
+		if (!cpu_cdbs->cur_policy) {
+			mutex_unlock(&dbs_data->mutex);
+			break;
+		}
 		mutex_lock(&cpu_cdbs->timer_mutex);
 		if (cpu_cdbs->cur_policy) {
 			if (policy->max < cpu_cdbs->cur_policy->cur)
@@ -416,6 +421,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			dbs_check_cpu(dbs_data, cpu);
 		}
 		mutex_unlock(&cpu_cdbs->timer_mutex);
+		mutex_unlock(&dbs_data->mutex);
 		break;
 	}
 	return 0;
