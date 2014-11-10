@@ -77,6 +77,13 @@ snappy_decompress_(
 	snappy_compress_(s, sl, d, dl, wm)
 #define DECOMPRESS(s, sl, d, dl)	\
 	snappy_decompress_(s, sl, d, dl)
+#elif defined(CONFIG_ZRAM_LZ4)
+#include <linux/lz4.h>
+#define WMSIZE		LZ4_MEM_COMPRESS
+#define COMPRESS(s, sl, d, dl, wm)	\
+	lz4_compress(s, sl, d, dl, wm)
+#define DECOMPRESS(s, sl, d, dl)	\
+	lz4_decompress_unknownoutputsize(s, sl, d, dl)
 #else
 #error either CONFIG_ZRAM_LZO or CONFIG_ZRAM_SNAPPY must be defined
 #endif
@@ -395,7 +402,7 @@ static void zram_free_page(struct zram *zram, size_t index)
 
 static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 {
-	int ret;
+	int ret = 0;
 	size_t clen = PAGE_SIZE;
 	unsigned char *cmem;
 	struct zram_meta *meta = zram->meta;
