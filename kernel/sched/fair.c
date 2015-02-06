@@ -1146,13 +1146,29 @@ u64 scale_load_to_cpu(u64 task_load, int cpu)
 	return task_load;
 }
 
+#ifdef CONFIG_CGROUP_SCHED
+
+static inline int upmigrate_discouraged(struct task_struct *p)
+{
+	return task_group(p)->upmigrate_discouraged;
+}
+
+#else
+
+static inline int upmigrate_discouraged(struct task_struct *p)
+{
+	return 0;
+}
+
+#endif
+
 static inline int is_big_task(struct task_struct *p)
 {
 	u64 load = task_load(p);
 	int nice = TASK_NICE(p);
 
 	
-	if (nice > sysctl_sched_upmigrate_min_nice)
+	if (nice > sysctl_sched_upmigrate_min_nice || upmigrate_discouraged(p))
 		return 0;
 
 	load = scale_load_to_cpu(load, task_cpu(p));
@@ -1335,7 +1351,8 @@ static int task_will_fit(struct task_struct *p, int cpu)
 			return 1;
 	} else {
 		
-		if (nice > sysctl_sched_upmigrate_min_nice)
+		if (nice > sysctl_sched_upmigrate_min_nice ||
+		    upmigrate_discouraged(p))
 			return 1;
 
 		load = scale_load_to_cpu(task_load(p), cpu);
@@ -2000,8 +2017,8 @@ static inline int migration_needed(struct rq *rq, struct task_struct *p)
 		return 0;
 
 	
-	if (nice > sysctl_sched_upmigrate_min_nice &&
-		rq->capacity > min_capacity)
+	if ((nice > sysctl_sched_upmigrate_min_nice ||
+	     upmigrate_discouraged(p)) && rq->capacity > min_capacity)
 			return MOVE_TO_LITTLE_CPU;
 
 	if (!task_will_fit(p, cpu_of(rq)))
