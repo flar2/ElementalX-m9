@@ -5556,7 +5556,7 @@ void idle_balance(int this_cpu, struct rq *this_rq)
 		return;
 
 	rcu_read_lock();
-	sd = rcu_dereference_check_sched_domain(this_rq->sd);
+	sd = rcu_dereference(per_cpu(sd_llc, this_cpu));
 	if (sd && sched_enable_power_aware) {
 		for_each_cpu(i, sched_domain_span(sd)) {
 			if (i == this_cpu || idle_cpu(i)) {
