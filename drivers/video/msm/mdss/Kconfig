@@ -89,3 +89,10 @@ config MHL_DEBUG_DRIVER
 	default n
 	---help---
 	Support hTC edid debug print support
+
+config FB_MSM_MDSS_KCAL_CTRL
+	depends on FB_MSM_MDSS
+	bool "MDSS color control"
+	---help---
+	  Enable sysfs for rgb/lut control for mdss-mdp display controllers
+	  in the MDSS sub-system.
