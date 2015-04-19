@@ -1,0 +1,56 @@
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+qcom,itech-3020mah {
+	qcom,max-voltage-uv = <4350000>;
+	qcom,v-cutoff-uv = <3400000>;
+	qcom,chg-term-ua = <100000>;
+	qcom,batt-id-kohm = <100>;
+	qcom,battery-type = "itech_3020mah";
+	htc,batt_id = <2>;
+	htc,id_raw_min = <331>;
+	htc,id_raw_max = <550>;
+	qcom,fg-profile-data = [
+		 E4 83 A6 7C
+		 94 80 1F 76
+		 70 83 02 7C
+		 33 8B 67 95
+		 EA 81 EB 99
+		 0A BC 5C C3
+		 5B 18 32 88
+		 75 84 B6 83
+		 06 7E 5B 83
+		 07 51 F7 80
+		 33 8C 74 82
+		 FD 93 B4 B5
+		 7A C1 64 13
+		 3C 0A B9 5B
+		 CE 6E 29 FC
+		 3E 2C 96 45
+		 C6 3A 00 00
+		 34 3D 1E 45
+		 1C 36 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 17 70 68 6B
+		 CC 72 15 88
+		 DE 74 E0 63
+		 3E 6A 11 81
+		 A2 6F 11 60
+		 00 00 00 00
+		 0A 54 60 B6
+		 56 A0 71 0C
+		 28 00 FF 36
+		 F0 11 30 03
+		 00 00 00 00
+	];
+};

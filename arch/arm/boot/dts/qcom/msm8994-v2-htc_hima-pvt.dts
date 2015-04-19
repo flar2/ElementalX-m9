@@ -1,0 +1,16 @@
+/dts-v1/;
+
+#include "msm8994-v2.dtsi"
+#include "msm8994-htc_hima.dtsi"
+#include "msm8994-htc_hima-pm-pmi-gpio.dtsi"
+
+/ {
+	model = "HTC Corporation. MSM8994v2 HIMA PVT";
+	qcom,msm-id = <368 0x20000>, <363 0x20000>, <372 0x20000>,
+	              <361 0x20000>, <367 0x20000>, <362 0x20000>,
+	              <355 0x20000>,
+	              <368 0x20001>, <363 0x20001>, <372 0x20001>,
+	              <361 0x20001>, <367 0x20001>, <362 0x20001>,
+	              <355 0x20001>;
+	qcom,board-id = <0x80 0>;
+};

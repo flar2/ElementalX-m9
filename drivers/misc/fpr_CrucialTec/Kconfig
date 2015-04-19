@@ -1,0 +1,10 @@
+#
+# TI's shared transport line discipline and the protocol
+# drivers (BT, FM and GPS)
+#
+menu "CrucialTec fingerprint SPI driver"
+config FPR_CT
+       default n
+       tristate "FPC_BTP fingerprint sensor support"
+       depends on SPI_MASTER
+endmenu

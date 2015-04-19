@@ -1,0 +1,6 @@
+config HTC_POWER_DEBUG_RAILWAYS
+    bool "HTC power Debug RAILWAYS support"
+    depends on HTC_POWER_DEBUG
+    default n
+    help
+      Say yes to enable HTC debug RAILWAYS for power rails related debug function.
