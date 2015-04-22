@@ -50,7 +50,6 @@ struct cpufreq_interactive_cpuinfo {
 	spinlock_t target_freq_lock; 
 	unsigned int target_freq;
 	unsigned int floor_freq;
-	unsigned int max_freq;
 	unsigned int min_freq;
 	u64 floor_validate_time;
 	u64 local_fvtime; /* per-cpu floor_validate_time */
@@ -1526,7 +1525,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			pcpu->hispeed_validate_time =
 				pcpu->floor_validate_time;
 			pcpu->local_hvtime = pcpu->floor_validate_time;
-			pcpu->max_freq = policy->max;
 			pcpu->min_freq = policy->min;
 			pcpu->reject_notification = true;
 			down_write(&pcpu->enable_sem);
@@ -1585,19 +1583,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 
 			up_read(&pcpu->enable_sem);
 
-
-			if (policy->max > pcpu->max_freq || policy->min < pcpu->min_freq) {
-				pcpu->reject_notification = true;
-				down_write(&pcpu->enable_sem);
-				del_timer_sync(&pcpu->cpu_timer);
-				del_timer_sync(&pcpu->cpu_slack_timer);
-				cpufreq_interactive_timer_resched(j, false);
-				up_write(&pcpu->enable_sem);
-				pcpu->reject_notification = false;
-			}
-
-			pcpu->max_freq = policy->max;
-			pcpu->min_freq = policy->min;
 		}
 		break;
 	}
