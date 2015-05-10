@@ -31,10 +31,21 @@
 #endif
 
 #include "mdss_mdp.h"
+#include <linux/kallsyms.h>
 
 #define DEF_PCC 0x100
 #define DEF_PA 0xff
 #define PCC_ADJ 0x80
+MODULE_LICENSE("GPL");
+
+int *(*ext_mdss_mdp_pcc_config)(struct mdp_pcc_cfg_data *config,
+			u32 *copyback);
+int *(*ext_mdss_mdp_igc_lut_config)(struct mdp_igc_lut_data *config,
+			u32 *copyback, u32 copy_from_kernel);
+int *(*ext_mdss_mdp_pa_v2_config)(struct mdp_pa_v2_cfg_data *config,
+			u32 *copyback);
+int *(*ext_mdss_mdp_pa_config)(struct mdp_pa_cfg_data *config,
+			u32 *copyback);
 
 struct kcal_lut_data {
 #if defined(CONFIG_MMI_PANEL_NOTIFICATIONS) && defined(CONFIG_FB)
@@ -185,7 +196,7 @@ static void mdss_mdp_kcal_update_pcc(struct kcal_lut_data *lut_data)
 	pcc_config.g.g = lut_data->green * PCC_ADJ;
 	pcc_config.b.b = lut_data->blue * PCC_ADJ;
 
-	mdss_mdp_pcc_config(&pcc_config, &copyback);
+	ext_mdss_mdp_pcc_config(&pcc_config, &copyback);
 }
 
 static void mdss_mdp_kcal_update_pa(struct kcal_lut_data *lut_data)
@@ -207,7 +218,7 @@ static void mdss_mdp_kcal_update_pa(struct kcal_lut_data *lut_data)
 		pa_config.pa_data.val_adj = lut_data->val;
 		pa_config.pa_data.cont_adj = lut_data->cont;
 
-		mdss_mdp_pa_config(&pa_config, &copyback);
+		ext_mdss_mdp_pa_config(&pa_config, &copyback);
 	} else {
 		memset(&pa_v2_config, 0, sizeof(struct mdp_pa_v2_cfg_data));
 
@@ -228,7 +239,7 @@ static void mdss_mdp_kcal_update_pa(struct kcal_lut_data *lut_data)
 		pa_v2_config.pa_v2_data.global_val_adj = lut_data->val;
 		pa_v2_config.pa_v2_data.global_cont_adj = lut_data->cont;
 
-		mdss_mdp_pa_v2_config(&pa_v2_config, &copyback);
+		ext_mdss_mdp_pa_v2_config(&pa_v2_config, &copyback);
 	}
 }
 
@@ -247,7 +258,7 @@ static void mdss_mdp_kcal_update_igc(struct kcal_lut_data *lut_data)
 	igc_config.c0_c1_data = &igc_Table_Inverted[0];
 	igc_config.c2_data = &igc_Table_RGB[0];
 
-	mdss_mdp_igc_lut_config(&igc_config, &copyback, copy_from_kernel);
+	ext_mdss_mdp_igc_lut_config(&igc_config, &copyback, copy_from_kernel);
 }
 
 static ssize_t kcal_store(struct device *dev, struct device_attribute *attr,
@@ -538,6 +549,11 @@ static int kcal_ctrl_probe(struct platform_device *pdev)
 			__func__);
 		return -ENOMEM;
 	}
+
+	ext_mdss_mdp_pcc_config = (void *)kallsyms_lookup_name("mdss_mdp_pcc_config");
+	ext_mdss_mdp_igc_lut_config = (void *)kallsyms_lookup_name("mdss_mdp_igc_lut_config");
+	ext_mdss_mdp_pa_v2_config = (void *)kallsyms_lookup_name("mdss_mdp_pa_v2_config");
+	ext_mdss_mdp_pa_config = (void *)kallsyms_lookup_name("mdss_mdp_pa_config");
 
 	platform_set_drvdata(pdev, lut_data);
 
