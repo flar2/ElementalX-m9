@@ -29,6 +29,10 @@
 #include <linux/regulator/machine.h>
 #include <linux/pinctrl/consumer.h>
 
+#ifdef CONFIG_FORCE_FAST_CHARGE
+#include <linux/fastcharge.h>
+#endif
+
 #define SMB135X_BITS_PER_REG	8
 
 /* Mask/Bit helpers */
@@ -1194,7 +1198,14 @@ static int smb135x_set_usb_chg_current(struct smb135x_chg *chip,
 		goto out;
 	}
 	if (current_ma == CURRENT_500_MA) {
-		rc = smb135x_masked_write(chip, CFG_5_REG, USB_2_3_BIT, 0);
+		
+#ifdef CONFIG_FORCE_FAST_CHARGE
+		if (force_fast_charge)
+			rc = smb135x_masked_write(chip, CFG_5_REG, USB_2_3_BIT, USB_2_3_BIT);
+		else
+#endif
+			rc = smb135x_masked_write(chip, CFG_5_REG, USB_2_3_BIT, 0);
+	
 		rc |= smb135x_masked_write(chip, CMD_INPUT_LIMIT,
 				USB_100_500_AC_MASK, USB_500_VAL);
 		rc |= smb135x_path_suspend(chip, USB, CURRENT, false);
@@ -1954,7 +1965,13 @@ static void smb135x_external_power_changed(struct power_supply *psy)
 
 	if (chip->usb_psy_ma != current_limit) {
 		mutex_lock(&chip->current_change_lock);
-		chip->usb_psy_ma = current_limit;
+#ifdef CONFIG_FORCE_FAST_CHARGE
+		if (force_fast_charge)
+			chip->usb_psy_ma = 900;
+		else
+#endif
+			chip->usb_psy_ma = current_limit;
+
 		rc = smb135x_set_appropriate_current(chip, USB);
 		mutex_unlock(&chip->current_change_lock);
 		if (rc < 0)
