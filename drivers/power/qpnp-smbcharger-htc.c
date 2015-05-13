@@ -47,6 +47,10 @@
 #include <linux/power/htc_battery_common.h>
 #endif
 
+#ifdef CONFIG_FORCE_FAST_CHARGE
+#include <linux/fastcharge.h>
+#endif
+
 #define _SMB_MASK(BITS, POS) \
 	((unsigned char)(((1 << (BITS)) - 1) << (POS)))
 #define SMB_MASK(LEFT_BIT_POS, RIGHT_BIT_POS) \
@@ -4389,10 +4393,16 @@ int pmi8994_set_pwrsrc_and_charger_enable(enum htc_power_source_type src,
 		if (the_chip->ftm_src == HTC_FTM_PWR_SOURCE_TYPE_USB) {
 			mA = USB_MA_500;
 		} else if (!is_device_XA_or_XB) {
-			if (usb_supply_type == POWER_SUPPLY_TYPE_USB_CDP)
+			if (usb_supply_type == POWER_SUPPLY_TYPE_USB_CDP) {
 				mA = USB_MA_1000;
-			else
-				mA = USB_MA_500;
+			} else {
+#ifdef CONFIG_FORCE_FAST_CHARGE
+				if (force_fast_charge)
+					mA = USB_MA_900;
+				else
+#endif
+					mA = USB_MA_500;
+			}
 		} else {
 			mA = USB_MA_1000;
 		}
