@@ -73,6 +73,8 @@
 #define BLANK_FLAG_LP	FB_BLANK_VSYNC_SUSPEND
 #define BLANK_FLAG_ULP	FB_BLANK_NORMAL
 
+static int backlight_dimmer = 0;
+
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
 
@@ -232,10 +234,10 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
-
-	
-	
-	
+	if (backlight_dimmer == 1)
+		bl_lvl -= 40;
+	else if (backlight_dimmer == 2)
+		bl_lvl -= 70;
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
@@ -259,6 +261,48 @@ static struct led_classdev backlight_led_nits = {
 	.name           = "lcd-backlight-nits",
 	.brightness_set = mdss_fb_set_bl_brightness,
 };
+
+static ssize_t backlight_dimmer_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", backlight_dimmer);
+}
+
+static ssize_t backlight_dimmer_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	backlight_dimmer = input;
+
+	if (backlight_dimmer < 0 || backlight_dimmer > 3)
+		backlight_dimmer = 0;
+
+	return count;
+}
+
+static struct kobj_attribute backlight_dimmer_attribute =
+	__ATTR(backlight_dimmer, 0666,
+		backlight_dimmer_show,
+		backlight_dimmer_store);
+
+static struct attribute *backlight_dimmer_attrs[] =
+	{
+		&backlight_dimmer_attribute.attr,
+		NULL,
+	};
+
+static struct attribute_group backlight_dimmer_attr_group =
+	{
+		.attrs = backlight_dimmer_attrs,
+	};
+
+static struct kobject *backlight_dimmer_kobj;
 
 static ssize_t mdss_fb_get_type(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -3458,6 +3502,16 @@ int __init mdss_fb_init(void)
 
 	if (platform_driver_register(&mdss_fb_driver))
 		return rc;
+
+	backlight_dimmer_kobj = kobject_create_and_add("backlight_dimmer", NULL);
+	if (backlight_dimmer_kobj == NULL) {
+		pr_warn("%s kobject create failed!\n", __func__);
+        }
+
+	rc = sysfs_create_group(backlight_dimmer_kobj, &backlight_dimmer_attr_group);
+        if (rc) {
+		pr_warn("%s sysfs file create failed!\n", __func__);
+	}
 
 	return 0;
 }
