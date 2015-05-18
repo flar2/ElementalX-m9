@@ -34,6 +34,8 @@
 
 #include "sched.h"
 
+#define MIN_BUDGET	40
+
 unsigned int sysctl_sched_latency = 6000000ULL;
 unsigned int normalized_sysctl_sched_latency = 6000000ULL;
 
@@ -1150,7 +1152,10 @@ int sched_set_cpu_budget(int cpu, int budget)
 {
 	struct rq *rq = cpu_rq(cpu);
 
-	rq->budget = budget;
+	if (cpu < 6)
+		rq->budget = max(budget, MIN_BUDGET);
+	else
+		rq->budget = budget;
 
 	return 0;
 }
