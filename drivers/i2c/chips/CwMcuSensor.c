@@ -663,7 +663,10 @@ static int cw_send_event(struct cwmcu_data *mcu_data, u8 id, u16 *data,
 	    (!bitmap_empty(mcu_data->indio_dev->active_scan_mask,
 			   mcu_data->indio_dev->masklength))) {
 		mutex_lock(&mcu_data->mutex_lock);
-		if (mcu_data->indio_dev && ((!mcu_data->w_clear_fifo_running) || (!is_continuous_sensor(id))))
+		if (atomic_read(&mcu_data->pseudo_irq_enable)
+		    && mcu_data->indio_dev
+		    && ((!mcu_data->w_clear_fifo_running)
+		     || (!is_continuous_sensor(id))))
 			iio_push_to_buffers(mcu_data->indio_dev, event);
 		else {
 			D(
@@ -701,7 +704,10 @@ static int cw_send_event_special(struct cwmcu_data *mcu_data, u8 id, u16 *data,
 	    (!bitmap_empty(mcu_data->indio_dev->active_scan_mask,
 			   mcu_data->indio_dev->masklength))) {
 		mutex_lock(&mcu_data->mutex_lock);
-		if (mcu_data->indio_dev && ((!mcu_data->w_clear_fifo_running) || (!is_continuous_sensor(id))))
+		if (atomic_read(&mcu_data->pseudo_irq_enable)
+		    && mcu_data->indio_dev
+		    && ((!mcu_data->w_clear_fifo_running)
+		     || (!is_continuous_sensor(id))))
 			iio_push_to_buffers(mcu_data->indio_dev, event);
 		else {
 			D(
@@ -7665,7 +7671,9 @@ static int CWMCU_i2c_probe(struct i2c_client *client,
 	struct iio_dev *indio_dev;
 	int error;
 	int i;
-	I("%s++: Add bma250 set_drvdata to mcu data\n", __func__);
+
+	I("%s++: Do not call iio_push_to_buffers when !pseudo_irq_enable\n",
+	  __func__);
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		E("%s: i2c_check_functionality error\n", __func__);
