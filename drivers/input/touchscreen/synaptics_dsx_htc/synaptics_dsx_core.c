@@ -1113,7 +1113,11 @@ static ssize_t get_en_sr(struct device *dev,
 }
 static DEVICE_ATTR(sr_en, (S_IWUSR|S_IRUGO), get_en_sr, set_en_sr);
 
+#ifdef CONFIG_SWEEP2SLEEP
+struct kobject *android_touch_kobj;
+#else
 static struct kobject *android_touch_kobj;
+#endif
 
 #ifdef CONFIG_AK8789_HALLSENSOR
 static int hallsensor_status_handler_func(struct notifier_block *this,
