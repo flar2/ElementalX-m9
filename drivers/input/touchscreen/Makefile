@@ -89,3 +89,4 @@ obj-$(CONFIG_TOUCHSCREEN_BU21150)	+= bu21150.o
 obj-$(CONFIG_INPUT_MT_WRAPPER)		+= input_mt_wrapper.o
 obj-$(CONFIG_TOUCHSCREEN_HIMAX_ES_CAP)  += himax_852xES_cap.o
 obj-$(CONFIG_TOUCHSCREEN_CAPSENSOR_FW_UPDATE)   += capsensor_fw_update.o
+obj-$(CONFIG_SWEEP2SLEEP)		+= sweep2sleep.o
