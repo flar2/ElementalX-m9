@@ -21,7 +21,7 @@
 #include <linux/mmc/host.h>
 #include "queue.h"
 
-#define MMC_QUEUE_BOUNCESZ	65536
+#define MMC_QUEUE_BOUNCESZ	98304
 
 #define DEFAULT_NUM_REQS_TO_START_PACK 17
 

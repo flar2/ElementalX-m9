@@ -1,0 +1,9 @@
+rm -fR ./ramdisk
+mkdir ramdisk
+mkdir structure.new/modules
+mkdir zImage.new
+
+./tools/split_bootimg.pl ./bootimg.base/boot.img
+cd ramdisk
+gzip -dc ../boot.img-ramdisk.gz | cpio -i
+cd ..

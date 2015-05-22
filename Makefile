@@ -192,8 +192,10 @@ SUBARCH := $(shell uname -m | sed -e s/i.86/x86/ -e s/x86_64/x86/ \
 # "make" in the configured kernel build directory always uses that.
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
-ARCH		?= $(SUBARCH)
-CROSS_COMPILE	?= $(CONFIG_CROSS_COMPILE:"%"=%)
+SUBARCH := arm64
+export KBUILD_BUILDHOST := $(SUBARCH)
+ARCH		?= arm64
+CROSS_COMPILE	?= /home/niker/kernel-m9/toolchain/bin/aarch64-linux-android-
 
 # Architecture as present in compile.h
 UTS_MACHINE 	:= $(ARCH)
@@ -220,6 +222,10 @@ ifeq ($(ARCH),sh64)
        SRCARCH := sh
 endif
 
+ifeq ($(ARCH),arm64)
+       SRCARCH := arm64
+endif
+
 # Additional ARCH settings for tile
 ifeq ($(ARCH),tilepro)
        SRCARCH := tile
@@ -241,8 +247,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = gcc
 HOSTCXX      = g++
-HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer
-HOSTCXXFLAGS = -O2
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 -fomit-frame-pointer
+HOSTCXXFLAGS = -O2 -ffast-math -pipe
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -346,11 +352,12 @@ CC		= $(srctree)/scripts/gcc-wrapper.py $(REAL_CC)
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-CFLAGS_MODULE   = -fno-pic
-AFLAGS_MODULE   =
+MODFLAGS	= -DMODULE -Os -ffast-math -pipe -ftree-vectorize
+CFLAGS_MODULE   = $(MODFLAGS) -fno-pic
+AFLAGS_MODULE   = $(MODFLAGS)
 LDFLAGS_MODULE  =
-CFLAGS_KERNEL	=
-AFLAGS_KERNEL	=
+CFLAGS_KERNEL	= -ftree-vectorize -ffast-math -fsingle-precision-constant -ffast-math -fsched-spec-load -pipe
+AFLAGS_KERNEL	= $(CFLAGS_KERNEL)
 CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 
 
@@ -373,11 +380,16 @@ LINUXINCLUDE    := \
 
 KBUILD_CPPFLAGS := -D__KERNEL__
 
-KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+KBUILD_CFLAGS   := -O3 -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks
+		   -fno-delete-null-pointer-checks \
+		   -fgcse-lm -fgcse-sm -fsingle-precision-constant \
+		   -fforce-addr -fsched-spec-load \
+		   -floop-nest-optimize -fivopts\
+		   -fgcse-lm -fgcse-sm -fvariable-expansion-in-unroller \
+		   -floop-strip-mine -floop-block -floop-flatten
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
@@ -577,7 +589,8 @@ all: vmlinux
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
 else
-KBUILD_CFLAGS	+= -O2
+KBUILD_CFLAGS	+= -O3 -w 
+# $(call cc-disable-warning,maybe-uninitialized) $(call cc-disable-warning, unused-variable) $(call cc-disable-warning, unused-but-set-variable) $(call cc-disable-warning, implicit-function-declaration) $(call cc-disable-warning, unused-function) $(call cc-disable-warning, array-bounds) $(call cc-disable-warning, format) $(call cc-disable-warning, format)
 endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
