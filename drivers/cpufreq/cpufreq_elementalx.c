@@ -17,19 +17,19 @@
 
 /* elementalx governor macros */
 #define DEF_FREQUENCY_UP_THRESHOLD		(90)
-#define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(20)
-#define DEF_ACTIVE_FLOOR_FREQ			(960000)
-#define DEF_GBOOST_MIN_FREQ			(1574400)
-#define MIN_SAMPLING_RATE			(10000)
+#define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(50)
+#define DEF_ACTIVE_FLOOR_FREQ			(768000)
+#define DEF_GBOOST_MIN_FREQ			(1248000)
+#define MIN_SAMPLING_RATE			(40000)
 #define DEF_SAMPLING_DOWN_FACTOR		(4)
 #define MAX_SAMPLING_DOWN_FACTOR		(20)
-#define FREQ_NEED_BURST(x)			(x < 800000 ? 1 : 0)
+#define FREQ_NEED_BURST(x)			(x < 768000 ? 1 : 0)
 #define MAX(x,y)				(x > y ? x : y)
 #define MIN(x,y)				(x < y ? x : y)
 
 static DEFINE_PER_CPU(struct ex_cpu_dbs_info_s, ex_cpu_dbs_info);
 
-static unsigned int up_threshold_level[2] __read_mostly = {95, 85};
+static unsigned int up_threshold_level[2] __read_mostly = {99, 80};
 
 static struct ex_governor_data {
 	unsigned int active_floor_freq;

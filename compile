@@ -1,15 +1,16 @@
 # delete everything
 rm -fR kernelinjector.m9/structure.new/modules/*
-rm -f kernelinjector.m9/zImage.new/zImage
+rm -f kernelinjector.m9/zImage.new/Image
+rm -f arch/arm64/boot/Image
 
-make clean
+#make clean
 
 cd kernelinjector.m9
 sh extract
 cd ..
 
 # make
-make -j8
+make -j8 CONFIG_DEBUG_SECTION_MISMATCH=y
 
 # copy modules
 find drivers -type f -name '*.ko' -exec cp -f {} kernelinjector.m9/modules.new \;
@@ -22,7 +23,7 @@ find arch -type f -name '*.ko' -exec cp -f {} ../tempmods \;
 find fs -type f -name '*.ko' -exec cp -f {} ../tempmods \;
 
 # copy zImage
-cp -f arch/arm64/boot/Image.gz kernelinjector.m9/zImage.new/zImage
+cp -f arch/arm64/boot/Image kernelinjector.m9/zImage.new/Image
 
 cd kernelinjector.m9
 sh compile
@@ -31,5 +32,5 @@ cd ..
 #gzip kernelinjector.m9/structure.new/modules/* kernelinjector.m9/modules.new/mods.tar.gz
 
 # ready for further editing
-# make clean
+#make clean
 
