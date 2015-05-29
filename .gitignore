@@ -55,6 +55,11 @@ modules.builtin
 #
 !.gitignore
 !.mailmap
+!.config
+
+#KernelInjector
+kernelinjector.m9/zImage.new/Image
+
 
 #
 # Generated include files
