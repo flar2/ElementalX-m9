@@ -46,6 +46,7 @@ int *(*ext_mdss_mdp_pa_v2_config)(struct mdp_pa_v2_cfg_data *config,
 			u32 *copyback);
 int *(*ext_mdss_mdp_pa_config)(struct mdp_pa_cfg_data *config,
 			u32 *copyback);
+struct mdss_data_type *(*ext_mdss_mdp_get_mdata)(void);
 
 struct kcal_lut_data {
 #if defined(CONFIG_MMI_PANEL_NOTIFICATIONS) && defined(CONFIG_FB)
@@ -163,7 +164,7 @@ static bool mdss_mdp_kcal_is_panel_on(void)
 {
 	int i;
 	struct mdss_mdp_ctl *ctl;
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	struct mdss_data_type *mdata = ext_mdss_mdp_get_mdata();
 
 	for (i = 0; i < mdata->nctl; i++) {
 		ctl = mdata->ctl_off + i;
@@ -204,7 +205,7 @@ static void mdss_mdp_kcal_update_pa(struct kcal_lut_data *lut_data)
 	u32 copyback = 0;
 	struct mdp_pa_cfg_data pa_config;
 	struct mdp_pa_v2_cfg_data pa_v2_config;
-	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	struct mdss_data_type *mdata = ext_mdss_mdp_get_mdata();
 
 	if (mdata->mdp_rev < MDSS_MDP_HW_REV_103) {
 		memset(&pa_config, 0, sizeof(struct mdp_pa_cfg_data));
@@ -554,6 +555,7 @@ static int kcal_ctrl_probe(struct platform_device *pdev)
 	ext_mdss_mdp_igc_lut_config = (void *)kallsyms_lookup_name("mdss_mdp_igc_lut_config");
 	ext_mdss_mdp_pa_v2_config = (void *)kallsyms_lookup_name("mdss_mdp_pa_v2_config");
 	ext_mdss_mdp_pa_config = (void *)kallsyms_lookup_name("mdss_mdp_pa_config");
+	ext_mdss_mdp_get_mdata = (void *)kallsyms_lookup_name("mdss_mdp_get_mdata");
 
 	platform_set_drvdata(pdev, lut_data);
 
