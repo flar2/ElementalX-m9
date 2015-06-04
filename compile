@@ -1,8 +1,9 @@
 # delete everything
 
-rm -f kernelinjector.m9/zImage.new/Image
+rm -f kernelinjector.m9/zImage.new/boot.img-zImage
 rm -f arch/arm64/boot/Image
 rm -f arch/arm64/boot/Image.gz
+rm -f kernelinjector.m9/modules.new/*
 
 make -j8 CONFIG_DEBUG_SECTION_MISMATCH=y
 
@@ -10,9 +11,10 @@ make -j8 CONFIG_DEBUG_SECTION_MISMATCH=y
 find drivers -type f -name '*.ko' -exec cp -f {} kernelinjector.m9/modules.new \;
 find arch -type f -name '*.ko' -exec cp -f {} kernelinjector.m9/modules.new \;
 find fs -type f -name '*.ko' -exec cp -f {} kernelinjector.m9/modules.new \;
+find crypto -type f -name '*.ko' -exec cp -f {} kernelinjector.m9/modules.new \;
 
 # copy zImage
-cp -f arch/arm64/boot/Image kernelinjector.m9/zImage.new/Image
+cp -f arch/arm64/boot/Image kernelinjector.m9/zImage.new/boot.img-zImage
 
 rm -f arch/arm64/boot/Image
 rm -f arch/arm64/boot/Image.gz
