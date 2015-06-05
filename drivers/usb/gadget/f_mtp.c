@@ -374,7 +374,8 @@ static struct mtp_dev *_mtp_dev;
 
 static void mtp_setup_perflock(bool mtp_perf_lock_on)
 {
-	struct mtp_dev *dev = _mtp_dev;
+	// do not enforce CPU policy (cooler charging from PC)
+	/*struct mtp_dev *dev = _mtp_dev;
 	dev->mtp_perf_lock_on = mtp_perf_lock_on;
 
 	
@@ -389,7 +390,7 @@ static void mtp_setup_perflock(bool mtp_perf_lock_on)
 			printk(KERN_INFO "[USB][MTP] %s, perf off\n", __func__);
 			perf_unlock(&dev->perf_lock);
 		}
-	}
+	}*/
 }
 
 static __maybe_unused void release_perflock_work_func(struct work_struct *data)
