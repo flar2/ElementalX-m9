@@ -12,20 +12,19 @@
  */
 
 #include <linux/slab.h>
-#include <linux/msm_kgsl.h>
 #include "cpufreq_governor.h"
 
 /* elementalx governor macros */
 #define DEF_FREQUENCY_UP_THRESHOLD		(95)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(50)
 #define DEF_ACTIVE_FLOOR_FREQ			(768000)
-#define DEF_GBOOST_MIN_FREQ			(1248000)
 #define MIN_SAMPLING_RATE			(40000)
 #define DEF_SAMPLING_DOWN_FACTOR		(4)
 #define MAX_SAMPLING_DOWN_FACTOR		(20)
 #define FREQ_NEED_BURST(x)			(x < 768000 ? 1 : 0)
 #define MAX(x,y)				(x > y ? x : y)
 #define MIN(x,y)				(x < y ? x : y)
+#define TABLE_SIZE				12
 
 static DEFINE_PER_CPU(struct ex_cpu_dbs_info_s, ex_cpu_dbs_info);
 
@@ -34,19 +33,82 @@ static unsigned int up_threshold_level[2] __read_mostly = {99, 80};
 static struct ex_governor_data {
 	unsigned int active_floor_freq;
 	unsigned int prev_load;
-	unsigned int g_count;
 } ex_data = {
 	.active_floor_freq = DEF_ACTIVE_FLOOR_FREQ,
 	.prev_load = 0,
-	.g_count = 0,
 };
+
+static unsigned int tblmap1[TABLE_SIZE] __read_mostly = {
+	616400,
+	757200,
+	840000,
+	960000,
+	1248000,
+	1344000,
+	1478400,
+	1555200,
+	1632000,
+	1728000,
+	1824000,
+	1958400,
+};
+
+static unsigned int tblmap2[TABLE_SIZE] __read_mostly = {
+	773040,
+	899760,
+	1014960,
+	1072560,
+	1248000,
+	1344000,
+	1478400,
+	1555200,
+	1632000,
+	1728000,
+	1824000,
+	1958400,
+};
+
+static unsigned int tblmap3[TABLE_SIZE] __read_mostly = {
+	851100,
+	956700,
+	1052700,
+	1100700,
+	1350400,
+	1416000,
+	1550400,
+	1627200,
+	1740800,
+	1824000,
+	1920000,
+	2054400,
+};
+
+static inline int get_cpu_freq_index(unsigned int freq, struct dbs_data *dbs_data)
+{
+	static int saved_index = 0;
+	int index;
+	
+	if (!dbs_data->freq_table) {
+		pr_warn("tbl is NULL, use previous value %d\n", saved_index);
+		return saved_index;
+	}
+
+	for (index = 0; (dbs_data->freq_table[index].frequency != CPUFREQ_TABLE_END); index++) {
+		if (dbs_data->freq_table[index].frequency >= freq) {
+			saved_index = index;
+			break;
+		}
+	}
+
+	return index;
+}
 
 static inline unsigned int ex_freq_increase(struct cpufreq_policy *p, unsigned int freq)
 {
 	if (freq > p->max) {
 		return p->max;
 	} 
-
+	
 	return freq;
 }
 
@@ -68,34 +130,8 @@ static void ex_check_cpu(int cpu, unsigned int load)
 	}
 	avg_load = (ex_data.prev_load + load) >> 1;
 
-	if (ex_tuners->gboost) {
-		if (ex_data.g_count < 500 && graphics_boost < 3)
-			++ex_data.g_count;
-		else if (ex_data.g_count > 1)
-			--ex_data.g_count;
-	}
-
-	//gboost mode
-	if (ex_tuners->gboost && ex_data.g_count > 300) {
-				
-		if (avg_load > 40 + (graphics_boost * 10)) {
-			freq_next = max_freq;
-		} else {
-			freq_next = max_freq * avg_load / 100;
-			freq_next = MAX(freq_next, ex_tuners->gboost_min_freq);
-		}
-
-		target_freq = ex_freq_increase(policy, freq_next);
-
-		__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_H);
-
-		goto finished;
-	} 
-
-	//normal mode
 	if (max_load_freq > up_threshold_level[1] * cur_freq) {
-
-		dbs_info->down_floor = 0;
+		int index = get_cpu_freq_index(cur_freq, dbs_data);
 
 		if (FREQ_NEED_BURST(cur_freq) &&
 				load > up_threshold_level[0]) {
@@ -103,26 +139,29 @@ static void ex_check_cpu(int cpu, unsigned int load)
 		}
 		
 		else if (avg_load > up_threshold_level[0]) {
-			freq_next = max_freq;
+			freq_next = tblmap3[index];
 		}
 		
 		else if (avg_load <= up_threshold_level[1]) {
-			freq_next = cur_freq;
+			freq_next = tblmap1[index];
 		}
 	
-		else {		
+		else {
 			if (load > up_threshold_level[0]) {
-				freq_next = max_freq - 200000;
+				freq_next = tblmap3[index];
 			}
 		
 			else {
-				freq_next = cur_freq + 200000;
+				freq_next = tblmap2[index];
 			}
 		}
 
 		target_freq = ex_freq_increase(policy, freq_next);
 
 		__cpufreq_driver_target(policy, target_freq, CPUFREQ_RELATION_H);
+
+		if (target_freq > ex_data.active_floor_freq)
+			dbs_info->down_floor = 0;
 
 		goto finished;
 	}
@@ -232,39 +271,6 @@ static ssize_t store_down_differential(struct dbs_data *dbs_data,
 	return count;
 }
 
-static ssize_t store_gboost(struct dbs_data *dbs_data, const char *buf,
-		size_t count)
-{
-	struct ex_dbs_tuners *ex_tuners = dbs_data->tuners;
-	unsigned int input;
-	int ret;
-	ret = sscanf(buf, "%u", &input);
-
-	if (ret != 1 || input > 1)
-		return -EINVAL;
-
-	if (input == 0)
-		ex_data.g_count = 0;
-
-	ex_tuners->gboost = input;
-	return count;
-}
-
-static ssize_t store_gboost_min_freq(struct dbs_data *dbs_data,
-		const char *buf, size_t count)
-{
-	struct ex_dbs_tuners *ex_tuners = dbs_data->tuners;
-	unsigned int input;
-	int ret;
-	ret = sscanf(buf, "%u", &input);
-
-	if (ret != 1)
-		return -EINVAL;
-
-	ex_tuners->gboost_min_freq = input;
-	return count;
-}
-
 static ssize_t store_active_floor_freq(struct dbs_data *dbs_data,
 		const char *buf, size_t count)
 {
@@ -299,8 +305,6 @@ static ssize_t store_sampling_down_factor(struct dbs_data *dbs_data,
 show_store_one(ex, sampling_rate);
 show_store_one(ex, up_threshold);
 show_store_one(ex, down_differential);
-show_store_one(ex, gboost);
-show_store_one(ex, gboost_min_freq);
 show_store_one(ex, active_floor_freq);
 show_store_one(ex, sampling_down_factor);
 declare_show_sampling_rate_min(ex);
@@ -308,8 +312,6 @@ declare_show_sampling_rate_min(ex);
 gov_sys_pol_attr_rw(sampling_rate);
 gov_sys_pol_attr_rw(up_threshold);
 gov_sys_pol_attr_rw(down_differential);
-gov_sys_pol_attr_rw(gboost);
-gov_sys_pol_attr_rw(gboost_min_freq);
 gov_sys_pol_attr_rw(active_floor_freq);
 gov_sys_pol_attr_rw(sampling_down_factor);
 gov_sys_pol_attr_ro(sampling_rate_min);
@@ -319,8 +321,6 @@ static struct attribute *dbs_attributes_gov_sys[] = {
 	&sampling_rate_gov_sys.attr,
 	&up_threshold_gov_sys.attr,
 	&down_differential_gov_sys.attr,
-	&gboost_gov_sys.attr,
-	&gboost_min_freq_gov_sys.attr,
 	&active_floor_freq_gov_sys.attr,
 	&sampling_down_factor_gov_sys.attr,
 	NULL
@@ -336,8 +336,6 @@ static struct attribute *dbs_attributes_gov_pol[] = {
 	&sampling_rate_gov_pol.attr,
 	&up_threshold_gov_pol.attr,
 	&down_differential_gov_pol.attr,
-	&gboost_gov_pol.attr,
-	&gboost_min_freq_gov_pol.attr,
 	&active_floor_freq_gov_pol.attr,
 	&sampling_down_factor_gov_pol.attr,
 	NULL
@@ -350,7 +348,7 @@ static struct attribute_group ex_attr_group_gov_pol = {
 
 /************************** sysfs end ************************/
 
-static int ex_init(struct dbs_data *dbs_data)
+static int ex_init(struct dbs_data *dbs_data, struct cpufreq_policy *policy)
 {
 	struct ex_dbs_tuners *tuners;
 
@@ -363,15 +361,15 @@ static int ex_init(struct dbs_data *dbs_data)
 	tuners->up_threshold = DEF_FREQUENCY_UP_THRESHOLD;
 	tuners->down_differential = DEF_FREQUENCY_DOWN_DIFFERENTIAL;
 	tuners->ignore_nice_load = 0;
-	tuners->gboost = 1;
-	tuners->gboost_min_freq = DEF_GBOOST_MIN_FREQ;
 	tuners->active_floor_freq = DEF_ACTIVE_FLOOR_FREQ;
 	tuners->sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR;
 
 	dbs_data->tuners = tuners;
 	dbs_data->min_sampling_rate = MIN_SAMPLING_RATE;
+	dbs_data->freq_table = cpufreq_frequency_get_table(policy->cpu);
 
 	mutex_init(&dbs_data->mutex);
+
 	return 0;
 }
 
@@ -390,7 +388,7 @@ static struct common_dbs_data ex_dbs_cdata = {
 	.get_cpu_dbs_info_s = get_cpu_dbs_info_s,
 	.gov_dbs_timer = ex_dbs_timer,
 	.gov_check_cpu = ex_check_cpu,
-	.init = ex_init,
+	.init_ex = ex_init,
 	.exit = ex_exit,
 };
 

@@ -3498,8 +3498,10 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	}
 
 	USB_INFO("switch function to : %s\n", buff);
-	if (get_radio_flag() & 0x20000)
+	if (get_radio_flag() & 0x20000) {
 		buff = add_usb_radio_debug_function(buff);
+		size = strlen(buff);
+	}
 	is_mtp_enable = 0;
 	is_mass_storage_enable = 0;
 

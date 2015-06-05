@@ -4784,6 +4784,8 @@ static int dev_cpu_callback(struct notifier_block *nfb,
 			____napi_schedule(sd, napi);
 	}
 
+	oldsd->backlog.state = 0;
+
 	raise_softirq_irqoff(NET_TX_SOFTIRQ);
 	local_irq_enable();
 
