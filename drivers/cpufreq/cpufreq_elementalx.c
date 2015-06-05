@@ -16,7 +16,7 @@
 #include "cpufreq_governor.h"
 
 /* elementalx governor macros */
-#define DEF_FREQUENCY_UP_THRESHOLD		(90)
+#define DEF_FREQUENCY_UP_THRESHOLD		(95)
 #define DEF_FREQUENCY_DOWN_DIFFERENTIAL		(50)
 #define DEF_ACTIVE_FLOOR_FREQ			(768000)
 #define DEF_GBOOST_MIN_FREQ			(1248000)
