@@ -22,38 +22,8 @@
 #include "power.h"
 
 #define MAX_BUF     100
-#define MAX_VALUE   768000
-
-#define MAX_FREQ_LP   960000
-#define MAX_FREQ_HP   1248000
-#define MAX_FREQ_GPU   450000
-#define CORE_GPU   8
-
+#define MAX_VALUE   999999999    
 #define MAX_CPU_NUM 8
-
-static int GetIdealFreq(int cluster, int core)
-{
-  // LP cores
-  if(cluster == 1 && core < 4)
-  {
-    return MAX_FREQ_LP;
-  }
-  // HP cores
-  if(cluster == 1 && core >= 4)
-  {
-    return MAX_FREQ_HP;
-  }
-  // GPU core
-  if(core == 8)
-  {
-    return MAX_FREQ_GPU;
-  }
-  
-  pr_err("GetIdealFreq invalid cluster number(%d)\n", cluster);
-  pr_err("GetIdealFreq invalid core number(%d)\n", core);
-  return MAX_VALUE;
-}
-
 
 enum {
 	BC_TYPE = 0,
@@ -1358,10 +1328,9 @@ static void init_cluster_info_by_topology(void)
 		k = info[i].is_sync ? 1 : info[i].num_cpus;
 
 		info[i].thermal_freq = kzalloc(k * sizeof(int), GFP_KERNEL);
+
 		for (j = 0; j < k; j++)
-		{
-			info[i].thermal_freq[j] = GetIdealFreq(i,j);
-		}
+			info[i].thermal_freq[j] = MAX_VALUE;
 	}
 }
 
@@ -1416,7 +1385,7 @@ static int init_cluster_info_by_dt(const struct device_node *node)
 		info[i].thermal_freq = kzalloc(k * sizeof(int), GFP_KERNEL);
 
 		for (j = 0; j < k; j++)
-			info[i].thermal_freq[j] = GetIdealFreq(i,j);
+			info[i].thermal_freq[j] = MAX_VALUE;
 	}
 
 	cluster_num = cluster_cnt;
@@ -1541,11 +1510,6 @@ static int __init pnpmgr_init(void)
 	int ret, i, j;
 	char *name[MAX_TYPE] = {"big", "little"};
 	char buf[10];
-
-	thermal_g0_value = GetIdealFreq(1,0);
-	thermal_final_bcpu_value = GetIdealFreq(1,4);
-	thermal_final_lcpu_value = GetIdealFreq(1,0);
-	thermal_final_gpu_value = GetIdealFreq(2,8);
 
 	init_timer(&app_timer);
 	app_timer.function = app_timeout_handler;
