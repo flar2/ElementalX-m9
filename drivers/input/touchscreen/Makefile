@@ -86,3 +86,4 @@ obj-$(CONFIG_TOUCHSCREEN_TOUCH_FW_UPDATE) += touch_fw_update.o
 obj-$(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_HTC) += synaptics_dsx_htc/
 obj-$(CONFIG_TOUCHSCREEN_BU21150)	+= bu21150.o
 obj-$(CONFIG_INPUT_MT_WRAPPER)		+= input_mt_wrapper.o
+obj-$(CONFIG_SWEEP2SLEEP)		+= sweep2sleep.o
