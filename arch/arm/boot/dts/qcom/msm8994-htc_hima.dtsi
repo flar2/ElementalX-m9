@@ -159,6 +159,18 @@
     };
 };
 
+&pmi8994_charger {
+	qcom,high-fastchg-current-ma = <2500>;
+	qcom,fastchg-current-ma = <1850>;
+	qcom,qc20-iusb-max-ma = <1400>;
+	qcom,kddi-limit1-temp = <390>;
+	qcom,kddi-limit1-current = <1000>;
+	qcom,kddi-limit1-current-qc20 = <700>;
+	qcom,kddi-limit2-temp = <450>;
+	qcom,kddi-limit2-current = <1000>;
+	qcom,kddi-limit2-current-qc20 = <700>;
+};
+
 &tlmm_pinmux {
 	hima_nc_pins_in_pd {
 		qcom,num-grp-pins = <17>;

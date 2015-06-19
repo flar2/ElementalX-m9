@@ -713,7 +713,7 @@ static struct rcg_clk mdp_clk_src = {
 	.c = {
 		.dbg_name = "mdp_clk_src",
 		.ops = &clk_ops_rcg,
-		VDD_DIG_FMAX_MAP4(LOWER, 85710000, LOW, 120000000,
+		VDD_DIG_FMAX_MAP4(LOWER, 85710000, LOW, 171430000,
 				  NOMINAL, 320000000, HIGH, 400000000),
 		CLK_INIT(mdp_clk_src.c),
 	},

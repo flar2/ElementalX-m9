@@ -1184,6 +1184,11 @@ int mmc_attach_sd(struct mmc_host *host)
 				__func__, mmc_hostname(host), err);
 				goto err;
 			}
+			if (host->rescan_disable) {
+				printk(KERN_ERR "%s(%s): disable rescan, stop retry init card\n",
+				__func__, mmc_hostname(host));
+				goto err;
+			}
 			retries--;
 			mmc_power_off(host);
 			usleep_range(delayTime*1000, delayTime*1000+500);

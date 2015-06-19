@@ -425,6 +425,7 @@ static s32 wl_notify_roaming_status(struct bcm_cfg80211 *cfg,
 	bcm_struct_cfgdev *cfgdev, const wl_event_msg_t *e, void *data);
 static s32 wl_notify_scan_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 	const wl_event_msg_t *e, void *data);
+#define AS_ROAM_DONE 99
 static s32 wl_bss_connect_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	const wl_event_msg_t *e, void *data, bool completed);
 static s32 wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
@@ -9292,13 +9293,17 @@ wl_notify_connect_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
 			wl_link_up(cfg);
 			act = true;
 			if (!wl_get_drv_status(cfg, DISCONNECTING, ndev)) {
-					printk("wl_bss_connect_done succeeded with " MACDBG "\n",
-						MAC2STRDBG((u8*)(&e->addr)));
-					wl_bss_connect_done(cfg, ndev, e, data, true);
+					WL_ERR(("wl_bss_connect_done succeeded with " MACDBG "\n",
+						MAC2STRDBG((u8*)(&e->addr))));
+					if (wl_bss_connect_done(cfg, ndev, e, data, true) ==
+						AS_ROAM_DONE) {
+						WL_ERR(("call roaming done instead\n"));
+						wl_bss_roaming_done(cfg, ndev, e, data);
+					}
 					WL_DBG(("joined in BSS network \"%s\"\n",
 					((struct wlc_ssid *)
-					 wl_read_prof(cfg, ndev, WL_PROF_SSID))->SSID));
-				}
+					wl_read_prof(cfg, ndev, WL_PROF_SSID))->SSID));
+			}
 			wl_update_prof(cfg, ndev, e, &act, WL_PROF_ACT);
 			wl_update_prof(cfg, ndev, NULL, (void *)&e->addr, WL_PROF_BSSID);
 #ifdef CUSTOMER_HW_ONE
@@ -9692,7 +9697,8 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 {
 	struct wl_connect_info *conn_info = wl_to_conn(cfg);
 	s32 err = 0;
-	u8 *curbssid;
+	u8 *curbssid = wl_read_prof(cfg, ndev, WL_PROF_BSSID);
+	bool skip = false;
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)) || defined(WL_COMPAT_WIRELESS)
 	struct wiphy *wiphy = bcmcfg_to_wiphy(cfg);
 	struct ieee80211_supported_band *band;
@@ -9706,6 +9712,12 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 	if (data)
 		data_len = ntoh32(e->datalen);
 #endif 
+
+	if (wl_get_drv_status(cfg, CONNECTED, ndev)) {
+		if (memcmp(curbssid, (void *)(e->addr.octet), ETHER_ADDR_LEN) == 0) {
+			skip = true;
+		}
+	}
 
 	wl_get_assoc_ies(cfg, ndev);
 	wl_update_prof(cfg, ndev, NULL, (void *)(e->addr.octet), WL_PROF_BSSID);
@@ -9728,8 +9740,14 @@ wl_bss_roaming_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		memcpy(cfg->fbt_key, data, FBT_KEYLEN);
 	}
 #endif 
-	printk("wl_bss_roaming_done succeeded to " MACDBG "\n",
-		MAC2STRDBG((u8*)(&e->addr)));
+
+	if (skip) {
+		WL_ERR(("roam reported, ignore it\n"));
+		return err;
+	}
+
+	WL_ERR(("wl_bss_roaming_done succeeded to " MACDBG "\n",
+		MAC2STRDBG((u8*)(&e->addr))));
 
 	cfg80211_roamed(ndev,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 39)) || defined(WL_COMPAT_WIRELESS)
@@ -9766,7 +9784,8 @@ wl_bss_connect_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		if (memcmp(curbssid, connect_req_bssid, ETHER_ADDR_LEN) == 0) {
 			WL_ERR((" Connected event of connected device e=%d s=%d, ignore it\n",
 				ntoh32(e->event_type), ntoh32(e->status)));
-			return err;
+			err = AS_ROAM_DONE;
+			goto skip_done;
 		}
 	}
 	if (memcmp(curbssid, broad_bssid, ETHER_ADDR_LEN) == 0 &&
@@ -9824,8 +9843,12 @@ wl_bss_connect_done(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 			WL_ERR(("Report connect result - connection succeeded\n"));
 		else
 			WL_ERR(("Report connect result - connection failed\n"));
-	} else
+	} else {
 		WL_ERR(("Don't report connect result - not connecting\n"));
+		err = AS_ROAM_DONE;
+	}
+
+skip_done:
 
 #ifdef CONFIG_TCPACK_FASTTX
 	if (wl_get_chan_isvht80(ndev, dhd))
@@ -11893,10 +11916,17 @@ static s32 wl_event_handler(void *data)
 	struct wl_event_q *e;
 	tsk_ctl_t *tsk = (tsk_ctl_t *)data;
 	bcm_struct_cfgdev *cfgdev = NULL;
+	int wl_event_prio = 98;
 
 	cfg = (struct bcm_cfg80211 *)tsk->parent;
 
-	WL_ERR(("tsk Enter, tsk = 0x%p\n", tsk));
+        if (wl_event_prio > 0 ) {
+                struct sched_param param;
+                param.sched_priority = wl_event_prio;
+                setScheduler(current, SCHED_FIFO, &param);
+        }
+
+	WL_ERR(("tsk Enter, tsk = 0x%p, wl_event_prio=%d\n", tsk, wl_event_prio));
 
 	while (down_interruptible (&tsk->sema) == 0) {
 		SMP_RD_BARRIER_DEPENDS();

@@ -156,7 +156,7 @@
 					     37 72 57 3D BF 33
 			29 00 00 00 00 00 21 CA 01 01 97 75 97 A8 BB A8 08	/*CE Setting*/
 					     2F 05 78 0A 4A 37 A0 01 A0 08
-					     08 20 10 08 08 CB F2 10 10 3F
+					     08 20 10 08 08 D8 F2 10 10 3F
 					     3F 3F 3F
 			29 00 00 00 00 00 07 B9 07 7A 45 20 13 4B	/*CABC still mode*/
 			29 00 00 00 00 00 07 BA 07 7C 57 20 13 99	/*CABC movie mode*/
@@ -247,7 +247,7 @@
 					     04 04 44 00
 			29 00 00 00 00 00 21 CA 01 01 97 75 97 A8 BB A8 04	/*Color Enhance*/
 					     2F 05 70 0A 4A 37 A0 01 A0 08
-					     08 20 10 08 08 DD D0 10 10 3F
+					     08 20 10 08 08 F2 D0 10 10 3F
 					     3F 3F 3F
 			29 00 00 00 05 00 02 D6 01		/*NVM Load control*/
 			29 00 00 00 05 00 02 B0 03		/*Manufacturer cmd protect on*/
