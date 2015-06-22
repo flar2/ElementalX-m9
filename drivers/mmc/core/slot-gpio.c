@@ -20,7 +20,7 @@
 #include <linux/delay.h>
 #include <linux/irq.h>
 
-static struct workqueue_struct *enable_detection_workqueue;	
+struct workqueue_struct *enable_detection_workqueue = NULL;	
 
 struct mmc_gpio {
 	int ro_gpio;
@@ -85,9 +85,12 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 
 	spin_lock(&host->lock_cd_pin);
 	if (host->cd_pin_depth == 0) {
-		disable_irq_nosync(host->slot.cd_irq);
-		queue_delayed_work(enable_detection_workqueue, &host->enable_detect, msecs_to_jiffies(50));
-		host->cd_pin_depth++;
+		if (enable_detection_workqueue) {
+			disable_irq_nosync(host->slot.cd_irq);
+			queue_delayed_work(enable_detection_workqueue, &host->enable_detect, msecs_to_jiffies(50));
+			host->cd_pin_depth++;
+		} else
+			pr_err("%s detection workqueue is null\n", mmc_hostname(host));
 	}
 	spin_unlock(&host->lock_cd_pin);
 
@@ -209,10 +212,6 @@ int mmc_gpio_request_cd(struct mmc_host *host, unsigned int gpio)
 	if (ret < 0)
 		return ret;
 
-	enable_detection_workqueue = create_singlethread_workqueue("enable_sd_detect");
-	if (!enable_detection_workqueue)
-		return -ENOMEM;
-
 	host->cd_pin_depth = 0;
 	spin_lock_init(&host->lock_cd_pin);
 
@@ -221,7 +220,6 @@ int mmc_gpio_request_cd(struct mmc_host *host, unsigned int gpio)
 	ret = devm_gpio_request_one(&host->class_dev, gpio, GPIOF_DIR_IN,
 				    ctx->cd_label);
 	if (ret < 0) {
-		destroy_workqueue(enable_detection_workqueue);
 		return ret;
 	}
 
@@ -232,10 +230,8 @@ int mmc_gpio_request_cd(struct mmc_host *host, unsigned int gpio)
 	host->slot.cd_irq = irq;
 
 	ret = mmc_gpio_get_status(host);
-	if (ret < 0) {
-		destroy_workqueue(enable_detection_workqueue);
+	if (ret < 0)
 		return ret;
-	}
 
 	irq_trigger_type = (ret == 0 ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING);
 	ctx->status = ret;
@@ -245,10 +241,8 @@ int mmc_gpio_request_cd(struct mmc_host *host, unsigned int gpio)
 			NULL, mmc_gpio_cd_irqt,
 			irq_trigger_type | IRQF_ONESHOT,
 			ctx->cd_label, host);
-		if (ret < 0) {
-			destroy_workqueue(enable_detection_workqueue);
+		if (ret < 0)
 			irq = ret;
-		}
 	}
 
 	if (irq < 0)
@@ -290,6 +284,5 @@ void mmc_gpio_free_cd(struct mmc_host *host)
 	ctx->cd_gpio = -EINVAL;
 
 	devm_gpio_free(&host->class_dev, gpio);
-	destroy_workqueue(enable_detection_workqueue);
 }
 EXPORT_SYMBOL(mmc_gpio_free_cd);

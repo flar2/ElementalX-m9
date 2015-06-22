@@ -129,6 +129,7 @@ enum fg_mem_setting_index {
 	FG_MEM_BCL_MH_THRESHOLD,
 	FG_MEM_TERM_CURRENT,
 	FG_MEM_VBAT_EST_DIFF,
+	FG_MEM_BATT_LOW,
 	FG_MEM_SETTING_MAX,
 };
 
@@ -164,6 +165,7 @@ static struct fg_mem_setting settings[FG_MEM_SETTING_MAX] = {
 	SETTING(BCL_MH_THRESHOLD, 0x47C,   3,      752),
 	SETTING(TERM_CURRENT,	 0x40C,   2,      250),
 	SETTING(VBAT_EST_DIFF,	 0x000,   0,      150),
+	SETTING(BATT_LOW,	 0x458,   0,	  4200),
 };
 
 #define DATA(_idx, _address, _offset, _length,  _value)	\
@@ -255,6 +257,7 @@ static void fg_relax(struct fg_wakeup_source *source)
 	}
 }
 
+extern void smbchg_aicl_deglitch_wa_check(void);
 #define THERMAL_COEFF_N_BYTES		6
 struct fg_chip {
 	struct device		*dev;
@@ -302,6 +305,9 @@ struct fg_chip {
 	int				batt_stored_magic_num;
 	int				batt_stored_soc;
 	unsigned int	batt_stored_update_time;
+
+	
+	struct work_struct	exe_smbchg_aicl_wa;
 };
 static struct fg_chip *the_chip;
 
@@ -1347,6 +1353,14 @@ static void update_jeita_setting(struct work_struct *work)
 		pr_err("failed to update JEITA setting rc=%d\n", rc);
 }
 
+static u8 batt_to_setpoint(int vbatt)
+{
+	int val;
+	
+	val = (vbatt - 2500) * 512 / 1000;
+	return DIV_ROUND_CLOSEST(val, 5);
+}
+
 #define FG_ALG_SYSCTL_1	0x4B0
 #define SYSCTL_OFFSET		1
 #define AUTO_RCHG_BIT		BIT(1)
@@ -1384,6 +1398,17 @@ static int fg_set_resume_soc(struct fg_chip *chip, u8 threshold)
 	return rc;
 }
 
+#define VBATT_LOW_STS_BIT BIT(2)
+static int fg_get_vbatt_status(struct fg_chip *chip, bool *vbatt_low_sts)
+{
+	int rc = 0;
+	u8 fg_batt_sts;
+
+	rc = fg_read(chip, &fg_batt_sts, INT_RT_STS(chip->batt_base), 1);
+	if (!rc)
+		*vbatt_low_sts = !!(fg_batt_sts & VBATT_LOW_STS_BIT);
+	return rc;
+}
 static int fg_set_prop_status(struct fg_chip *chip, int status)
 {
        int rc = 0;
@@ -1407,6 +1432,7 @@ static enum power_supply_property fg_power_props[] = {
 	POWER_SUPPLY_PROP_UPDATE_NOW,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_ESR_COUNT,
+	POWER_SUPPLY_PROP_VOLTAGE_MIN,
 };
 
 static int fg_power_get_property(struct power_supply *psy,
@@ -1414,6 +1440,7 @@ static int fg_power_get_property(struct power_supply *psy,
 				       union power_supply_propval *val)
 {
 	struct fg_chip *chip = container_of(psy, struct fg_chip, bms_psy);
+	bool vbatt_low_sts;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_BATTERY_TYPE:
@@ -1457,6 +1484,12 @@ static int fg_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_UPDATE_NOW:
 		val->intval = 0;
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_MIN:
+		if (!fg_get_vbatt_status(chip, &vbatt_low_sts))
+			val->intval = (int)vbatt_low_sts;
+		else
+			val->intval = 1;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_FULL:
 		if (get_prop_capacity(chip) == 100)
@@ -1799,6 +1832,10 @@ static void dump_sram(struct work_struct *work)
 	devm_kfree(chip->dev, buffer);
 }
 
+static void exe_smbchg_aicl_wa(struct work_struct *work)
+{
+	smbchg_aicl_deglitch_wa_check();
+}
 #define BATT_MISSING_STS BIT(6)
 static bool is_battery_missing(struct fg_chip *chip)
 {
@@ -1814,6 +1851,19 @@ static bool is_battery_missing(struct fg_chip *chip)
 	}
 
 	return (fg_batt_sts & BATT_MISSING_STS) ? true : false;
+}
+static irqreturn_t fg_vbatt_low_handler(int irq, void *_chip)
+{
+	struct fg_chip *chip = _chip;
+
+	if (fg_debug_mask & FG_IRQS)
+		pr_info("vbatt-low triggered\n");
+
+	schedule_work(&chip->exe_smbchg_aicl_wa);
+
+	if (chip->power_supply_registered)
+		power_supply_changed(&chip->bms_psy);
+	return IRQ_HANDLED;
 }
 
 #define ESR_ADJUST_SOC         97
@@ -2415,6 +2465,7 @@ static int fg_of_init(struct fg_chip *chip)
 	}
 	OF_READ_SETTING(FG_MEM_RESUME_SOC, "resume-soc", rc, 1);
 	OF_READ_SETTING(FG_MEM_VBAT_EST_DIFF, "vbat-estimate-diff-mv", rc, 1);
+	OF_READ_SETTING(FG_MEM_BATT_LOW, "fg-vbatt-low-threshold", rc, 1);
 
 	OF_PROP_READ(chip, chip->store_batt_data_soc_thre, "store-batt-data-soc-thre", rc, 1);
 	OF_PROP_READ(chip, chip->batt_stored_magic_num, "stored-batt-magic-num", rc, 1);
@@ -2590,6 +2641,27 @@ static int fg_init_irqs(struct fg_chip *chip)
 					chip->batt_irq[BATT_MISSING].irq, rc);
 				return rc;
 			}
+			chip->batt_irq[VBATT_LOW].irq = spmi_get_irq_byname(
+					chip->spmi, spmi_resource,
+					"vbatt-low");
+			if (chip->batt_irq[VBATT_LOW].irq < 0) {
+				pr_err("Unable to get vbatt-low irq\n");
+				rc = -EINVAL;
+				return rc;
+			}
+			rc |= devm_request_irq(chip->dev,
+					chip->batt_irq[VBATT_LOW].irq,
+					fg_vbatt_low_handler,
+					IRQF_TRIGGER_RISING |
+					IRQF_TRIGGER_FALLING,
+					"vbatt-low", chip);
+			if (rc < 0) {
+				pr_err("Can't request %d vbatt-low: %d\n",
+					chip->batt_irq[VBATT_LOW].irq, rc);
+				return rc;
+			}
+			enable_irq_wake(chip->batt_irq[VBATT_LOW].irq);
+			break;
 		case FG_ADC:
 			break;
 		default:
@@ -2611,6 +2683,7 @@ static int fg_remove(struct spmi_device *spmi)
 	cancel_work_sync(&chip->batt_profile_init);
 	cancel_work_sync(&chip->dump_sram);
 	cancel_work_sync(&chip->update_esr_work);
+	cancel_work_sync(&chip->exe_smbchg_aicl_wa);
 	power_supply_unregister(&chip->bms_psy);
 	mutex_destroy(&chip->rw_lock);
 	wakeup_source_trash(&chip->memif_wakeup_source.source);
@@ -3049,6 +3122,14 @@ static int fg_hw_init(struct fg_chip *chip)
 		}
 	}
 
+	rc = fg_mem_masked_write(chip, settings[FG_MEM_BATT_LOW].address, 0xFF,
+			batt_to_setpoint(settings[FG_MEM_BATT_LOW].value),
+			settings[FG_MEM_BATT_LOW].offset);
+	if (rc) {
+		pr_err("failed to write Vbatt_low rc=%d\n", rc);
+		return rc;
+	}
+
 	if (chip->use_thermal_coefficients) {
 		fg_mem_write(chip, chip->thermal_coefficients,
 			THERMAL_COEFF_ADDR, THERMAL_COEFF_N_BYTES,
@@ -3127,6 +3208,7 @@ static int fg_probe(struct spmi_device *spmi)
 	INIT_WORK(&chip->batt_profile_init, batt_profile_init);
 	INIT_WORK(&chip->dump_sram, dump_sram);
 	INIT_WORK(&chip->update_esr_work, update_esr_value);
+	INIT_WORK(&chip->exe_smbchg_aicl_wa, exe_smbchg_aicl_wa);
 	init_completion(&chip->sram_access_granted);
 	init_completion(&chip->sram_access_revoked);
 	init_completion(&chip->batt_id_avail);
@@ -3270,6 +3352,7 @@ cancel_work:
 	cancel_work_sync(&chip->batt_profile_init);
 	cancel_work_sync(&chip->dump_sram);
 	cancel_work_sync(&chip->update_esr_work);
+	cancel_work_sync(&chip->exe_smbchg_aicl_wa);
 of_init_fail:
 	mutex_destroy(&chip->rw_lock);
 	wakeup_source_trash(&chip->memif_wakeup_source.source);

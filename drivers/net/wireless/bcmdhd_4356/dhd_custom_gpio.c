@@ -464,7 +464,7 @@ void get_customized_country_code(void *adapter, char *country_iso_code, wl_count
 			return;
 		}
 	}
-#ifdef EXAMPLE_TABLE
+#if defined(EXAMPLE_TABLE) || defined(CUSTOMER_HW_ONE)
 	
 	memcpy(cspec->ccode, translate_custom_table[0].custom_locale, WLC_CNTRY_BUF_SZ);
 	cspec->rev = translate_custom_table[0].custom_locale_rev;

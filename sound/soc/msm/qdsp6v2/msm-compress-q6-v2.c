@@ -199,29 +199,37 @@ struct msm_compr_ch_map {
 
 static int msm_compr_wait_event_freezable(struct msm_compr_audio *prtd, bool eos)
 {
-    DEFINE_WAIT(wait_queue);
-    int wait_times = 0;
-    if (eos) {
-        for (;;) {
-            prepare_to_wait(&prtd->eos_wait, &wait_queue, TASK_UNINTERRUPTIBLE);
-            if (prtd->eos_ack || prtd->cmd_interrupt || atomic_read(&prtd->error))
-                break;
-            freezable_schedule();
-            wait_times++;
-        }
-        finish_wait(&prtd->eos_wait, &wait_queue);
-    } else {
-        for (;;) {
-            prepare_to_wait(&prtd->drain_wait, &wait_queue, TASK_UNINTERRUPTIBLE);
-            if (prtd->drain_ready || prtd->cmd_interrupt || atomic_read(&prtd->xrun) || atomic_read(&prtd->error))
-                break;
-            freezable_schedule();
-            wait_times++;
-        }
-        finish_wait(&prtd->drain_wait, &wait_queue);
-    }
-    pr_debug("%s: %s done, wait_times %d", __func__, eos ? "wait_eos" : "wait_drain", wait_times);
-    return 0;
+	DEFINE_WAIT(wait_queue);
+	int wait_times = 0;
+	if (eos) {
+		for (;;) {
+			prepare_to_wait(&prtd->eos_wait, &wait_queue, TASK_INTERRUPTIBLE);
+			if (prtd->eos_ack || prtd->cmd_interrupt || atomic_read(&prtd->error))
+				break;
+			if (signal_pending(current)) {
+				pr_info("Get sw interrupt and get signal\n");
+				break;
+			}
+			freezable_schedule();
+			wait_times++;
+		}
+		finish_wait(&prtd->eos_wait, &wait_queue);
+	} else {
+		for (;;) {
+			prepare_to_wait(&prtd->drain_wait, &wait_queue, TASK_INTERRUPTIBLE);
+			if (prtd->drain_ready || prtd->cmd_interrupt || atomic_read(&prtd->xrun) || atomic_read(&prtd->error))
+				break;
+			if (signal_pending(current)) {
+				pr_info("Get sw interrupt and get signal\n");
+				break;
+			}
+			freezable_schedule();
+			wait_times++;
+		}
+		finish_wait(&prtd->drain_wait, &wait_queue);
+	}
+	pr_debug("%s: %s done, wait_times %d\n", __func__, eos ? "wait_eos" : "wait_drain", wait_times);
+	return 0;
 }
 
 static int msm_compr_send_dec_params(struct snd_compr_stream *cstream,

@@ -213,20 +213,35 @@ int bluesleep_can_sleep(void)
 
 void bluesleep_sleep_wakeup(void)
 {
+	static int clk_retry = 0;
+
 	if (test_bit(BT_ASLEEP, &flags)) {
 		if (debug_mask & DEBUG_SUSPEND)
 			pr_info("waking up...\n");
 		wake_lock(&bsi->wake_lock);
+
 		
-		mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
-		if (debug_mask & DEBUG_BTWAKE)
-			pr_info("BT WAKE: set to wake\n");
-		if (bsi->has_ext_wake == 1)
-			gpio_set_value(bsi->ext_wake, 0);
-		clear_bit(BT_EXT_WAKE, &flags);
-		clear_bit(BT_ASLEEP, &flags);
-		
-		hsuart_power(1);
+		if (msm_hs_uart_get_clk_state() == MSM_HS_CLK_REQUEST_OFF
+			&& clk_retry < 10) {
+			pr_info("not access uart when clk is REQUEST_OFF, retry:%d\n", clk_retry);
+			clk_retry++;
+			
+			mod_timer(&tx_timer, jiffies + msecs_to_jiffies(10));
+		} else {
+			if (clk_retry != 0)
+				pr_info("clk state is changed, retry:%d\n", clk_retry);
+			clk_retry = 0;
+			
+			mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
+			if (debug_mask & DEBUG_BTWAKE)
+				pr_info("BT WAKE: set to wake\n");
+			if (bsi->has_ext_wake == 1)
+				gpio_set_value(bsi->ext_wake, 0);
+			clear_bit(BT_EXT_WAKE, &flags);
+			clear_bit(BT_ASLEEP, &flags);
+			
+			hsuart_power(1);
+		}
 	} else if (test_bit(BT_EXT_WAKE, &flags)) {
 		if (debug_mask & DEBUG_SUSPEND)
 			pr_info("waking up...... no need power up uart\n");

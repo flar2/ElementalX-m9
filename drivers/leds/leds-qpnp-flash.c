@@ -28,7 +28,7 @@
 #include <linux/htc_flashlight.h>
 
 #define FLT_DBG_LOG(fmt, ...) \
-		printk(KERN_DEBUG "[FLT] " fmt, ##__VA_ARGS__)
+		printk(KERN_DEBUG "[FLT][DBG] " fmt, ##__VA_ARGS__)
 #define FLT_INFO_LOG(fmt, ...) \
 		printk(KERN_INFO "[FLT] " fmt, ##__VA_ARGS__)
 #define FLT_ERR_LOG(fmt, ...) \
@@ -407,6 +407,7 @@ qpnp_flash_led_get_peripheral_type(struct qpnp_flash_led *led)
 static int qpnp_flash_led_module_disable(struct qpnp_flash_led *led,
 				struct flash_node_data *flash_node)
 {
+	union power_supply_propval psy_prop;
 	int rc;
 	u8 val, tmp;
 
@@ -448,6 +449,19 @@ static int qpnp_flash_led_module_disable(struct qpnp_flash_led *led,
 		if (rc) {
 			dev_err(&led->spmi_dev->dev, "Module disable failed\n");
 			return -EINVAL;
+		}
+
+		FLT_DBG_LOG("DISABLE OTG PULSE SKIP MODE\n");
+		if (led->battery_psy) {
+				psy_prop.intval = false;
+				rc = led->battery_psy->set_property(led->battery_psy,
+								POWER_SUPPLY_PROP_OTG_PULSE_SKIP_ENABLE,
+														&psy_prop);
+				if (rc) {
+						dev_err(&led->spmi_dev->dev,
+								"Failed to setp OTG pulse skip enable\n");
+						return -EINVAL;
+				}
 		}
 	} else {
 		rc = qpnp_led_masked_write(led->spmi_dev,
@@ -541,6 +555,8 @@ int pmi8994_flashlight_mode2(int mode2, int mode13)
 {
 	int rc;
 	u8 val;
+	union power_supply_propval psy_prop;
+
 	this_led->flash_node->trigger = FLASH_LED0_TRIGGER | FLASH_LED1_TRIGGER;
 	this_led->flash_node->max_current = 1000;
 
@@ -573,6 +589,23 @@ int pmi8994_flashlight_mode2(int mode2, int mode13)
 	if (mode2 == 0 && mode13 == 0)
 		flashlight_turn_off();
 	else {
+		FLT_DBG_LOG("ENABLE OTG PULSE SKIP MODE\n");
+		if (!this_led->battery_psy)
+				this_led->battery_psy = power_supply_get_by_name("battery");
+		if (!this_led->battery_psy) {
+				dev_err(&this_led->spmi_dev->dev,
+						"Failed to get battery power supply\n");
+				goto exit_flash_led_work;
+		}
+		psy_prop.intval = true;
+		rc = this_led->battery_psy->set_property(this_led->battery_psy,
+				POWER_SUPPLY_PROP_OTG_PULSE_SKIP_ENABLE,
+										&psy_prop);
+		if (rc) {
+				dev_err(&this_led->spmi_dev->dev,
+						"Failed to setp OTG pulse skip enable\n");
+				goto exit_flash_led_work;
+		}
 
 		val = 0x3B;	
 		rc = qpnp_led_masked_write(this_led->spmi_dev,
@@ -815,6 +848,7 @@ static void qpnp_flash_led_work(struct work_struct *work)
 	struct qpnp_flash_led *led =
 			dev_get_drvdata(&flash_node->spmi_dev->dev);
 	union power_supply_propval prop;
+	union power_supply_propval psy_prop;
 	int rc, brightness = flash_node->cdev.brightness;
 	u16 max_curr_avail_ma;
 	u8 val;
@@ -910,6 +944,24 @@ static void qpnp_flash_led_work(struct work_struct *work)
 			goto exit_flash_led_work;
 		}
 	} else if (flash_node->type == FLASH) {
+		FLT_DBG_LOG("ENABLE OTG PULSE SKIP MODE\n");
+		if (!led->battery_psy)
+				led->battery_psy = power_supply_get_by_name("battery");
+		if (!led->battery_psy) {
+				dev_err(&led->spmi_dev->dev,
+						"Failed to get battery power supply\n");
+				goto exit_flash_led_work;
+		}
+		psy_prop.intval = true;
+		rc = led->battery_psy->set_property(led->battery_psy,
+				POWER_SUPPLY_PROP_OTG_PULSE_SKIP_ENABLE,
+										&psy_prop);
+		if (rc) {
+				dev_err(&led->spmi_dev->dev,
+						"Failed to setp OTG pulse skip enable\n");
+				goto exit_flash_led_work;
+		}
+
 		if (led->pdata->power_detect_en) {
 			if (!led->battery_psy)
 				led->battery_psy =

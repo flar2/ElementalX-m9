@@ -66,6 +66,7 @@ extern unsigned int get_tamper_sf(void);
 
 static struct workqueue_struct *workqueue;
 struct workqueue_struct *stats_workqueue = NULL;
+extern struct workqueue_struct *enable_detection_workqueue;
 static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
 
 #ifdef CONFIG_HTC_PNPMGR
@@ -3728,6 +3729,10 @@ static int __init mmc_init(void)
 	if (!stats_workqueue)
 		return -ENOMEM;
 
+	enable_detection_workqueue = create_singlethread_workqueue("enable_sd_detect");
+	if (!enable_detection_workqueue)
+		return -ENOMEM;
+
 	if (get_tamper_sf() == 1)
 		stats_interval = MMC_STATS_LOG_INTERVAL;
 
@@ -3754,6 +3759,8 @@ destroy_workqueue:
 	destroy_workqueue(workqueue);
 	if (stats_workqueue)
 		destroy_workqueue(stats_workqueue);
+	if (enable_detection_workqueue)
+		destroy_workqueue(enable_detection_workqueue);
 	return ret;
 }
 
@@ -3765,6 +3772,11 @@ static void __exit mmc_exit(void)
 	destroy_workqueue(workqueue);
 	if (stats_workqueue)
 		destroy_workqueue(stats_workqueue);
+	if (enable_detection_workqueue) {
+		flush_workqueue(enable_detection_workqueue);
+		destroy_workqueue(enable_detection_workqueue);
+		enable_detection_workqueue = NULL;
+	}
 }
 
 subsys_initcall(mmc_init);

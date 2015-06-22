@@ -2721,8 +2721,13 @@ static int hdmi_tx_power_off(struct mdss_panel_data *panel_data)
 	mutex_unlock(&hdmi_ctrl->power_mutex);
 
 	if (hdmi_ctrl->hpd_off_pending) {
-		hdmi_tx_hpd_off(hdmi_ctrl);
-		hdmi_ctrl->hpd_off_pending = false;
+		if (!hdmi_ctrl->hpd_feature_on){
+			hdmi_tx_hpd_off(hdmi_ctrl);
+			hdmi_ctrl->hpd_off_pending = false;
+		} else {
+			DEV_INFO("%s: keep hpd on\n", __func__);
+			hdmi_ctrl->hpd_off_pending = false;
+		}
 	}
 
 	if (hdmi_ctrl->hdmi_tx_hpd_done)
@@ -3385,7 +3390,9 @@ static int hdmi_tx_panel_event_handler(struct mdss_panel_data *panel_data,
 			hdmi_tx_power_off(panel_data);
 			panel_data->panel_info.cont_splash_enabled = false;
 		} else {
-			if (hdmi_ctrl->hpd_feature_on)
+			DEV_INFO("%s: MDSS_EVENT_CLOSE: hpd_feature_on=%d hpd_initialized=%d\n", __func__,
+					hdmi_ctrl->hpd_feature_on, hdmi_ctrl->hpd_initialized);
+			if (hdmi_ctrl->hpd_feature_on && hdmi_ctrl->hpd_initialized)
 				hdmi_tx_hpd_polarity_setup(hdmi_ctrl,
 					HPD_CONNECT_POLARITY);
 		}

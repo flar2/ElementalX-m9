@@ -183,14 +183,12 @@
 			qcom,iterm-ma = <50>;
 			qcom,eoc-ibat-thre-ma = <280>;
 			qcom,adjust-fastchg-thr-mv = <4260>;
-			qcom,high-fastchg-current-ma = <2500>;
-			qcom,fastchg-current-ma = <1850>;
 			qcom,float-voltage-mv = <4400>;
 			qcom,float-voltage-cmp-mv = <4060>;
 			qcom,iusb-max-ma = <1500>;
 			qcom,charging-timeout-mins = <768>;
 			qcom,precharging-timeout-mins = <24>;
-			qcom,warm-ibatmax = <1200>;
+			qcom,warm-ibatmax = <250>;
 			qcom,resume-delta-mv = <100>;
 			qcom,chg-inhibit-fg;
 			qcom,dc-psy-type = "Mains";
@@ -305,7 +303,7 @@
 			#size-cells = <1>;
 			qcom,resume-soc = <98>;
 			status = "okay";
-			qcom,warm-bat-decidegc = <480>;
+			qcom,warm-bat-decidegc = <460>;
 			qcom,cool-bat-decidegc = <100>;
 			qcom,hot-bat-decidegc = <550>;
 			qcom,cold-bat-decidegc = <0>;

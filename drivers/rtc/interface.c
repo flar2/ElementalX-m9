@@ -355,7 +355,11 @@ static int __rtc_set_alarm(struct rtc_device *rtc, struct rtc_wkalrm *alarm)
 	else if (!rtc->ops->set_alarm)
 		err = -EINVAL;
 	else {
+			if (system_state == SYSTEM_POWER_OFF)
+				goto shutdown_process;
+
 #ifdef CONFIG_HTC_PNPMGR
+
 		if (!strcmp(htc_get_bootmode(), "offmode_charging")) {
 			if (alarm->time.tm_min > offmode_alarm_min) {
 				rtc_tm_to_time(&alarm->time, &tmp);
@@ -411,6 +415,9 @@ static int __rtc_set_alarm(struct rtc_device *rtc, struct rtc_wkalrm *alarm)
 			pr_info("[RTC] screeoff alarm group to: %02d:%02d:%02d\n", alarm->time.tm_hour, alarm->time.tm_min, alarm->time.tm_sec);
 		}
 #endif
+
+shutdown_process:
+
 		err = rtc->ops->set_alarm(rtc->dev.parent, alarm);
 	}
 

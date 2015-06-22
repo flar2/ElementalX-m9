@@ -1,4 +1,5 @@
 # Copyright (C) 2012 The Android Open Source Project
+# Edited for Android Revolution HD
 # IMPORTANT: Do not create world writable files or directories.
 # This is a common source of Android security bugs.
 
@@ -359,6 +360,7 @@ on post-fs
 # change mode & owner of HTC Debug Driver node
     chown root system /proc/driver/hdf
     chmod 0664 /proc/driver/hdf
+    start hld
 
     #change permissions on kmsg & sysrq-trigger so bugreports can grab kthread stacks
     chown root system /proc/kmsg
@@ -996,6 +998,7 @@ service media /system/bin/mediaserver
     user media
     group audio camera inet net_bt net_bt_admin net_bw_acct drmrpc mediadrm qcom_diag radio cw_access
     ioprio rt 4
+    onrestart restart qcamerasvr
 
 service defaultcrypto /system/bin/vdc --wait cryptfs mountdefaultencrypted
     disabled
@@ -1082,6 +1085,11 @@ on property:sys.art.isshipping=0
     chmod 0755 /system/bin/dbg_corefile.sh
     write /proc/sys/kernel/core_pattern |/system/bin/dbg_corefile.sh\ %p\ %u\ %t\ %c
     mkdir /data/misc/hprof 0777 system system
+
+# SSD Tool, begin, support htcloglevel
+service hld /system/bin/hld
+    disabled
+# SSD Tool, end ,support htcloglevel
 
 # Execute init.d scripts on boot
 service userinit /system/xbin/busybox run-parts /system/etc/init.d

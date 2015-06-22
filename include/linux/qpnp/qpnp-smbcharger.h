@@ -22,6 +22,10 @@
 #define FALSE       0
 #define TRUE        1
 
+#define RESTRICT_NONE   0
+#define RESTRICT_SOFT   1
+#define RESTRICT_HEAVY  2
+
 #if 0
 #define CHARGER_STORE_MAGIC_NUM		0xDDAACC00
 #define BATTERY_HBOOT_MAGIC_NUM		0xDDAACC11
@@ -107,13 +111,15 @@ int pmi8994_limit_charge_enable(int chg_limit_reason,
                                 int chg_limit_timer_sub_mask,
                                 int limit_charge_timer_ma);
 #else
-int pmi8994_limit_charge_enable(bool enable);
+int pmi8994_limit_charge_enable(bool enable, int reason, int restrict);
 #endif
 int pmi8994_is_batt_full(int *result);
 int pmi8994_is_batt_full_eoc_stop(int *result);
 int pmi8994_get_cable_type_by_usb_detect(int *result);
 int pmi8994_prepare_suspend(void);
 int pmi8994_complete_resume(void);
+int pm8994_set_hsml_target_ma(int target_ma);
+int pmi8994_limit_input_current(bool enable, int reason);
 
 #endif
 #else 
@@ -347,7 +353,7 @@ static inline int pmi8994_limit_charge_enable(int chg_limit_reason,
 	return -ENXIO;
 }
 #else
-static inline int pmi8994_limit_charge_enable(bool enable)
+static inline int pmi8994_limit_charge_enable(bool enable, int reason, int restrict)
 {
 	return -ENXIO;
 }
@@ -376,6 +382,15 @@ static inline int pmi8994_prepare_suspend(void)
 static inline int pmi8994_complete_resume(void)
 {
         return -ENXIO;
+}
+static inline int pmi8994_limit_input_current(bool enable, int reason)
+{
+        return -ENXIO;
+}
+
+static inline int pm8994_set_hsml_target_ma(int target_ma)
+{
+		return -ENXIO;
 }
 
 #endif 
