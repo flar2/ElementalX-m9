@@ -286,7 +286,7 @@ static ssize_t vib_strength_dump(struct device *dev,
 static DEVICE_ATTR(vib_strength, (S_IWUSR|S_IRUGO),
 	vib_strength_show, vib_strength_dump);
 
-extern struct kobject *android_touch_kobj;
+static struct kobject *sweep2sleep_kobj;
 
 static int __init sweep2sleep_init(void)
 {
@@ -320,12 +320,16 @@ static int __init sweep2sleep_init(void)
 	if (rc)
 		pr_err("%s: Failed to register s2s_input_handler\n", __func__);
 
+	sweep2sleep_kobj = kobject_create_and_add("sweep2sleep", NULL) ;
+	if (sweep2sleep_kobj == NULL) {
+		pr_warn("%s: sweep2sleep_kobj failed\n", __func__);
+	}
 
-	rc = sysfs_create_file(android_touch_kobj, &dev_attr_sweep2sleep.attr);
+	rc = sysfs_create_file(sweep2sleep_kobj, &dev_attr_sweep2sleep.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for sweep2sleep\n", __func__);
 
-	rc = sysfs_create_file(android_touch_kobj, &dev_attr_vib_strength.attr);
+	rc = sysfs_create_file(sweep2sleep_kobj, &dev_attr_vib_strength.attr);
 	if (rc)
 		pr_err("%s: sysfs_create_file failed for vib_strength\n", __func__);
 
@@ -340,6 +344,7 @@ err_alloc_dev:
 
 static void __exit sweep2sleep_exit(void)
 {
+	kobject_del(sweep2sleep_kobj);
 	input_unregister_handler(&s2s_input_handler);
 	destroy_workqueue(s2s_input_wq);
 	input_unregister_device(sweep2sleep_pwrdev);
