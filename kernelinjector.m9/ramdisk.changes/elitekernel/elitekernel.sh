@@ -10,7 +10,7 @@ mount -o remount,ro /system
 sync
 
 # disable KSM and use zcache instead
-#echo 0 > /sys/kernel/mm/ksm/run
+echo 0 > /sys/kernel/mm/ksm/run
 
 # startup time tweaks:
 

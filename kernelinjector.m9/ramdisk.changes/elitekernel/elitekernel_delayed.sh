@@ -20,16 +20,25 @@ echo 960000 > /sys/power/pnpmgr/cluster/little/cpu0/thermal_freq
 echo 960000 > /sys/power/pnpmgr/thermal/thermal_final_lcpu
 echo 1248000 > /sys/power/pnpmgr/cluster/big/cpu0/thermal_freq
 echo 1248000 > /sys/power/pnpmgr/thermal/thermal_final_bcpu
-echo 510000 > /sys/power/pnpmgr/thermal/thermal_final_gpu
+echo 600000 > /sys/power/pnpmgr/thermal/thermal_final_gpu
 echo 0 > /sys/power/pnpmgr/touch_boost
 echo 0 > /sys/power/pnpmgr/touch_boost_duration
 echo 0 > /sys/power/pnpmgr/long_duration_touch_boost
-#echo 170 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
-echo 226 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
+echo 104 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
+
+echo 40 > /sys/devices/system/cpu/cpu0/sched_budget
+echo 40 > /sys/devices/system/cpu/cpu1/sched_budget
+echo 40 > /sys/devices/system/cpu/cpu2/sched_budget
+echo 40 > /sys/devices/system/cpu/cpu3/sched_budget
+
+echo 100 > /sys/devices/system/cpu/cpu4/sched_budget
+echo 100 > /sys/devices/system/cpu/cpu5/sched_budget
+echo 100 > /sys/devices/system/cpu/cpu6/sched_budget
+echo 100 > /sys/devices/system/cpu/cpu7/sched_budget
 
 # set vm tweaks
-sysctl -w vm.min_free_kbytes=16384
-sysctl -w vm.vfs_cache_pressure=30
+sysctl -w vm.min_free_kbytes=8192
+sysctl -w vm.vfs_cache_pressure=20
 sysctl -w vm.swappiness=10
 sysctl -w vm.page-cluster=0
 sysctl -w vm.dirty_expire_centisecs=2400
