@@ -24,7 +24,16 @@ echo 600000 > /sys/power/pnpmgr/thermal/thermal_final_gpu
 echo 0 > /sys/power/pnpmgr/touch_boost
 echo 0 > /sys/power/pnpmgr/touch_boost_duration
 echo 0 > /sys/power/pnpmgr/long_duration_touch_boost
+
+# B0110 L1000 (3:2)
 echo 104 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
+
+# B1110 L1000 (3:1)
+# echo 232 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
+# B1010 L1010 (2:2)
+# echo 170 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
+# B0000 L0000 (4:4)
+# echo 0 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
 
 echo 40 > /sys/devices/system/cpu/cpu0/sched_budget
 echo 40 > /sys/devices/system/cpu/cpu1/sched_budget
