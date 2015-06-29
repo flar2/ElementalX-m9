@@ -1844,6 +1844,8 @@ static int zcache_init(void)
 #ifdef CONFIG_ZCACHE_MODULE
 	zcache_enabled = 1;
 #endif
+
+	zcache_enabled = 1;
 	if (ramster_enabled) {
 		namestr = "ramster";
 		ramster_register_pamops(&zcache_pamops);
