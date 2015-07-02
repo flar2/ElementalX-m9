@@ -1291,10 +1291,8 @@ static void update_cpu_busy_time(struct task_struct *p, struct rq *rq,
 		}
 
 		delta = window_start - mark_start;
-		if (delta > window_size) {
+		if (delta > window_size)
 			delta = window_size;
-			rq->prev_runnable_sum = 0;
-		}
 		delta = scale_exec_time(delta, rq);
 		rq->prev_runnable_sum += delta;
 
