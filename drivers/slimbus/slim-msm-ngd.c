@@ -515,7 +515,8 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 			dev->err = msm_slim_connect_pipe_port(dev, wbuf[1]);
 		else {
 			writel_relaxed(0, PGD_PORT(PGD_PORT_CFGn,
-					(wbuf[1] + dev->port_b), dev->ver));
+					(dev->pipes[wbuf[1]].port_b),
+						dev->ver));
 			mutex_unlock(&dev->tx_lock);
 			msm_slim_put_ctrl(dev);
 			return 0;
@@ -525,7 +526,7 @@ static int ngd_xfer_msg(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 			goto ngd_xfer_err;
 		}
 		
-		puc[1] += dev->port_b;
+		puc[1] = (u8)dev->pipes[wbuf[1]].port_b;
 	}
 	dev->err = 0;
 	txn_mc = txn->mc;
@@ -744,6 +745,8 @@ static int ngd_allocbw(struct slim_device *sb, int *subfrmc, int *clkgear)
 			wbuf[txn.len++] = (u8) (slc->prop.dataf << 5) |
 					(sb->laddr & 0x1f);
 			wbuf[txn.len] = slc->seglen;
+			if (slc->srch && slc->prop.prot == SLIM_PUSH)
+				slc->prop.prot = SLIM_PULL;
 			if (slc->coeff == SLIM_COEFF_3)
 				wbuf[txn.len] |= 1 << 5;
 			wbuf[txn.len++] |= slc->prop.auxf << 6;
@@ -1008,6 +1011,7 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 	int timeout, ret = 0;
 	enum msm_ctrl_state cur_state = dev->state;
 	u32 laddr;
+	u32 rx_msgq;
 	u32 ngd_int = (NGD_INT_TX_NACKED_2 |
 			NGD_INT_MSG_BUF_CONTE | NGD_INT_MSG_TX_INVAL |
 			NGD_INT_IE_VE_CHG | NGD_INT_DEV_ERR |
@@ -1063,6 +1067,13 @@ static int ngd_slim_power_up(struct msm_slim_ctrl *dev, bool mdm_restart)
 				&dev->use_tx_msgqs);
 	writel_relaxed(ngd_int, dev->base + NGD_INT_EN +
 				NGD_BASE(dev->ctrl.nr, dev->ver));
+
+	rx_msgq = readl_relaxed(ngd + NGD_RX_MSGQ_CFG);
+	writel_relaxed(rx_msgq|SLIM_RX_MSGQ_TIMEOUT_VAL,
+					ngd + NGD_RX_MSGQ_CFG);
+	
+	mb();
+
 	writel_relaxed(1, dev->base + NGD_BASE(dev->ctrl.nr, dev->ver));
 	
 	mb();
@@ -1145,24 +1156,28 @@ static int ngd_slim_rx_msgq_thread(void *data)
 			ngd_slim_rx(dev, (u8 *)buffer);
 			continue;
 		}
-		ret = msm_slim_rx_msgq_get(dev, buffer, index);
-		if (ret) {
-			SLIM_ERR(dev, "rx_msgq_get() failed 0x%x\n", ret);
-			continue;
-		}
+		do {
+			ret = msm_slim_rx_msgq_get(dev, buffer, index);
+			if (ret) {
+				SLIM_ERR(dev, "rx_msgq_get() failed 0x%x\n",
+									ret);
+				break;
+			}
 
-		
-		if (index++ == 0) {
-			msg_len = *buffer & 0x1F;
-			mt = (buffer[0] >> 5) & 0x7;
-			mc = (buffer[0] >> 8) & 0xff;
-			dev_dbg(dev->dev, "MC: %x, MT: %x\n", mc, mt);
-		}
-		if ((index * 4) >= msg_len) {
+			
+			if (index++ == 0) {
+				msg_len = *buffer & 0x1F;
+				mt = (buffer[0] >> 5) & 0x7;
+				mc = (buffer[0] >> 8) & 0xff;
+				dev_dbg(dev->dev, "MC: %x, MT: %x\n", mc, mt);
+			}
+			msg_len = (msg_len < 4) ? 0 : (msg_len - 4);
+		} while (msg_len);
+		if (!msg_len) {
 			index = 0;
 			ngd_slim_rx(dev, (u8 *)buffer);
-		} else
-			continue;
+		}
+		continue;
 	}
 	return 0;
 }

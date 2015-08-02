@@ -68,7 +68,7 @@ static int lsm_mux_slim_port;
 static int slim0_rx_aanc_fb_port;
 static int msm_route_ec_ref_rx = 8; 
 static uint32_t voc_session_id = ALL_SESSION_VSID;
-static int msm_route_ext_ec_ref = AFE_PORT_INVALID;
+static int msm_route_ext_ec_ref[MAX_VOC_SESSIONS] = { AFE_PORT_INVALID }; 
 static bool is_custom_stereo_on;
 static bool is_ds2_on;
 
@@ -688,7 +688,7 @@ void msm_pcm_routing_reg_psthr_stream(int fedai_id, int dspst_id,
 	mutex_unlock(&routing_lock);
 }
 
-int msm_pcm_routing_reg_phy_compr_stream(int fe_id, bool perf_mode,
+int msm_pcm_routing_reg_phy_compr_stream(int fe_id, int perf_mode,
 					  int dspst_id, int stream_type,
 					  uint32_t compr_passthr_mode)
 {
@@ -922,7 +922,7 @@ int msm_pcm_routing_reg_phy_stream(int fedai_id, int perf_mode,
 	return 0;
 }
 
-int msm_pcm_routing_reg_phy_stream_v2(int fedai_id, bool perf_mode,
+int msm_pcm_routing_reg_phy_stream_v2(int fedai_id, int perf_mode,
 				      int dspst_id, int stream_type,
 				      struct msm_pcm_routing_evt event_info)
 {
@@ -1811,14 +1811,32 @@ static const struct snd_kcontrol_new ext_ec_ref_mux_ul9 =
 	SOC_DAPM_ENUM_EXT("AUDIO_REF_EC_UL9 MUX Mux",
 		msm_route_ec_ref_rx_enum[0],
 		msm_routing_ec_ref_rx_get, msm_routing_ec_ref_rx_put);
-
 static int msm_routing_ext_ec_get(struct snd_kcontrol *kcontrol,
 				  struct snd_ctl_elem_value *ucontrol)
 {
-	pr_debug("%s: ext_ec_ref_rx  = %x\n", __func__, msm_route_ext_ec_ref);
+	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
+	u32 session_id = 0;
+	int voc_idx = 0;
+
+	if (e->reg == MSM_FRONTEND_DAI_CS_VOICE)
+		session_id = voc_get_session_id(VOICE_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_VOLTE)
+		session_id = voc_get_session_id(VOLTE_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_VOWLAN)
+		session_id = voc_get_session_id(VOWLAN_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_VOICE2)
+		session_id = voc_get_session_id(VOICE2_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_QCHAT)
+		session_id = voc_get_session_id(QCHAT_SESSION_NAME);
+	else
+		session_id = voc_get_session_id(VOIP_SESSION_NAME);
+
+	voc_idx = voice_get_idx_for_session(session_id);
+
+	pr_debug("%s: ext_ec_ref_rx  = %x\n", __func__, msm_route_ext_ec_ref[voc_idx]);
 
 	mutex_lock(&routing_lock);
-	ucontrol->value.integer.value[0] = msm_route_ext_ec_ref;
+	ucontrol->value.integer.value[0] = msm_route_ext_ec_ref[voc_idx];
 	mutex_unlock(&routing_lock);
 	return 0;
 }
@@ -1833,33 +1851,51 @@ static int msm_routing_ext_ec_put(struct snd_kcontrol *kcontrol,
 	int ret = 0;
 	bool state = false;
 
-	pr_debug("%s: msm_route_ec_ref_rx = %d value = %ld\n",
-		 __func__, msm_route_ext_ec_ref,
+	u32 session_id = 0;
+	int voc_idx = 0;
+
+	if (e->reg == MSM_FRONTEND_DAI_CS_VOICE)
+		session_id = voc_get_session_id(VOICE_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_VOLTE)
+		session_id = voc_get_session_id(VOLTE_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_VOWLAN)
+		session_id = voc_get_session_id(VOWLAN_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_VOICE2)
+		session_id = voc_get_session_id(VOICE2_SESSION_NAME);
+	else if (e->reg == MSM_FRONTEND_DAI_QCHAT)
+		session_id = voc_get_session_id(QCHAT_SESSION_NAME);
+	else
+		session_id = voc_get_session_id(VOIP_SESSION_NAME);
+
+	voc_idx = voice_get_idx_for_session(session_id);
+
+	pr_debug("%s: voc_idx %d msm_route_ec_ref_rx = %d value = %ld\n",
+		 __func__, voc_idx, msm_route_ext_ec_ref[voc_idx],
 		 ucontrol->value.integer.value[0]);
 
 	mutex_lock(&routing_lock);
 	switch (ucontrol->value.integer.value[0]) {
 	case EC_PORT_ID_PRIMARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_PRIMARY_MI2S_TX;
+		msm_route_ext_ec_ref[voc_idx] = AFE_PORT_ID_PRIMARY_MI2S_TX;
 		state = true;
 		break;
 	case EC_PORT_ID_SECONDARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_SECONDARY_MI2S_TX;
+		msm_route_ext_ec_ref[voc_idx] = AFE_PORT_ID_SECONDARY_MI2S_TX;
 		state = true;
 		break;
 	case EC_PORT_ID_TERTIARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_TERTIARY_MI2S_TX;
+		msm_route_ext_ec_ref[voc_idx] = AFE_PORT_ID_TERTIARY_MI2S_TX;
 		state = true;
 		break;
 	case EC_PORT_ID_QUATERNARY_MI2S_TX:
-		msm_route_ext_ec_ref = AFE_PORT_ID_QUATERNARY_MI2S_TX;
+		msm_route_ext_ec_ref[voc_idx] = AFE_PORT_ID_QUATERNARY_MI2S_TX;
 		state = true;
 		break;
 	default:
-		msm_route_ext_ec_ref = AFE_PORT_INVALID;
+		msm_route_ext_ec_ref[voc_idx] = AFE_PORT_INVALID;
 		break;
 	}
-	if (!voc_set_ext_ec_ref(msm_route_ext_ec_ref, state)) {
+	if (!voc_set_ext_ec_ref(msm_route_ext_ec_ref[voc_idx], state, voc_idx)) {
 		mutex_unlock(&routing_lock);
 		snd_soc_dapm_mux_update_power(widget, kcontrol, mux, e);
 	} else {
@@ -1874,13 +1910,28 @@ static const char * const ext_ec_ref_rx[] = {"NONE", "PRI_MI2S_TX",
 					     "QUAT_MI2S_TX"};
 
 static const struct soc_enum msm_route_ext_ec_ref_rx_enum[] = {
-	SOC_ENUM_SINGLE_EXT(5, ext_ec_ref_rx),
+	SOC_ENUM_SINGLE(MSM_FRONTEND_DAI_CS_VOICE, 0, ARRAY_SIZE(ext_ec_ref_rx), ext_ec_ref_rx),
+	SOC_ENUM_SINGLE(MSM_FRONTEND_DAI_VOIP, 0, ARRAY_SIZE(ext_ec_ref_rx), ext_ec_ref_rx),
+	SOC_ENUM_SINGLE(MSM_FRONTEND_DAI_VOLTE, 0, ARRAY_SIZE(ext_ec_ref_rx), ext_ec_ref_rx),
+	SOC_ENUM_SINGLE(MSM_FRONTEND_DAI_VOICE2, 0, ARRAY_SIZE(ext_ec_ref_rx), ext_ec_ref_rx),
+	SOC_ENUM_SINGLE(MSM_FRONTEND_DAI_QCHAT, 0, ARRAY_SIZE(ext_ec_ref_rx), ext_ec_ref_rx),
+	SOC_ENUM_SINGLE(MSM_FRONTEND_DAI_VOWLAN, 0, ARRAY_SIZE(ext_ec_ref_rx), ext_ec_ref_rx),
 };
 
-static const struct snd_kcontrol_new voc_ext_ec_mux =
+static const struct snd_kcontrol_new voc_ext_ec_mux[] = {
 	SOC_DAPM_ENUM_EXT("VOC_EXT_EC MUX Mux", msm_route_ext_ec_ref_rx_enum[0],
-			  msm_routing_ext_ec_get, msm_routing_ext_ec_put);
-
+			  msm_routing_ext_ec_get, msm_routing_ext_ec_put),
+	SOC_DAPM_ENUM_EXT("VOIP_EXT_EC MUX Mux", msm_route_ext_ec_ref_rx_enum[1],
+			  msm_routing_ext_ec_get, msm_routing_ext_ec_put),
+	SOC_DAPM_ENUM_EXT("VOLTE_EXT_EC MUX Mux", msm_route_ext_ec_ref_rx_enum[2],
+			  msm_routing_ext_ec_get, msm_routing_ext_ec_put),
+	SOC_DAPM_ENUM_EXT("VOICE2_EXT_EC MUX Mux", msm_route_ext_ec_ref_rx_enum[3],
+			  msm_routing_ext_ec_get, msm_routing_ext_ec_put),
+	SOC_DAPM_ENUM_EXT("QCHAT_EXT_EC MUX Mux", msm_route_ext_ec_ref_rx_enum[4],
+			  msm_routing_ext_ec_get, msm_routing_ext_ec_put),
+	SOC_DAPM_ENUM_EXT("VOWLAN_EXT_EC MUX Mux", msm_route_ext_ec_ref_rx_enum[5],
+			  msm_routing_ext_ec_get, msm_routing_ext_ec_put),
+};
 
 static const struct snd_kcontrol_new pri_i2s_rx_mixer_controls[] = {
 	SOC_SINGLE_EXT("MultiMedia1", MSM_BACKEND_DAI_PRI_I2S_RX ,
@@ -2826,6 +2877,9 @@ static const struct snd_kcontrol_new mmul5_mixer_controls[] = {
 	MSM_FRONTEND_DAI_MULTIMEDIA5, 1, 0, msm_routing_get_audio_mixer,
 	msm_routing_put_audio_mixer),
 	SOC_SINGLE_EXT("PRI_MI2S_TX", MSM_BACKEND_DAI_PRI_MI2S_TX,
+	MSM_FRONTEND_DAI_MULTIMEDIA5, 1, 0, msm_routing_get_audio_mixer,
+	msm_routing_put_audio_mixer),
+	SOC_SINGLE_EXT("TERT_MI2S_TX", MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
 	MSM_FRONTEND_DAI_MULTIMEDIA5, 1, 0, msm_routing_get_audio_mixer,
 	msm_routing_put_audio_mixer),
 };
@@ -4691,9 +4745,18 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 				&slim0_rx_vi_fb_lch_mux),
 	SND_SOC_DAPM_MUX("SLIM0_RX_VI_FB_RCH_MUX", SND_SOC_NOPM, 0, 0,
 				&slim0_rx_vi_fb_rch_mux),
-
 	SND_SOC_DAPM_MUX("VOC_EXT_EC MUX", SND_SOC_NOPM, 0, 0,
-			 &voc_ext_ec_mux),
+			 &voc_ext_ec_mux[0]),
+	SND_SOC_DAPM_MUX("VOIP_EXT_EC MUX", SND_SOC_NOPM, 0, 0,
+			 &voc_ext_ec_mux[1]),
+	SND_SOC_DAPM_MUX("VOLTE_EXT_EC MUX", SND_SOC_NOPM, 0, 0,
+			 &voc_ext_ec_mux[2]),
+	SND_SOC_DAPM_MUX("VOICE2_EXT_EC MUX", SND_SOC_NOPM, 0, 0,
+			 &voc_ext_ec_mux[3]),
+	SND_SOC_DAPM_MUX("QCHAT_EXT_EC MUX", SND_SOC_NOPM, 0, 0,
+			 &voc_ext_ec_mux[4]),
+	SND_SOC_DAPM_MUX("VOWLAN_EXT_EC MUX", SND_SOC_NOPM, 0, 0,
+			 &voc_ext_ec_mux[5]),
 	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL1 MUX", SND_SOC_NOPM, 0, 0,
 		&ext_ec_ref_mux_ul1),
 	SND_SOC_DAPM_MUX("AUDIO_REF_EC_UL2 MUX", SND_SOC_NOPM, 0, 0,
@@ -4950,6 +5013,7 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"MultiMedia1 Mixer", "PRI_MI2S_TX", "PRI_MI2S_TX"},
 	{"MultiMedia6 Mixer", "SLIM_0_TX", "SLIMBUS_0_TX"},
 	{"MultiMedia6 Mixer", "TERT_MI2S_TX", "TERT_MI2S_TX"},
+	{"MultiMedia5 Mixer", "TERT_MI2S_TX", "TERT_MI2S_TX"},
 	{"MultiMedia6 Mixer", "PRI_MI2S_TX", "PRI_MI2S_TX"},
 	{"MultiMedia6 Mixer", "AUX_PCM_UL_TX", "AUX_PCM_TX"},
 	{"MultiMedia6 Mixer", "SEC_AUX_PCM_UL_TX", "SEC_AUX_PCM_TX"},
@@ -5202,10 +5266,30 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"VOC_EXT_EC MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
 	{"VOC_EXT_EC MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
 	{"CS-VOICE_UL1", NULL, "VOC_EXT_EC MUX"},
-	{"VOIP_UL", NULL, "VOC_EXT_EC MUX"},
-	{"VoLTE_UL", NULL, "VOC_EXT_EC MUX"},
-	{"VOICE2_UL", NULL, "VOC_EXT_EC MUX"},
-	{"VoWLAN_UL", NULL, "VOC_EXT_EC MUX"},
+
+	{"VOIP_EXT_EC MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
+	{"VOIP_EXT_EC MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
+	{"VOIP_EXT_EC MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
+	{"VOIP_EXT_EC MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
+	{"VOIP_UL", NULL, "VOIP_EXT_EC MUX"},
+
+	{"VOLTE_EXT_EC MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
+	{"VOLTE_EXT_EC MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
+	{"VOLTE_EXT_EC MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
+	{"VOLTE_EXT_EC MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
+	{"VoLTE_UL", NULL, "VOLTE_EXT_EC MUX"},
+
+	{"VOICE2_EXT_EC MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
+	{"VOICE2_EXT_EC MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
+	{"VOICE2_EXT_EC MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
+	{"VOICE2_EXT_EC MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
+	{"VOICE2_UL", NULL, "VOICE2_EXT_EC MUX"},
+
+	{"VOWLAN_EXT_EC MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
+	{"VOWLAN_EXT_EC MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
+	{"VOWLAN_EXT_EC MUX", "TERT_MI2S_TX" , "TERT_MI2S_TX"},
+	{"VOWLAN_EXT_EC MUX", "QUAT_MI2S_TX" , "QUAT_MI2S_TX"},
+	{"VoWLAN_UL", NULL, "VOWLAN_EXT_EC MUX"},
 
 	{"AUDIO_REF_EC_UL1 MUX", "PRI_MI2S_TX" , "PRI_MI2S_TX"},
 	{"AUDIO_REF_EC_UL1 MUX", "SEC_MI2S_TX" , "SEC_MI2S_TX"},
@@ -5668,7 +5752,7 @@ static int msm_pcm_routing_close(struct snd_pcm_substream *substream)
 					break;
 			fdai->be_srate = bedai->sample_rate;
 			port_id = bedai->port_id;
-			topology= adm_get_topology_for_port_copp_idx(port_id,
+			topology = adm_get_topology_for_port_copp_idx(port_id,
 								     idx);
 			adm_close(bedai->port_id, fdai->perf_mode, idx);
 			pr_debug("%s: copp:%ld,idx bit fe:%d, type:%d,be:%d topology=0x%x\n",

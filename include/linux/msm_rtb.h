@@ -27,6 +27,8 @@ enum logk_event_type {
 #if defined(CONFIG_HTC_DEBUG_RTB)
 	
 	LOGK_DIE = 20,
+	LOGK_INITCALL = 21,
+	LOGK_SOFTIRQ = 22,
 #endif 
 };
 
@@ -39,6 +41,21 @@ struct msm_rtb_platform_data {
 #if defined(CONFIG_MSM_RTB)
 #if defined(CONFIG_HTC_DEBUG_RTB)
 void msm_rtb_disable(void);
+#endif
+
+
+#ifdef CONFIG_HTC_EARLY_RTB
+
+enum early_rtb_status {
+	EARLY_RTB_INIT,
+	EARLY_RTB_RUNNING,
+	EARLY_RTB_STOP,
+	EARLY_RTB_ERROR,
+};
+
+int htc_early_rtb_init(void);
+int htc_early_rtb_deinit(void);
+
 #endif
 
 int uncached_logk_pc(enum logk_event_type log_type, void *caller,

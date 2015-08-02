@@ -268,6 +268,9 @@ struct sensorb_cfg_data {
 		struct fuse_id fuse;
 		
 	} cfg;
+	
+	int module_type;    
+	
 };
 
 struct csid_cfg_data {
@@ -447,6 +450,7 @@ enum msm_sensor_cfg_type_t {
 	CFG_CANCEL_AUTOFOCUS,
 	CFG_SET_STREAM_TYPE,
 	CFG_I2C_IOCTL_R_OTP,
+	CFG_I2C_IOCTL_R_EMMC,
 };
 
 enum msm_actuator_cfg_type_t {
@@ -796,6 +800,9 @@ struct sensorb_cfg_data32 {
 		struct fuse_id fuse;
 		
 	} cfg;
+	
+	int module_type;    
+	
 };
 
 struct msm_ois_params_t32 {

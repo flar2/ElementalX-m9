@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1272,17 +1272,6 @@
 				bias-disable; /* No PULL */
 			};
 		};
-		mcugpio_int {
-			qcom,pins = <&gp 42>, <&gp 91>;
-			qcom,num-grp-pins = <2>;
-			qcom,pin-func = <0>;
-			label = "mcugpio";
-			mcu_init: mcu_init {
-				drive-strength = <2>;
-				bias-disable;
-				input-enable;
-			};
-		};
 
 		cam_sensor_mclk0_suspend {
 			/* MCLK0 */
@@ -1519,6 +1508,11 @@
 				bias-disable;
 				/* HTC_WIFI_END */
 			};
+
+			pcie1_wake_sleep: pcie1_wake_sleep {
+				drive-strength = <2>;
+				bias-disable;
+			};
 		};
 
         /* HTC_WIFI_START */
@@ -1572,23 +1566,25 @@
 				bias-pull-down;		/* Pull Down */
 				input-disable;
 			};
-
-			pcie1_wake_sleep: pcie1_wake_sleep {
-				drive-strength = <2>;
-				bias-disable;
-			};
 		};
 
-		pmx_sec_aux_pcm {
+		pmx_sec_aux_pcm_sleep {
 			qcom,pins = <&gp 79>, <&gp 80>, <&gp 82>;
 			qcom,num-grp-pins = <3>;
-			qcom,pin-func = <1>;
-			label = "sec_aux_pcm";
+			qcom,pin-func = <0>;
+			label = "pmx_sec_aux_pcm_sleep";
 			sec_aux_pcm_sleep: sec_aux_pcm_sleep {
 				drive-strength = <8>;	/* 8 mA */
 				bias-pull-down;		/* PULL DOWN */
 				input-disable;
 			};
+		};
+
+		pmx_sec_aux_pcm_active {
+			qcom,pins = <&gp 79>, <&gp 80>, <&gp 82>;
+			qcom,num-grp-pins = <3>;
+			qcom,pin-func = <1>;
+			label = "pmx_sec_aux_pcm_active";
 			sec_aux_pcm_active: sec_aux_pcm_active {
 				drive-strength = <8>;	/* 8 mA */
 				bias-disable;		/* NO PULL */
@@ -1596,16 +1592,23 @@
 			};
 		};
 
-		pmx_sec_aux_pcm_din {
+		pmx_sec_aux_pcm_din_sleep {
 			qcom,pins = <&gp 81>;
 			qcom,num-grp-pins = <1>;
-			qcom,pin-func = <1>;
-			label = "sec_aux_pcm_din";
+			qcom,pin-func = <0>;
+			label = "pmx_sec_aux_pcm_din_sleep";
 			sec_aux_pcm_din_sleep: sec_aux_pcm_din_sleep {
 				drive-strength = <8>;	/* 8 mA */
 				bias-pull-down;		/* PULL DOWN */
 				input-disable;
 			};
+		};
+
+		pmx_sec_aux_pcm_din_active {
+			qcom,pins = <&gp 81>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <1>;
+			label = "pmx_sec_aux_pcm_din_active";
 			sec_aux_pcm_din_active: sec_aux_pcm_din_active {
 				drive-strength = <8>;	/* 8 mA */
 				bias-disable;		/* NO PULL */
@@ -1630,15 +1633,22 @@
 		};
 		/* htc audio -- */
 
-		pmx_pri_mi2s {
+		pmx_pri_mi2s_sleep {
+			qcom,pins = <&gp 65>, <&gp 66>;
+			qcom,num-grp-pins = <2>;
+			qcom,pin-func = <1>;            /* HTC GPIO Table: A */
+			label = "pri_mi2s_sleep";
+			pri_mi2s_sleep: pri_mi2s_sleep {
+				drive-strength = <2>;	/* 2 mA */
+				bias-disable;		/* HTC GPIO Table: NO PULL */
+			};
+		};
+
+		pmx_pri_mi2s_active {
 			qcom,pins = <&gp 65>, <&gp 66>;
 			qcom,num-grp-pins = <2>;
 			qcom,pin-func = <1>;
-			label = "pri_mi2s";
-			pri_mi2s_sleep: pri_mi2s_sleep {
-				drive-strength = <2>;	/* 2 mA */
-				bias-disable;		/* NO PULL */
-			};
+			label = "pri_mi2s_active";
 			pri_mi2s_active: pri_mi2s_active {
 				drive-strength = <2>;	/* 2 mA */
 				bias-disable;		/* NO PULL */
@@ -1646,15 +1656,22 @@
 			};
 		};
 
-		pmx_pri_mi2s_sd0 {
+		pmx_pri_mi2s_sd0_sleep {
+			qcom,pins = <&gp 67>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <1>;            /* HTC GPIO Table: A */
+			label = "pri_mi2s_sd0_sleep";
+			pri_mi2s_sd0_sleep: pri_mi2s_sd0_sleep {
+				drive-strength = <2>;	/* 2 mA */
+				bias-disable;		/* HTC GPIO Table: NO PULL */
+			};
+		};
+
+		pmx_pri_mi2s_sd0_active {
 			qcom,pins = <&gp 67>;
 			qcom,num-grp-pins = <1>;
 			qcom,pin-func = <1>;
-			label = "pri_mi2s_sd0";
-			pri_mi2s_sd0_sleep: pri_mi2s_sd0_sleep {
-				drive-strength = <2>;	/* 2 mA */
-				bias-disable;		/* NO PULL */
-			};
+			label = "pri_mi2s_sd0_active";
 			pri_mi2s_sd0_active: pri_mi2s_sd0_active {
 				drive-strength = <2>;	/* 2 mA */
 				bias-disable;		/* NO PULL */
@@ -1859,18 +1876,8 @@
 			fullseg94_default: fullseg94_default {
 				drive-strength = <2>;
 				bias-disable;		/* NO PULL */
-				output-high;
+				output-low;
 				input-disable;
-			};
-		};
-		fullseg_tsif {
-			qcom,pins = <&gp 89>,<&gp 90>,<&gp 110>,<&gp 91>;
-			qcom,num-grp-pins = <3>;
-			qcom,pin-func = <1>;
-			label = "fullseg_tsif";
-			tsif_default: tsif_default {
-				drive-strength = <8>;
-				bias-disable;		/* NO PULL */
 			};
 		};
 		//-- DTV_PCN1000007_HTC_GPIO_DEFINE

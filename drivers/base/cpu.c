@@ -300,7 +300,6 @@ static ssize_t __ref store_sched_budget(struct device *dev,
 	return err;
 }
 
-
 static ssize_t show_sched_prefer_idle(struct device *dev,
 		 struct device_attribute *attr, char *buf)
 {
@@ -318,7 +317,6 @@ static ssize_t show_sched_prefer_idle(struct device *dev,
 	return rc;
 }
 
-
 static ssize_t __ref store_sched_prefer_idle(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf, size_t count)
@@ -332,7 +330,6 @@ static ssize_t __ref store_sched_prefer_idle(struct device *dev,
 		return err;
 
 	err = sched_set_cpu_prefer_idle(cpuid, prefer_idle);
-
 	if (err >= 0)
 		err = count;
 
@@ -502,7 +499,7 @@ int __cpuinit register_cpu(struct cpu *cpu, int num)
 					 &dev_attr_sched_mostly_idle_freq);
 	if (!error)
 		error = device_create_file(&cpu->dev,
-					 &dev_attr_sched_budget);
+			 &dev_attr_sched_budget);
 	if (!error)
 		error = device_create_file(&cpu->dev,
 					 &dev_attr_sched_prefer_idle);

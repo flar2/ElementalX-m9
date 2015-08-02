@@ -734,7 +734,7 @@ static ssize_t
 set_debug(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
 {
-	int value;
+	unsigned int value;
 	struct mmc_host *host = cls_dev_to_mmc_host(dev);
 
 	sscanf(buf, "%d", &value);

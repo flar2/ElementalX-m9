@@ -6,7 +6,6 @@
 #include <linux/poison.h>
 #include <linux/ratelimit.h>
 #include <linux/stacktrace.h>
-#include <linux/debugfs.h>
 #include <linux/sched.h>
 
 #ifndef mark_addr_rdonly
@@ -16,6 +15,92 @@
 #ifndef mark_addr_rdwrite
 #define mark_addr_rdwrite(a)
 #endif
+
+#ifdef CONFIG_HTC_DEBUG_PAGE_USER_TRACE
+
+#define page_to_trace(page, free) \
+	(free ? \
+		&page->trace_free : \
+		&page->trace_alloc)
+#define page_to_entries_size(page, free) \
+	(free ? \
+		ARRAY_SIZE(page->trace_free.entries) : \
+		ARRAY_SIZE(page->trace_alloc.entries))
+
+static
+void htc_trace_pages_user(struct page *page, int numpages, int free)
+{
+	struct page_user_trace* user_trace;
+	struct stack_trace trace;
+	unsigned long* entries;
+	int nr_entries;
+
+	if (unlikely(!page))
+		return;
+
+	user_trace = page_to_trace(page, free);
+	entries = user_trace->entries;
+	nr_entries = page_to_entries_size(page, free);
+
+	user_trace->pid = current->pid;
+	user_trace->tgid = current->tgid;
+	memcpy(user_trace->comm, current->comm,
+			sizeof(user_trace->comm));
+	memcpy(user_trace->tgcomm, current->group_leader->comm,
+			sizeof(user_trace->comm));
+
+	if (unlikely(!nr_entries))
+		return;
+
+	memset(entries, 0, nr_entries * sizeof(*entries));
+	trace.max_entries = nr_entries;
+	trace.entries = entries;
+	trace.nr_entries = 0;
+	trace.skip = 5;
+	save_stack_trace(&trace);
+
+	for (; page++, numpages > 1; numpages--)
+		memcpy(page_to_trace(page, free), user_trace, sizeof(*user_trace));
+}
+
+static
+void dump_page_user(struct page *page, int free)
+{
+	struct page_user_trace* user_trace;
+	struct stack_trace trace;
+
+	user_trace = page_to_trace(page, free);
+
+	pr_warn("%s by process - %.*s pid=%d (tg: %.*s pid=%d)\n",
+			free ? "Free" : "Alloc",
+			(int) sizeof(user_trace->comm),
+			user_trace->comm,
+			user_trace->pid,
+			(int) sizeof(user_trace->tgcomm),
+			user_trace->tgcomm,
+			user_trace->tgid);
+
+	trace.nr_entries = page_to_entries_size(page, free);;
+	trace.entries = user_trace->entries;
+
+	pr_warn("Call trace:\n");
+	print_stack_trace(&trace, 0);
+}
+
+static
+void htc_dump_page_user(struct page *page)
+{
+	pr_warn("%s: check_poison_mem failed at page: %p\n",
+			__func__, page);
+	dump_page_user(page, 0);
+	dump_page_user(page, 1);
+}
+#else
+static inline
+void htc_trace_pages_user(struct page *page, int numpages, int free) { }
+static inline
+void htc_dump_page_user(struct page *page) { }
+#endif 
 
 static inline void set_page_poison(struct page *page)
 {
@@ -81,6 +166,7 @@ static void check_poison_mem(unsigned char *mem, size_t bytes)
 
 	print_hex_dump(KERN_ERR, "", DUMP_PREFIX_ADDRESS, 16, 1, start,
 			end - start + 1, 1);
+	htc_dump_page_user(kmap_to_page(mem));
 	BUG_ON(PANIC_CORRUPTION);
 	dump_stack();
 }
@@ -106,57 +192,6 @@ static void unpoison_pages(struct page *page, int n)
 	for (i = 0; i < n; i++)
 		unpoison_page(page + i);
 }
-
-#ifdef CONFIG_HTC_DEBUG_PAGE_USER_TRACE
-
-#define page_to_trace(page, free) \
-	(free ? \
-		&page->trace_free : \
-		&page->trace_alloc)
-#define page_to_entries_size(page, free) \
-	(free ? \
-		ARRAY_SIZE(page->trace_free.entries) : \
-		ARRAY_SIZE(page->trace_alloc.entries))
-
-static
-void htc_trace_pages_user(struct page *page, int numpages, int free)
-{
-	struct page_user_trace* user_trace;
-	struct stack_trace trace;
-	unsigned long* entries;
-	int nr_entries;
-
-	if (unlikely(!page))
-		return;
-
-	user_trace = page_to_trace(page, free);
-	entries = user_trace->entries;
-	nr_entries = page_to_entries_size(page, free);
-
-	user_trace->pid = current->pid;
-	user_trace->tgid = current->tgid;
-	memcpy(user_trace->comm, current->comm,
-			sizeof(user_trace->comm));
-	memcpy(user_trace->tgcomm, current->group_leader->comm,
-			sizeof(user_trace->comm));
-
-	if (unlikely(!nr_entries))
-		return;
-
-	memset(entries, 0, nr_entries * sizeof(*entries));
-	trace.max_entries = nr_entries;
-	trace.entries = entries;
-	trace.nr_entries = 0;
-	trace.skip = 5;
-	save_stack_trace(&trace);
-
-	for (; page++, numpages > 1; numpages--)
-		memcpy(page_to_trace(page, free), user_trace, sizeof(*user_trace));
-}
-#else
-static inline
-void htc_trace_pages_user(struct page *page, int numpages, int free) { }
-#endif 
 
 void kernel_map_pages(struct page *page, int numpages, int enable)
 {

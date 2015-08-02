@@ -54,9 +54,10 @@ struct keycombo_state {
 	struct wakeup_source combo_up_wake_source;
 };
 
-#if defined(CONFIG_POWER_KEY_CLR_RESET)
 
+#if defined(CONFIG_POWER_KEY_CLR_RESET)
 static uint32_t clr_gpio;
+static struct pinctrl *key_pinctrl;
 static struct kobject *android_key_kobj;
 
 #ifdef CONFIG_KPDPWR_S2_DVDD_RESET
@@ -88,16 +89,31 @@ static enum hrtimer_restart enable_kpd_s2_timer_func(struct hrtimer *timer)
 }
 #endif 
 
+static int keycombo_pinctrl_configure(struct pinctrl *key_pinctrl, bool active);
 void clear_hw_reset(void)
 {
+	int error;
+
 	KEY_LOGI("clear_hw_reset++++++++++(%d)\n", clr_gpio);
-	if (gpio_direction_output(clr_gpio, 0) < 0)
-		KEY_LOGE("gpio_direction_output GPIO %d failed\n", clr_gpio);
+	if (key_pinctrl) {
+		error = keycombo_pinctrl_configure(key_pinctrl, true);
+		if (error == 0)
+			KEY_LOGI("set pinctrl active\n");
+	} else {
+		if (gpio_direction_output(clr_gpio, 0) < 0)
+			KEY_LOGE("gpio_direction_output GPIO %d failed\n", clr_gpio);
+	}
 
 	msleep(100);
 
-	if (gpio_direction_input(clr_gpio) < 0)
-		KEY_LOGE("gpio_direction_input GPIO %d failed\n", clr_gpio);
+	if (key_pinctrl) {
+		error = keycombo_pinctrl_configure(key_pinctrl, false);
+		if (error == 0)
+			KEY_LOGI("set pinctrl normal\n");
+	} else {
+		if (gpio_direction_input(clr_gpio) < 0)
+			KEY_LOGE("gpio_direction_input GPIO %d failed\n", clr_gpio);
+	}
 	KEY_LOGI("clear_hw_reset----------\n");
 }
 
@@ -191,7 +207,39 @@ static void keycombo_sysfs_remove(void)
 	sysfs_remove_file(android_key_kobj, &dev_attr_clr_gpio.attr);
 	kobject_put(android_key_kobj);
 }
-#endif
+
+static int keycombo_pinctrl_configure(struct pinctrl *key_pinctrl,
+							bool active)
+{
+	struct pinctrl_state *set_state;
+	int retval;
+
+	if (active) {
+		set_state =
+			pinctrl_lookup_state(key_pinctrl,
+						"keycombo_active");
+		if (IS_ERR(set_state)) {
+			KEY_LOGE("%s: cannot get pinctrl active state\n", __func__);
+			return PTR_ERR(set_state);
+		}
+	} else {
+		set_state =
+			pinctrl_lookup_state(key_pinctrl,
+						"keycombo_normal");
+		if (IS_ERR(set_state)) {
+			KEY_LOGE("%s: cannot get pinctrl normal state\n", __func__);
+			return PTR_ERR(set_state);
+		}
+	}
+	retval = pinctrl_select_state(key_pinctrl, set_state);
+	if (retval) {
+		KEY_LOGE("%s: cannot set pinctrl, active = %d\n", __func__, active);
+		return retval;
+	}
+
+	return 0;
+}
+#endif 
 
 static void do_key_down(struct work_struct *work)
 {
@@ -478,6 +526,26 @@ static int keycombo_probe(struct platform_device *pdev)
 
 #if defined(CONFIG_POWER_KEY_CLR_RESET)
 	if(state->priv == NULL) {
+		
+		key_pinctrl = devm_pinctrl_get(&pdev->dev);
+		if (IS_ERR(key_pinctrl)) {
+			if (PTR_ERR(key_pinctrl) == -EPROBE_DEFER)
+				return -EPROBE_DEFER;
+
+			KEY_LOGI("Target does not use pinctrl\n");
+			key_pinctrl = NULL;
+		} else {
+			if (key_pinctrl) {
+				KEY_LOGI("control clr_gpio by pinctrl\n");
+				ret = keycombo_pinctrl_configure(key_pinctrl, false);
+				if (ret) {
+					KEY_LOGE("%s: fail to set pinctrl to normal state, %d\n",
+							__func__, ret);
+					goto err_pinctrl_configure_fail;
+				}
+			}
+		}
+
 		if (gpio_is_valid(pdata->clr_gpio)) {
 			ret = gpio_request(pdata->clr_gpio, "pwr_mistouch");
 			if (ret) {
@@ -486,19 +554,26 @@ static int keycombo_probe(struct platform_device *pdev)
 				goto err_wq_alloc_fail;
 			}
 
-			ret = gpio_direction_input(pdata->clr_gpio);
-			if (ret) {
-				KEY_LOGE("%s: Unable to set direction, %d\n", __func__, ret);
-				goto err_wq_alloc_fail;
-			}
 			clr_gpio = pdata->clr_gpio;
-			pdata->key_down_fn	= &start_reset_clear;
-			pdata->key_up_fn	= &stop_clearing;
+
+			
+			if(key_pinctrl == NULL) {
+				KEY_LOGI("control clr_gpio directly\n");
+				ret = gpio_direction_input(pdata->clr_gpio);
+				if (ret) {
+					KEY_LOGE("%s: Unable to set direction, %d\n",
+							__func__, ret);
+					goto err_wq_alloc_fail;
+				}
+			}
 		} else {
-			pr_info("%s: clr_gpio is not defined\n", __func__);
+			KEY_LOGE("%s: clr_gpio is not defined\n", __func__);
 			ret = -EIO;
 			goto err_wq_alloc_fail;
 		}
+
+		pdata->key_down_fn	= &start_reset_clear;
+		pdata->key_up_fn	= &stop_clearing;
 	}
 #endif
 
@@ -544,6 +619,7 @@ static int keycombo_probe(struct platform_device *pdev)
 
 err_input_handler_fail:
 	destroy_workqueue(state->wq);
+err_pinctrl_configure_fail:
 err_wq_alloc_fail:
 	kfree(state);
 err_parse_fail:

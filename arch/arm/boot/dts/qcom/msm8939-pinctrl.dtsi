@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,6 +27,22 @@
 				interrupt-controller;
 				#interrupt-cells = <2>;
 				num_irqs = <122>;
+			};
+		};
+
+		cdc-ext-spk-pa {
+			qcom,pins = <&gp 0>;
+			qcom,num-grp-pins = <1>;
+			qcom,pin-func = <0>;
+			label = "cdc-ext-spk-pa";
+			cdc_ext_spk_pa_act: ext_spk_pa_on {
+				drive-strength = <8>;
+				output-low;
+				bias-pull-none;
+			};
+			cdc_ext_spk_pa_sus: ext_spk_pa_off {
+				drive-strength = <2>;
+				bias-disable;
 			};
 		};
 
@@ -306,7 +322,7 @@
                         qcom,pin-func = <1>;
                         label = "spi0-active";
                         /* active state */
-                        spi0_default: default {
+                        spi0_default: spi0_default {
                                 drive-strength = <12>; /* 12 MA */
                                 bias-disable = <0>; /* No PULL */
                         };
@@ -319,7 +335,7 @@
                         qcom,pin-func = <0>;
                         label = "spi0-suspend";
                         /* suspended state */
-                        spi0_sleep: sleep {
+                        spi0_sleep: spi0_sleep {
                                 drive-strength = <2>; /* 2 MA */
 			        bias-pull-down; /* PULL Down */
                         };
@@ -375,7 +391,7 @@
                         qcom,pin-func = <1>;
                         label = "spi5-active";
                         /* active state */
-                        spi5_default: default {
+                        spi5_default: spi5_default {
                                 drive-strength = <16>; /* 16 MA */
                                 bias-disable = <0>; /* No PULL */
                         };
@@ -388,7 +404,7 @@
                         qcom,pin-func = <0>;
                         label = "spi5-suspend";
                         /* suspended state */
-                        spi5_sleep: sleep {
+                        spi5_sleep: spi5_sleep {
                                 drive-strength = <2>; /* 2 MA */
                                 bias-disable = <0>; /* No PULL */
                         };
@@ -516,6 +532,30 @@
 			label = "afe_suspend";
 
 			afe_pwr_suspend: afe_pwr_suspend {
+				drive-strength = <2>;
+				output-low;
+			};
+		};
+
+		mod_en_active {
+			qcom,pins = <&gp 97>;
+			qcom,pin-func = <0>;
+			qcom,num-grp-pins = <1>;
+			label = "mod_en_active";
+
+			mod_en_active: mod_en_active {
+				drive-strength = <16>;
+				output-high;
+			};
+		};
+
+		mod_en_suspend {
+			qcom,pins = <&gp 97>;
+			qcom,pin-func = <0>;
+			qcom,num-grp-pins = <1>;
+			label = "mod_en_suspend";
+
+			mod_en_suspend: mod_en_suspend {
 				drive-strength = <2>;
 				output-low;
 			};
@@ -657,7 +697,7 @@
 			};
 			cdc_pdm_lines_sus: pdm_lines_off {
 				drive-strength = <2>;
-				bias-disable;
+				bias-pull-down;
 			};
 		};
 

@@ -66,6 +66,7 @@ enum ftm_charger_control_flag {
 #define HTC_BATT_CHG_LIMIT_BIT_NAVI				(1<<1)
 #define HTC_BATT_CHG_LIMIT_BIT_THRML				(1<<2)
 #define HTC_BATT_CHG_LIMIT_BIT_KDDI				(1<<3)
+#define HTC_BATT_CHG_LIMIT_BIT_NET_TALK			(1<<4)
 
 enum batt_context_event {
 	EVENT_TALK_START = 0,
@@ -75,7 +76,9 @@ enum batt_context_event {
 	EVENT_NAVIGATION_START,
 	EVENT_NAVIGATION_STOP,
 	EVENT_MUSIC_START,
-	EVENT_MUSIC_STOP
+	EVENT_MUSIC_STOP,
+	EVENT_NET_TALK_START,
+	EVENT_NET_TALK_STOP
 };
 
 

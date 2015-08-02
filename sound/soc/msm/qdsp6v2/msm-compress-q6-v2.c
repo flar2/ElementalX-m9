@@ -199,29 +199,37 @@ struct msm_compr_ch_map {
 
 static int msm_compr_wait_event_freezable(struct msm_compr_audio *prtd, bool eos)
 {
-    DEFINE_WAIT(wait_queue);
-    int wait_times = 0;
-    if (eos) {
-        for (;;) {
-            prepare_to_wait(&prtd->eos_wait, &wait_queue, TASK_UNINTERRUPTIBLE);
-            if (prtd->eos_ack || prtd->cmd_interrupt || atomic_read(&prtd->error))
-                break;
-            freezable_schedule();
-            wait_times++;
-        }
-        finish_wait(&prtd->eos_wait, &wait_queue);
-    } else {
-        for (;;) {
-            prepare_to_wait(&prtd->drain_wait, &wait_queue, TASK_UNINTERRUPTIBLE);
-            if (prtd->drain_ready || prtd->cmd_interrupt || atomic_read(&prtd->xrun) || atomic_read(&prtd->error))
-                break;
-            freezable_schedule();
-            wait_times++;
-        }
-        finish_wait(&prtd->drain_wait, &wait_queue);
-    }
-    pr_debug("%s: %s done, wait_times %d", __func__, eos ? "wait_eos" : "wait_drain", wait_times);
-    return 0;
+	DEFINE_WAIT(wait_queue);
+	int wait_times = 0;
+	if (eos) {
+		for (;;) {
+			prepare_to_wait(&prtd->eos_wait, &wait_queue, TASK_INTERRUPTIBLE);
+			if (prtd->eos_ack || prtd->cmd_interrupt || atomic_read(&prtd->error))
+				break;
+			if (signal_pending(current)) {
+				pr_info("Get sw interrupt and get signal\n");
+				break;
+			}
+			freezable_schedule();
+			wait_times++;
+		}
+		finish_wait(&prtd->eos_wait, &wait_queue);
+	} else {
+		for (;;) {
+			prepare_to_wait(&prtd->drain_wait, &wait_queue, TASK_INTERRUPTIBLE);
+			if (prtd->drain_ready || prtd->cmd_interrupt || atomic_read(&prtd->xrun) || atomic_read(&prtd->error))
+				break;
+			if (signal_pending(current)) {
+				pr_info("Get sw interrupt and get signal\n");
+				break;
+			}
+			freezable_schedule();
+			wait_times++;
+		}
+		finish_wait(&prtd->drain_wait, &wait_queue);
+	}
+	pr_debug("%s: %s done, wait_times %d\n", __func__, eos ? "wait_eos" : "wait_drain", wait_times);
+	return 0;
 }
 
 static int msm_compr_send_dec_params(struct snd_compr_stream *cstream,
@@ -260,17 +268,21 @@ static int msm_compr_set_volume(struct snd_compr_stream *cstream,
 		rc = q6asm_set_volume(prtd->audio_client, avg_vol);
 	} else {
 		pr_debug("%s: call q6asm_set_lrgain\n", __func__);
-		rc = q6asm_set_lrgain(prtd->audio_client, volume_l,
-				      volume_r);
+		rc = q6asm_set_lrgain(prtd->audio_client, volume_l, volume_r);
+		if (rc < 0)
+			pr_err("%s: Send LR gain command failed rc=%d\n",
+				__func__, rc);
 	}
 
 	if (rc < 0)
 		pr_err("%s: Send vol gain command failed rc=%d\n",
 		       __func__, rc);
-	else if (msm_dts_eagle_set_stream_gain(prtd->audio_client,
+	else
+		if (msm_dts_eagle_set_stream_gain(prtd->audio_client,
 						volume_l, volume_r))
 			pr_debug("%s: DTS_EAGLE send stream gain failed\n",
 				__func__);
+
 	return rc;
 }
 
@@ -823,7 +835,7 @@ static int msm_compr_configure_dsp(struct snd_compr_stream *cstream)
 	pr_debug("%s: stream_id %d\n", __func__, ac->stream_id);
 	if (prtd->codec_param.codec.format == SNDRV_PCM_FORMAT_S24_LE)
 		bits_per_sample = 24;
-	if (prtd->codec_param.codec.format == SNDRV_PCM_FORMAT_S32_LE)
+	else if (prtd->codec_param.codec.format == SNDRV_PCM_FORMAT_S32_LE)
 		bits_per_sample = 32;
 
 	
@@ -855,7 +867,8 @@ static int msm_compr_configure_dsp(struct snd_compr_stream *cstream)
 			return ret;
 		}
 	} else {
-		pr_debug("%s: stream_id %d\n", __func__, ac->stream_id);
+		pr_debug("%s: stream_id %d bits_per_sample %d\n",
+				__func__, ac->stream_id, bits_per_sample);
 		ret = q6asm_stream_open_write_v2(ac,
 				prtd->codec, bits_per_sample,
 				ac->stream_id,
@@ -995,14 +1008,14 @@ static int msm_compr_open(struct snd_compr_stream *cstream)
 	prtd->partial_drain_delay = 0;
 	prtd->next_stream = 0;
 	memset(&prtd->gapless_state, 0, sizeof(struct msm_compr_gapless_state));
-	prtd->gapless_state.min_blk_size = 65537;
-	prtd->gapless_state.max_blk_size = 65537;
 	prtd->stream_end = false;
 	prtd->lasttimestamp = 0;
 	if (q6asm_set_io_mode(prtd->audio_client, (COMPRESSED_IO | ASYNC_IO_MODE))) {
 		pr_err("%s: Set IO mode failed\n", __func__);
 		return -EINVAL;
 	}
+	prtd->gapless_state.min_blk_size = 65537;
+	prtd->gapless_state.max_blk_size = 65537;
 	prtd->gapless_state.use_dsp_gapless_mode = pdata->use_dsp_gapless_mode;
 
 	pr_debug("%s: gapless mode %d", __func__, pdata->use_dsp_gapless_mode);
@@ -1208,10 +1221,10 @@ static int msm_compr_set_params(struct snd_compr_stream *cstream,
 	pr_debug("%s: sample_rate %d\n", __func__, prtd->sample_rate);
 
 	if (prtd->codec_param.codec.compr_passthr >= 0 &&
-			prtd->codec_param.codec.compr_passthr <= 2)
-			prtd->compr_passthr = prtd->codec_param.codec.compr_passthr;
+		prtd->codec_param.codec.compr_passthr <= 2)
+		prtd->compr_passthr = prtd->codec_param.codec.compr_passthr;
 	else
-			prtd->compr_passthr = LEGACY_PCM;
+		prtd->compr_passthr = LEGACY_PCM;
 	pr_debug("%s: compr_passthr = %d", __func__, prtd->compr_passthr);
 	if (prtd->compr_passthr != LEGACY_PCM) {
 		pr_debug("%s: Reset gapless mode playback for compr_type[%d]\n",
@@ -1380,6 +1393,7 @@ static int msm_compr_trigger(struct snd_compr_stream *cstream, int cmd)
 	int stream_id;
 	uint32_t stream_index;
 	int is_partial_drain = 0;
+	uint16_t bits_per_sample = 16;
 
 	if (cstream->direction != SND_COMPRESS_PLAYBACK) {
 		pr_err("%s: Unsupported stream type\n", __func__);
@@ -1533,7 +1547,8 @@ static int msm_compr_trigger(struct snd_compr_stream *cstream, int cmd)
 				__func__);    
 			rc = msm_compr_drain_buffer(prtd, &flags);
 			if (rc || !atomic_read(&prtd->start)) {
-				rc = -EINTR;
+				if (rc != -ENETRESET)
+					rc = -EINTR;
 				spin_unlock_irqrestore(&prtd->lock, flags);
 				break;
 			}
@@ -1739,7 +1754,15 @@ static int msm_compr_trigger(struct snd_compr_stream *cstream, int cmd)
 			}
 			break;
 		}
-		pr_debug("%s: open_write stream_id %d", __func__, stream_id);
+
+		if (prtd->codec_param.codec.format == SNDRV_PCM_FORMAT_S24_LE)
+			bits_per_sample = 24;
+		else if (prtd->codec_param.codec.format ==
+			 SNDRV_PCM_FORMAT_S32_LE)
+			bits_per_sample = 32;
+
+		pr_debug("%s: open_write stream_id %d bits_per_sample %d",
+				__func__, stream_id, bits_per_sample);
 		rc = q6asm_stream_open_write_v2(prtd->audio_client,
 				prtd->codec, prtd->bits_per_sample, 
 				stream_id,
@@ -1778,6 +1801,7 @@ static int msm_compr_pointer(struct snd_compr_stream *cstream,
 	uint64_t lasttimestamp;
 	int32_t stream_end;
 	unsigned long flags;
+	uint32_t gapless_transition;
 
 	pr_debug("%s\n", __func__);
 	memset(&tstamp, 0x0, sizeof(struct snd_compr_tstamp));
@@ -1799,11 +1823,16 @@ static int msm_compr_pointer(struct snd_compr_stream *cstream,
 		return -ENETRESET;
 	}
 
+	gapless_transition = prtd->gapless_state.gapless_transition;
 	spin_unlock_irqrestore(&prtd->lock, flags);
 
 	if (stream_end) {
 		timestamp = lasttimestamp;
-	} else if (!first_buffer) {
+	} else if (!first_buffer || gapless_transition) {
+		if (gapless_transition)
+			pr_debug("%s session time in gapless transition",
+				 __func__);
+
 		rc = q6asm_get_session_time(prtd->audio_client, &timestamp);
 		if (rc < 0) {
 			pr_err("%s: Get Session Time return value =%lld\n",
@@ -2052,10 +2081,12 @@ static int msm_compr_set_metadata(struct snd_compr_stream *cstream,
 		pr_debug("%s, got encoder delay %u", __func__, metadata->value[0]);
 		prtd->gapless_state.initial_samples_drop = metadata->value[0];
 	} else if (metadata->key == SNDRV_COMPRESS_MIN_BLK_SIZE) {
-		pr_debug("%s, got min_blk_size %u", __func__, metadata->value[0]);
+		pr_debug("%s, got min_blk_size %u",
+			__func__, metadata->value[0]);
 		prtd->gapless_state.min_blk_size = metadata->value[0];
 	} else if (metadata->key == SNDRV_COMPRESS_MAX_BLK_SIZE) {
-		pr_debug("%s, got max_blk_size %u", __func__, metadata->value[0]);
+		pr_debug("%s, got max_blk_size %u",
+			__func__, metadata->value[0]);
 		prtd->gapless_state.max_blk_size = metadata->value[0];
 	}
 
@@ -2063,7 +2094,7 @@ static int msm_compr_set_metadata(struct snd_compr_stream *cstream,
 	    (prtd->gapless_state.min_blk_size >= 0) &&
 	    (prtd->gapless_state.min_blk_size <= FLAC_BLK_SIZE_LIMIT) &&
 	    (prtd->gapless_state.max_blk_size >= 0) &&
-	    (prtd->gapless_state.max_blk_size <= FLAC_BLK_SIZE_LIMIT)) {
+	    (prtd->gapless_state.max_blk_size <= FLAC_BLK_SIZE_LIMIT) && prtd->first_buffer) { 
 		pr_debug("%s: SND_AUDIOCODEC_FLAC\n", __func__);
 		memset(&flac_cfg, 0x0, sizeof(struct asm_flac_cfg));
 		flac_cfg.ch_cfg = prtd->num_channels;
@@ -2366,7 +2397,7 @@ static int msm_compr_query_audio_effect_get(struct snd_kcontrol *kcontrol,
 	cstream = pdata->cstream[fe_id];
 	audio_effects = pdata->audio_effects[fe_id];
 	if (!cstream || !audio_effects) {
-		pr_err("%s: stream or effects inactive\n", __func__);
+		pr_debug("%s: stream or effects inactive\n", __func__);
 		return -EINVAL;
 	}
 	prtd = cstream->runtime->private_data;

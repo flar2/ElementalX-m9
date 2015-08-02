@@ -113,7 +113,7 @@ static int wl_cfgvendor_send_cmd_reply(struct wiphy *wiphy,
 }
 
 static int wl_cfgvendor_priv_string_handler(struct wiphy *wiphy,
-	struct wireless_dev *wdev, void  *data, int len)
+	struct wireless_dev *wdev, const void *data, int len)
 {
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	int err = 0;

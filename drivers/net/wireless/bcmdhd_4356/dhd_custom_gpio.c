@@ -20,7 +20,7 @@
 * software in any way with any other Broadcom software provided under a license
 * other than the GPL, without Broadcom's express prior written consent.
 *
-* $Id: dhd_custom_gpio.c 520333 2014-12-11 04:40:28Z $
+* $Id: dhd_custom_gpio.c 550257 2015-04-20 04:40:23Z $
 */
 
 #include <typedefs.h>
@@ -464,7 +464,7 @@ void get_customized_country_code(void *adapter, char *country_iso_code, wl_count
 			return;
 		}
 	}
-#ifdef EXAMPLE_TABLE
+#if defined(EXAMPLE_TABLE) || defined(CUSTOMER_HW_ONE)
 	
 	memcpy(cspec->ccode, translate_custom_table[0].custom_locale, WLC_CNTRY_BUF_SZ);
 	cspec->rev = translate_custom_table[0].custom_locale_rev;

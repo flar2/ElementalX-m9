@@ -38,7 +38,6 @@ MODULE_AUTHOR("Yasuyuki KOZAKAI <yasuyuki.kozakai@toshiba.co.jp>");
 MODULE_DESCRIPTION("Xtables: packet \"rejection\" target for IPv6");
 MODULE_LICENSE("GPL");
 
-/* Send RST reply */
 static void send_reset(struct net *net, struct sk_buff *oldskb)
 {
 	struct sk_buff *nskb;
@@ -70,7 +69,7 @@ static void send_reset(struct net *net, struct sk_buff *oldskb)
 
 	otcplen = oldskb->len - tcphoff;
 
-	/* IP header checks: fragment, too short. */
+	
 	if (proto != IPPROTO_TCP || otcplen < sizeof(struct tcphdr)) {
 		pr_debug("proto(%d) != IPPROTO_TCP, "
 			 "or too short. otcplen = %d\n",
@@ -81,13 +80,13 @@ static void send_reset(struct net *net, struct sk_buff *oldskb)
 	if (skb_copy_bits(oldskb, tcphoff, &otcph, sizeof(struct tcphdr)))
 		BUG();
 
-	/* No RST for RST. */
+	
 	if (otcph.rst) {
 		pr_debug("RST is set\n");
 		return;
 	}
 
-	/* Check checksum. */
+	
 	if (csum_ipv6_magic(&oip6h->saddr, &oip6h->daddr, otcplen, IPPROTO_TCP,
 			    skb_checksum(oldskb, tcphoff, otcplen, 0))) {
 		pr_debug("TCP checksum is invalid\n");
@@ -136,7 +135,7 @@ static void send_reset(struct net *net, struct sk_buff *oldskb)
 
 	skb_reset_transport_header(nskb);
 	tcph = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
-	/* Truncate to length (no data) */
+	
 	tcph->doff = sizeof(struct tcphdr)/4;
 	tcph->source = otcph.dest;
 	tcph->dest = otcph.source;
@@ -152,7 +151,7 @@ static void send_reset(struct net *net, struct sk_buff *oldskb)
 		tcph->seq = 0;
 	}
 
-	/* Reset flags */
+	
 	((u_int8_t *)tcph)[13] = 0;
 	tcph->rst = 1;
 	tcph->ack = needs_ack;
@@ -160,7 +159,7 @@ static void send_reset(struct net *net, struct sk_buff *oldskb)
 	tcph->urg_ptr = 0;
 	tcph->check = 0;
 
-	/* Adjust TCP checksum */
+	
 	tcph->check = csum_ipv6_magic(&ipv6_hdr(nskb)->saddr,
 				      &ipv6_hdr(nskb)->daddr,
 				      sizeof(struct tcphdr), IPPROTO_TCP,
@@ -180,6 +179,14 @@ send_unreach(struct net *net, struct sk_buff *skb_in, unsigned char code,
 		skb_in->dev = net->loopback_dev;
 
 	icmpv6_send(skb_in, ICMPV6_DEST_UNREACH, code, 0);
+
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+	if(skb_in->sk && skb_in->sk->sk_state == TCP_TIME_WAIT){
+		pr_warn("[NET]%s: ip6t_REJECT: ignore force socket error when sk state is in TCP_TIME_WAIT.\n", __func__);
+		return;
+	}
+#endif
+
 #ifdef CONFIG_IP6_NF_TARGET_REJECT_SKERR
 	if (skb_in->sk) {
 		icmpv6_err_convert(ICMPV6_DEST_UNREACH, code,
@@ -215,7 +222,7 @@ reject_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 		send_unreach(net, skb, ICMPV6_PORT_UNREACH, par->hooknum);
 		break;
 	case IP6T_ICMP6_ECHOREPLY:
-		/* Do nothing */
+		
 		break;
 	case IP6T_TCP_RESET:
 		send_reset(net, skb);
@@ -237,7 +244,7 @@ static int reject_tg6_check(const struct xt_tgchk_param *par)
 		pr_info("ECHOREPLY is not supported.\n");
 		return -EINVAL;
 	} else if (rejinfo->with == IP6T_TCP_RESET) {
-		/* Must specify that it's a TCP packet */
+		
 		if (e->ipv6.proto != IPPROTO_TCP ||
 		    (e->ipv6.invflags & XT_INV_PROTO)) {
 			pr_info("TCP_RESET illegal for non-tcp\n");

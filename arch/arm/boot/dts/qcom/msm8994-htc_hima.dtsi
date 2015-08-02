@@ -15,7 +15,7 @@
 #include "msm8994-mtp.dtsi"
 #include "msm8994-htc-common.dtsi"
 #include "msm8994-htc_hima-family.dtsi"
-#include "msm8994-htc_hima-family-ramdumpheap.dtsi"
+#include "msm8994-htc-ramdumpheap.dtsi"
 #include "msm8994-touch-hima.dtsi"
 #include "msm8994-camera-sensor-hima.dtsi"
 
@@ -67,6 +67,28 @@
 	htc,lcm_rst-gpio         = <&msm_gpio 78 0>;
 };
 
+&pm8994_l14 {
+	regulator-always-on;
+};
+
+/ {
+	memory {
+		fb_mem_1: fb_1st_region@0 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			reg = <0 0x30000000 0 0xA00000>;
+			label = "fb_mem_1";
+		};
+
+		fb_mem_2: fb_2nd_region@0 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			reg = <0 0x30A00000 0 0x1200000>;
+			label = "fb_mem_2";
+		};
+	};
+};
+
 &soc {
 
 	hsphy0: hsphy@f92f8800 {
@@ -94,13 +116,14 @@
 			mcu,als_goldl = <0x29>;
 			mcu,als_goldh = <0x0A>;
 			mcu,als_polling = <1>;
+			mcu,als_lux_ratio_n = <2>;	/* Numerator */
+			mcu,als_lux_ratio_d = <10>;	/* Denominator */
 			mcu,ps_thd_add = <0x32>;
 			mcu,ps_thd_fixed = <0x15>;
 			pinctrl-names = "mcu_gpio_init";
 			pinctrl-0 = <&mcu_init>;
 			touch_enable = <1>;
 			vibrate_ms = <25>;
-			SR_2v85-supply = <&pm8994_l19>;
 		};
 
 		htc_mcu_flash@39 {
@@ -113,6 +136,7 @@
 			reg = <0x02>;
 		};
 
+
 	};
 
 	htc,htc_nc_pins {
@@ -120,6 +144,38 @@
 
 		pinctrl-names = "default";
 		pinctrl-0 = <&hima_nc_pins_in_pd &hima_nc_pins_out_low>;
+	};
+
+        tlmm_pinmux: pinctrl@fd510000 {
+                mcugpio_int {
+                        qcom,pins = <&gp 42>, <&gp 91>;
+                        qcom,num-grp-pins = <2>;
+                        qcom,pin-func = <0>;
+                        label = "mcugpio";
+                        mcu_init: mcu_init {
+                                drive-strength = <2>;
+                                bias-disable;
+                                input-enable;
+                        };
+                };
+        };
+
+	htc,mdss_dsi_pwrctrl {
+		compatible = "htc,mdss-dsi-pwrctrl";
+		status  = "okay";
+	};
+
+	qcom,ion {
+		qcom,ion-heap@13 { // FBMEM 1st HEAP
+			reg = <13>;
+			linux,contiguous-region = <&fb_mem_1>;
+			qcom,ion-heap-type = "DMA";
+		};
+		qcom,ion-heap@14 { // FBMEM 2nd HEAP
+			reg = <14>;
+			linux,contiguous-region = <&fb_mem_2>;
+			qcom,ion-heap-type = "DMA";
+		};
 	};
 };
 
@@ -157,6 +213,18 @@
 
         };
     };
+};
+
+&pmi8994_charger {
+	qcom,high-fastchg-current-ma = <2500>;
+	qcom,fastchg-current-ma = <1850>;
+	qcom,qc20-iusb-max-ma = <1400>;
+	qcom,kddi-limit1-temp = <390>;
+	qcom,kddi-limit1-current = <1000>;
+	qcom,kddi-limit1-current-qc20 = <700>;
+	qcom,kddi-limit2-temp = <450>;
+	qcom,kddi-limit2-current = <1000>;
+	qcom,kddi-limit2-current-qc20 = <700>;
 };
 
 &tlmm_pinmux {

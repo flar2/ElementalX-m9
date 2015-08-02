@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -99,12 +99,18 @@ struct mdss_prefill_data {
 	u32 fbc_lines;
 };
 
+struct mdss_mdp_ppb {
+	u32 ctl_off;
+	u32 cfg_off;
+};
+
 enum mdss_hw_index {
 	MDSS_HW_MDP,
 	MDSS_HW_DSI0 = 1,
 	MDSS_HW_DSI1,
 	MDSS_HW_HDMI,
 	MDSS_HW_EDP,
+	MDSS_HW_IOMMU,
 	MDSS_MAX_HW_BLK
 };
 
@@ -117,6 +123,7 @@ enum mdss_bus_clients {
 
 enum mdss_hw_quirk {
 	MDSS_QUIRK_BWCPANIC,
+	MDSS_QUIRK_DOWNSCALE_HANG,
 	MDSS_QUIRK_MAX,
 };
 
@@ -127,6 +134,7 @@ struct mdss_data_type {
 	struct regulator *vdd_cx;
 	bool batfet_required;
 	struct regulator *batfet;
+	bool en_svs_high;
 	u32 max_mdp_clk_rate;
 	struct mdss_util_intf *mdss_util;
 
@@ -160,12 +168,14 @@ struct mdss_data_type {
 	u8 has_non_scalar_rgb;
 	bool has_src_split;
 	bool idle_pc_enabled;
+	bool needs_iommu_bw_vote;
 	bool has_pingpong_split;
 	bool has_pixel_ram;
 	bool needs_hist_vote;
 
-	u32 rotator_ot_limit;
-	u32 default_ot_limit;
+	u32 default_ot_rd_limit;
+	u32 default_ot_wr_limit;
+
 	u32 mdp_irq_mask;
 	u32 mdp_hist_irq_mask;
 
@@ -175,6 +185,7 @@ struct mdss_data_type {
 	u8 vsync_ena;
 
 	struct notifier_block gdsc_cb;
+	struct notifier_block tlb_timeout_cb;
 
 	u32 res_init;
 
@@ -197,12 +208,15 @@ struct mdss_data_type {
 	u32 *vbif_rt_qos;
 	u32 *vbif_nrt_qos;
 	u32 npriority_lvl;
+	u32 bus_bw_cnt;
+	struct mutex bus_bw_lock;
 
 	u32 reg_bus_hdl;
 
 	struct mdss_fudge_factor ab_factor;
 	struct mdss_fudge_factor ib_factor;
 	struct mdss_fudge_factor ib_factor_overlap;
+	struct mdss_fudge_factor ib_factor_cmd;
 	struct mdss_fudge_factor clk_factor;
 
 	u32 disable_prefill;
@@ -211,6 +225,7 @@ struct mdss_data_type {
 
 	u32 enable_bw_release;
 	u32 enable_rotator_bw_release;
+	u32 serialize_wait4pp;
 
 	struct mdss_hw_settings *hw_settings;
 
@@ -225,11 +240,16 @@ struct mdss_data_type {
 	u8  ncursor_pipes;
 	u32 max_cursor_size;
 
+	u32 nppb;
+	struct mdss_mdp_ppb *ppb;
+	char __iomem *slave_pingpong_base;
+
 	struct mdss_mdp_mixer *mixer_intf;
 	struct mdss_mdp_mixer *mixer_wb;
 	u32 nmixers_intf;
 	u32 nmixers_wb;
 	u32 max_mixer_width;
+	u32 max_pipe_width;
 
 	struct mdss_mdp_ctl *ctl_off;
 	u32 nctl;
@@ -259,6 +279,8 @@ struct mdss_data_type {
 	bool mixer_switched;
 	struct mdss_panel_cfg pan_cfg;
 	struct mdss_prefill_data prefill_data;
+	u32 min_prefill_lines; /* this changes within different chipsets */
+	u32 props;
 
 	int handoff_pending;
 	bool idle_pc;
@@ -304,6 +326,8 @@ struct mdss_util_intf {
 	int (*get_iommu_domain)(u32 type);
 	int (*iommu_attached)(void);
 	int (*iommu_ctrl)(int enable);
+	void (*iommu_lock)(void);
+	void (*iommu_unlock)(void);
 	void (*bus_bandwidth_ctrl)(int enable);
 	int (*bus_scale_set_quota)(int client, u64 ab_quota, u64 ib_quota);
 	struct mdss_panel_cfg* (*panel_intf_type)(int intf_val);

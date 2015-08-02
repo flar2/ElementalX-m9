@@ -60,7 +60,7 @@ static ssize_t dsi_cmd_write(
 	size_t count,
 	loff_t *ppos)
 {
-	u32 type, value;
+	u32 type = 0, value = 0;
 	int cnt, i;
 	struct dcs_cmd_req cmdreq;
 
@@ -133,6 +133,35 @@ static ssize_t dsi_cmd_write(
 static const struct file_operations dsi_cmd_fops = {
 	.write = dsi_cmd_write,
 };
+
+static struct kobject *android_disp_kobj;
+static char panel_name[MDSS_MAX_PANEL_LEN] = {0};
+static ssize_t disp_vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	ret = snprintf(buf, PAGE_SIZE, "%s\n", panel_name);
+	return ret;
+}
+static DEVICE_ATTR(vendor, S_IRUGO, disp_vendor_show, NULL);
+
+char *disp_vendor(void){
+	return panel_name;
+}
+EXPORT_SYMBOL(disp_vendor);
+
+void htc_panel_info(const char *panel)
+{
+	android_disp_kobj = kobject_create_and_add("android_display", NULL);
+	if (!android_disp_kobj) {
+		PR_DISP_ERR("%s: subsystem register failed\n", __func__);
+		return ;
+	}
+	if (sysfs_create_file(android_disp_kobj, &dev_attr_vendor.attr)) {
+		PR_DISP_ERR("Fail to create sysfs file (vendor)\n");
+		return ;
+	}
+	strlcpy(panel_name, panel, MDSS_MAX_PANEL_LEN);
+}
 
 void htc_debugfs_init(struct msm_fb_data_type *mfd)
 {

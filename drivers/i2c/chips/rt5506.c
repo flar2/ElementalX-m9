@@ -145,12 +145,13 @@ static int set_rt55xx_init(void)
 			rt5506_write_reg(0x9c,0x99);
 			rt5506_write_reg(0x9d,0x66);
 			rt5506_write_reg(0x9e,0x99);
-			rt5506_write_reg(0x90,0x93);
+			rt5506_write_reg(0x90,0xd0);
 			break;
 		case RT55XX_06:
 		default: 
 			rt5506_write_reg(0x0,0xc0);
 			rt5506_write_reg(0x81,0x30);
+			rt5506_write_reg(0x87,0xea);
 			rt5506_write_reg(0x90,0xd0);
 			rt5506_write_reg(0x93,0x9d);
 			rt5506_write_reg(0x95,0x7b);
@@ -603,7 +604,7 @@ static void hs_imp_detec_func(struct work_struct *work)
 		hs->hs_qstatus = RT55XX_QUERY_FINISH;
 		hs->headsetom = hsom;
 
-		if((om >= HEADSET_256OM && om <= HEADSET_1KOM) && (rt55xx_chip == RT55XX_06))
+		if(om >= HEADSET_256OM && om <= HEADSET_1KOM)
 			high_imp = 1;
 
 		pr_info("rt5506 hs imp value 0x%x hsmode %d om 0x%x hsom %d r_channel 0x%x high_imp %d\n",\

@@ -45,12 +45,11 @@ static uint8_t stats_pingpong_offset_map[] = {
 
 #define VFE32_CLK_IDX 1
 #define MSM_ISP32_TOTAL_WM_UB 792
-/*792 double word*/
 
 static struct msm_cam_clk_info msm_vfe32_1_clk_info[VFE_CLK_INFO_MAX];
 
 static struct msm_cam_clk_info msm_vfe32_2_clk_info[] = {
-	/*vfe32 clock info for A-family: 8960 */
+	
 	{"vfe_clk", 266667000},
 	{"vfe_pclk", -1},
 	{"csi_vfe_clk", -1},
@@ -358,9 +357,9 @@ static void msm_vfe32_init_hardware_reg(struct vfe_device *vfe_dev)
 	msm_vfe32_init_qos_parms(vfe_dev, &qos_parms, &ds_parms);
 	msm_vfe32_init_vbif_parms(vfe_dev, &vbif_parms);
 
-	/* CGC_OVERRIDE */
+	
 	msm_camera_io_w(0x07FFFFFF, vfe_dev->vfe_base + 0xC);
-	/* BUS_CFG */
+	
 	msm_camera_io_w(0x00000009, vfe_dev->vfe_base + 0x3C);
 	msm_camera_io_w(0x01000021, vfe_dev->vfe_base + 0x1C);
 	msm_camera_io_w_mb(0x1CFFFFFF, vfe_dev->vfe_base + 0x20);
@@ -622,7 +621,7 @@ static void msm_vfe32_process_epoch_irq(struct vfe_device *vfe_dev,
 	uint32_t irq_status0, uint32_t irq_status1,
 	struct msm_isp_timestamp *ts)
 {
-	/* Not supported */
+	
 }
 
 static void msm_vfe32_reg_update(struct vfe_device *vfe_dev,
@@ -644,10 +643,10 @@ static void msm_vfe32_axi_reload_wm(
 	struct vfe_device *vfe_dev, uint32_t reload_mask)
 {
 	if (!vfe_dev->pdev->dev.of_node) {
-		/*vfe32 A-family: 8960*/
+		
 		msm_camera_io_w_mb(reload_mask, vfe_dev->vfe_base + 0x38);
 	} else {
-		/*vfe32 B-family: 8610*/
+		
 		msm_camera_io_w(0x0, vfe_dev->vfe_base + 0x24);
 		msm_camera_io_w(0x0, vfe_dev->vfe_base + 0x28);
 		msm_camera_io_w(0x0, vfe_dev->vfe_base + 0x20);
@@ -955,7 +954,7 @@ static void msm_vfe32_axi_cfg_wm_reg(
 	uint32_t wm_base = VFE32_WM_BASE(stream_info->wm[plane_idx]);
 
 	if (!stream_info->frame_based) {
-		/*WR_IMAGE_SIZE*/
+		
 		val =
 			((msm_isp_cal_word_per_line(
 			stream_info->output_format,
@@ -965,7 +964,7 @@ static void msm_vfe32_axi_cfg_wm_reg(
 			output_height - 1);
 		msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x10);
 
-		/*WR_BUFFER_CFG*/
+		
 		val =
 			msm_isp_cal_word_per_line(
 			stream_info->output_format,
@@ -994,9 +993,9 @@ static void msm_vfe32_axi_clear_wm_reg(
 {
 	uint32_t val = 0;
 	uint32_t wm_base = VFE32_WM_BASE(stream_info->wm[plane_idx]);
-	/*WR_IMAGE_SIZE*/
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x10);
-	/*WR_BUFFER_CFG*/
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x14);
 	return;
 }
@@ -1016,20 +1015,20 @@ static void msm_vfe32_axi_cfg_wm_xbar_reg(
 	case PIX_VIEWFINDER: {
 		if (plane_cfg->output_plane_format != CRCB_PLANE &&
 			plane_cfg->output_plane_format != CBCR_PLANE) {
-			/*SINGLE_STREAM_SEL*/
+			
 			xbar_cfg |= plane_cfg->output_plane_format << 5;
 		} else {
 			switch (stream_info->output_format) {
 			case V4L2_PIX_FMT_NV12:
 			case V4L2_PIX_FMT_NV14:
 			case V4L2_PIX_FMT_NV16:
-				xbar_cfg |= 0x3 << 3; /*PAIR_STREAM_SWAP_CTRL*/
+				xbar_cfg |= 0x3 << 3; 
 				break;
 			}
-			xbar_cfg |= BIT(1); /*PAIR_STREAM_EN*/
+			xbar_cfg |= BIT(1); 
 		}
 		if (stream_info->stream_src == PIX_VIEWFINDER)
-			xbar_cfg |= 0x1; /*VIEW_STREAM_EN*/
+			xbar_cfg |= 0x1; 
 		break;
 	}
 	case CAMIF_RAW:
@@ -1160,7 +1159,7 @@ static int msm_vfe32_axi_halt(struct vfe_device *vfe_dev, uint32_t blocking)
 	msm_camera_io_w_mb(0, vfe_dev->vfe_base + 0x1D8);
 	halt_mask = msm_camera_io_r(vfe_dev->vfe_base + 0x20);
 	halt_mask &= 0xFEFFFFFF;
-	/* Disable AXI IRQ */
+	
 	msm_camera_io_w_mb(halt_mask, vfe_dev->vfe_base + 0x20);
 	return 0;
 }
@@ -1243,14 +1242,14 @@ static void msm_vfe32_stats_clear_wm_irq_mask(struct vfe_device *vfe_dev,
 static void msm_vfe32_stats_cfg_wm_reg(struct vfe_device *vfe_dev,
 	struct msm_vfe_stats_stream *stream_info)
 {
-	/*Nothing to configure for VFE3.x*/
+	
 	return;
 }
 
 static void msm_vfe32_stats_clear_wm_reg(struct vfe_device *vfe_dev,
 	struct msm_vfe_stats_stream *stream_info)
 {
-	/*Nothing to configure for VFE3.x*/
+	
 	return;
 }
 
@@ -1259,13 +1258,13 @@ static void msm_vfe32_stats_cfg_ub(struct vfe_device *vfe_dev)
 	int i;
 	uint32_t ub_offset = VFE32_UB_SIZE;
 	uint32_t ub_size[VFE32_NUM_STATS_TYPE] = {
-		107, /*MSM_ISP_STATS_BG*/
-		92, /*MSM_ISP_STATS_BF*/
-		2, /*MSM_ISP_STATS_AWB*/
-		7,  /*MSM_ISP_STATS_RS*/
-		16, /*MSM_ISP_STATS_CS*/
-		2, /*MSM_ISP_STATS_IHIST*/
-		7, /*MSM_ISP_STATS_BHIST*/
+		107, 
+		92, 
+		2, 
+		7,  
+		16, 
+		2, 
+		7, 
 	};
 
 	if (vfe_dev->vfe_hw_version == VFE32_8909_VERSION)

@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  */
 
+
 #include <linux/pci.h>
 #include <linux/gpio.h>
 #include <linux/module.h>
@@ -17,6 +18,9 @@
 #include <linux/msm-bus.h>
 #include <linux/delay.h>
 #include <linux/debugfs.h>
+
+#define CREATE_TRACE_POINTS
+#include "mhi_trace.h"
 
 #include "mhi_sys.h"
 #include "mhi.h"
@@ -34,7 +38,7 @@ void *mhi_ipc_log;
 static DEFINE_PCI_DEVICE_TABLE(mhi_pcie_device_id) = {
 	{ MHI_PCIE_VENDOR_ID, MHI_PCIE_DEVICE_ID_9x35,
 		PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
-	{ MHI_PCIE_VENDOR_ID, MHI_PCIE_DEVICE_ID_ZIRC,
+	{ MHI_PCIE_VENDOR_ID, MHI_PCIE_DEVICE_ID_9640,
 		PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
 	{ 0, },
 };
@@ -292,7 +296,7 @@ DECLARE_PCI_FIXUP_HEADER(MHI_PCIE_VENDOR_ID,
 		mhi_msm_fixup);
 
 DECLARE_PCI_FIXUP_HEADER(MHI_PCIE_VENDOR_ID,
-		MHI_PCIE_DEVICE_ID_ZIRC,
+		MHI_PCIE_DEVICE_ID_9640,
 		mhi_msm_fixup);
 
 

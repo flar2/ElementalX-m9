@@ -18,7 +18,6 @@
 #include "msm_cci.h"
 
 DEFINE_MSM_MUTEX(msm_ois_mutex);
-/*#define MSM_OIS_DEBUG*/
 #undef CDBG
 #ifdef MSM_OIS_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -383,7 +382,8 @@ static int msm_ois_close(struct v4l2_subdev *sd,
 	int rc = 0;
 	struct msm_ois_ctrl_t *o_ctrl =  v4l2_get_subdevdata(sd);
 	CDBG("Enter\n");
-	if (!o_ctrl) {
+	if (!o_ctrl || !o_ctrl->i2c_client.i2c_func_tbl) {
+		
 		pr_err("failed\n");
 		return -EINVAL;
 	}
@@ -415,8 +415,12 @@ static long msm_ois_subdev_ioctl(struct v4l2_subdev *sd,
 	case VIDIOC_MSM_OIS_CFG:
 		return msm_ois_config(o_ctrl, argp);
 	case MSM_SD_SHUTDOWN:
-		msm_ois_close(sd, NULL);
-		return 0;
+		if (!o_ctrl->i2c_client.i2c_func_tbl) {
+			pr_err("o_ctrl->i2c_client.i2c_func_tbl NULL\n");
+			return -EINVAL;
+		} else {
+			return msm_ois_close(sd, NULL);
+		}
 	default:
 		return -ENOIOCTLCMD;
 	}
@@ -504,17 +508,17 @@ static int32_t msm_ois_i2c_probe(struct i2c_client *client,
 
 	ois_ctrl_t->i2c_driver = &msm_ois_i2c_driver;
 	ois_ctrl_t->i2c_client.client = client;
-	/* Set device type as I2C */
+	
 	ois_ctrl_t->ois_device_type = MSM_CAMERA_I2C_DEVICE;
 	ois_ctrl_t->i2c_client.i2c_func_tbl = &msm_sensor_qup_func_tbl;
 	ois_ctrl_t->ois_v4l2_subdev_ops = &msm_ois_subdev_ops;
 	ois_ctrl_t->ois_mutex = &msm_ois_mutex;
 
-	/* Assign name for sub device */
+	
 	snprintf(ois_ctrl_t->msm_sd.sd.name, sizeof(ois_ctrl_t->msm_sd.sd.name),
 		"%s", ois_ctrl_t->i2c_driver->driver.name);
 
-	/* Initialize sub device */
+	
 	v4l2_i2c_subdev_init(&ois_ctrl_t->msm_sd.sd,
 		ois_ctrl_t->i2c_client.client,
 		ois_ctrl_t->ois_v4l2_subdev_ops);
@@ -657,9 +661,9 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 	msm_ois_t->ois_v4l2_subdev_ops = &msm_ois_subdev_ops;
 	msm_ois_t->ois_mutex = &msm_ois_mutex;
 
-	/* Set platform device handle */
+	
 	msm_ois_t->pdev = pdev;
-	/* Set device type as platform device */
+	
 	msm_ois_t->ois_device_type = MSM_CAMERA_PLATFORM_DEVICE;
 	msm_ois_t->i2c_client.i2c_func_tbl = &msm_sensor_cci_func_tbl;
 	msm_ois_t->i2c_client.cci_client = kzalloc(sizeof(

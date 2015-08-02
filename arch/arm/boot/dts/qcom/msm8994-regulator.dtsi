@@ -37,9 +37,13 @@
 			compatible = "qcom,rpm-smd-regulator";
 			regulator-name = "pm8994_s1_corner_ao";
 			qcom,set = <1>;
-			regulator-min-microvolt = <1>;
+			regulator-min-microvolt = <4>;
 			regulator-max-microvolt = <7>;
+			regulator-always-on;
+			qcom,init-voltage-corner = <6>;
 			qcom,use-voltage-corner;
+			proxy-supply = <&pm8994_s1_corner_ao>;
+			qcom,proxy-consumer-voltage = <7 7>;
 		};
 	};
 
@@ -232,7 +236,6 @@
 			qcom,proxy-consumer-enable;
 			qcom,proxy-consumer-current = <10000>;
 			status = "okay";
-			regulator-always-on;
 		};
 	};
 
@@ -286,9 +289,9 @@
 	rpm-regulator-ldoa19 {
 		status = "okay";
 		pm8994_l19: regulator-l19 {
-			regulator-min-microvolt = <2850000>;
-			regulator-max-microvolt = <2850000>;
-			qcom,init-voltage = <2850000>;
+			regulator-min-microvolt = <2800000>;
+			regulator-max-microvolt = <2800000>;
+			qcom,init-voltage = <2800000>;
 			status = "okay";
 			regulator-always-on;
 		};
@@ -571,7 +574,7 @@
 			compatible = "qcom,spm-regulator";
 			reg = <0x3200 0x100>;
 			regulator-name = "pm8994_s11";
-			regulator-min-microvolt = <725000>;
+			regulator-min-microvolt = <700000>;
 			regulator-max-microvolt = <1225000>;
 			qcom,cpu-num = <4>;
 		};
@@ -582,26 +585,34 @@
 &soc {
 	mem_acc0_vreg_corner: mem-acc0-regulator {
 		compatible = "qcom,mem-acc-regulator";
-		reg = <0xf9112144 0x4>;
-		reg-names = "acc-sel-l1";
+		reg = <0xf900d084 1>, <0xf900d088 1>,
+			<0xf900d08c 1>, <0xf900d090 1>;
+		reg-names = "mem-acc-type1", "mem-acc-type2",
+			"mem-acc-type3", "mem-acc-type4";
 		regulator-name = "mem_acc0_corner";
 		regulator-min-microvolt = <1>;
 		regulator-max-microvolt = <4>;
-		qcom,corner-acc-map = <0 0 0 0>;
-		qcom,acc-sel-l1-bit-pos = <0>;
-		qcom,acc-sel-l1-bit-size = <1>;
+		qcom,corner-acc-map = <1 1 0 0>;
+		qcom,mem-acc-type1 = <0x02 0x02 0x00 0x00>;
+		qcom,mem-acc-type2 = <0x02 0x02 0x00 0x00>;
+		qcom,mem-acc-type3 = <0x02 0x02 0x00 0x00>;
+		qcom,mem-acc-type4 = <0x02 0x02 0x00 0x00>;
 	};
 
 	mem_acc1_vreg_corner: mem-acc1-regulator {
 		compatible = "qcom,mem-acc-regulator";
-		reg = <0xf9112144 0x4>;
-		reg-names = "acc-sel-l1";
+		reg = <0xf900f084 1>, <0xf900f088 1>,
+			<0xf900f08c 1>, <0xf900f090 1>;
+		reg-names = "mem-acc-type1", "mem-acc-type2",
+			"mem-acc-type3", "mem-acc-type4";
 		regulator-name = "mem_acc1_corner";
 		regulator-min-microvolt = <1>;
 		regulator-max-microvolt = <4>;
 		qcom,corner-acc-map = <1 1 0 0>;
-		qcom,acc-sel-l1-bit-pos = <1>;
-		qcom,acc-sel-l1-bit-size = <1>;
+		qcom,mem-acc-type1 = <0x02 0x02 0x06 0x06>;
+		qcom,mem-acc-type2 = <0x02 0x02 0x06 0x06>;
+		qcom,mem-acc-type3 = <0x02 0x02 0x06 0x06>;
+		qcom,mem-acc-type4 = <0x0b 0x0b 0x0b 0x0b>;
 	};
 
 	apc0_vreg_corner: regulator@f9019000 {
@@ -615,7 +626,7 @@
 		regulator-max-microvolt = <13>;
 
 		qcom,cpr-voltage-ceiling = <900000 900000 1000000 1180000>;
-		qcom,cpr-voltage-floor =   <700000 700000  790000 900000>;
+		qcom,cpr-voltage-floor =   <700000 700000  780000 835000>;
 		vdd-apc-supply = <&pm8994_s8>;
 
 		qcom,vdd-mx-corner-map = <3 4 5 7>;
@@ -640,7 +651,7 @@
 		qcom,cpr-apc-volt-step = <5000>;
 
 		qcom,cpr-fuse-row = <137 0>;
-		qcom,cpr-fuse-target-quot = <31 39 47 55>;
+		qcom,cpr-fuse-target-quot = <39 39 47 55>;
 		qcom,cpr-fuse-target-quot-size = <8 8 8 8>;
 		qcom,cpr-fuse-target-quot-scale =
 					<0 10>,
@@ -661,7 +672,7 @@
 					<57 55 4 0>;
 		qcom,cpr-fuse-redun-sel = <140 61 3 1 0>;
 		qcom,cpr-fuse-redun-row = <1000 0>;
-		qcom,cpr-fuse-redun-target-quot = <0 8 16 24>;
+		qcom,cpr-fuse-redun-target-quot = <8 8 16 24>;
 		qcom,cpr-fuse-redun-ro-sel = <44 44 44 44>;
 		qcom,cpr-fuse-redun-init-voltage =
 					<1000 32 6 0>,
@@ -679,10 +690,10 @@
 					      1115000 1180000 1180000 1180000
 					      1180000>;
 		qcom,cpr-voltage-floor-override =
-				<0xFFFFFFFF 0 700000 700000 715000 725000
-					      790000 815000 835000 900000
-					      935000 940000 990000 990000
-					      1010000>;
+				<0xFFFFFFFF 0 700000 700000 700000 725000
+					      780000 800000 825000 835000
+					      850000 915000 970000 980000
+					      1000000>;
 
 		qcom,cpr-fuse-version-map =
 				<0xffffffff 0xffffffff 1 0 0 0 0>,
@@ -692,13 +703,13 @@
 		qcom,cpr-quotient-adjustment =
 				<0 0 0 (-50)>,
 				<0 0 0 (-50)>,
-				<0 (-50) (-50) 40>,
-				<0 (-50) (-50) 0>;
+				<0 (-50) (-90) 40>,
+				<0 (-50) (-90) 0>;
 		qcom,cpr-init-voltage-adjustment =
 				<0 0 0 (-25000)>,
 				<0 0 0 (-25000)>,
-				<0 (-25000) (-25000) 20000>,
-				<0 (-25000) (-25000) 0>;
+				<0 (-25000) (-45000) 20000>,
+				<0 (-25000) (-45000) 0>;
 
 		qcom,cpr-scaled-init-voltage-as-ceiling;
 		qcom,cpr-voltage-scaling-factor-max = <0 0 2000 2000>;
@@ -733,7 +744,7 @@
 		regulator-max-microvolt = <17>;
 
 		qcom,cpr-voltage-ceiling = <900000 900000 1000000 1225000>;
-		qcom,cpr-voltage-floor =   <700000 700000  795000 865000>;
+		qcom,cpr-voltage-floor =   <700000 700000  750000 835000>;
 		vdd-apc-supply = <&pm8994_s11>;
 
 		qcom,vdd-mx-corner-map = <3 4 5 7>;
@@ -804,13 +815,13 @@
 				     1225000 1225000>;
 		qcom,cpr-voltage-floor-override =
 				<0 0 700000 700000 700000 700000 725000
-				     795000 815000 835000 865000 880000
-				     895000 915000 935000 940000 950000
-				     960000 985000>,
+				     750000 775000 795000 835000 860000
+				     880000 895000 915000 935000 945000
+				     950000 980000>,
 				<1 0 700000 700000 700000 700000 725000
-				     795000 815000 835000 865000 880000
-				     895000 915000 935000 940000 950000
-				     960000 985000>;
+				     750000 775000 795000 835000 860000
+				     880000 895000 915000 935000 945000
+				     950000 980000>;
 
 		qcom,cpr-fuse-version-map =
 				<0 0xffffffff 1 6 6 6 6>,
@@ -824,18 +835,18 @@
 				<0 0 0 (-60)>,
 				<0 0 0 (-60)>,
 				<0 0 0 (-210)>,
-				<0 0 0 (-115)>,
-				<0 0 0 (-115)>,
-				<0 0 0 (-115)>,
-				<0 0 0 (-115)>;
+				<0 0 (-105) (-115)>,
+				<0 0 (-105) (-115)>,
+				<0 0 (-105) (-115)>,
+				<0 0 (-105) (-115)>;
 		qcom,cpr-init-voltage-adjustment =
 				<0 0 0 (-80000)>,
 				<0 0 0 (-80000)>,
 				<0 0 0 (-80000)>,
-				<0 0 0 (-35000)>,
-				<0 0 0 (-35000)>,
-				<0 0 0 (-35000)>,
-				<0 0 0 (-35000)>;
+				<0 0 (-25000) (-35000)>,
+				<0 0 (-25000) (-35000)>,
+				<0 0 (-25000) (-35000)>,
+				<0 0 (-25000) (-35000)>;
 
 		qcom,cpr-scaled-init-voltage-as-ceiling;
 		qcom,cpr-voltage-scaling-factor-max = <0 0 2000 2000>;

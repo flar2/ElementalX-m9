@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,7 +16,6 @@
 /* clock_rpm controlled clocks */
 #define clk_ce1_clk 0x42229c55
 #define clk_ce2_clk 0x7b80e25b
-#define clk_ce3_clk 0xb7c009b6
 #define clk_cxo_clk_src 0x79e95308
 #define clk_pnoc_clk 0x4325d220
 #define clk_ocmemgx_clk 0xc91618fb
@@ -41,7 +40,6 @@
 #define clk_bimc_msmbus_a_clk 0x71d1a499
 #define clk_ce1_a_clk 0x44a833fe
 #define clk_ce2_a_clk 0x6a30b14b
-#define clk_ce3_a_clk 0xa67fa700
 #define clk_cnoc_msmbus_clk 0x62228b5d
 #define clk_cnoc_msmbus_a_clk 0x67442955
 #define clk_cxo_clk_src_ao 0x64eb6004
@@ -62,29 +60,28 @@
 #define clk_ln_bb_a_clk 0xc7257ea8
 #define clk_mcd_ce1_clk 0xbb615d26
 #define clk_mcd_ce2_clk 0x6ed5c723
-#define clk_mcd_ce3_clk 0x607c2bd3
 #define clk_mmssnoc_ahb_clk 0xccd4bd4c
 #define clk_mmssnoc_ahb_a_clk 0x3f1a62ce
+#define clk_mss_cfg_ahb_clk 0x4a6d85ae
+#define clk_mss_cfg_ahb_a_clk 0x2a1502ca
 #define clk_ocmemgx_core_clk 0xaad7dbe5
 #define clk_ocmemgx_msmbus_clk 0x3968c738
 #define clk_ocmemgx_msmbus_a_clk 0x66dd774f
 #define clk_oxili_gfx3d_clk_src 0xe0405056
 #define clk_pnoc_keepalive_a_clk 0xf8f91f0b
+#define clk_pnoc_modem_clk 0x822f0471
 #define clk_pnoc_msmbus_clk 0x38b95c77
 #define clk_pnoc_msmbus_a_clk 0x8c9b4e93
 #define clk_pnoc_pm_clk 0xd6f7dfb9
 #define clk_pnoc_sps_clk 0xd482ecc7
 #define clk_qcedev_ce1_clk 0x293f97b0
 #define clk_qcedev_ce2_clk 0x816b3fec
-#define clk_qcedev_ce3_clk 0xbfa406c1
 #define clk_qcrypto_ce1_clk 0xa6ac14df
 #define clk_qcrypto_ce2_clk 0x8728364d
-#define clk_qcrypto_ce3_clk 0x0dce9a93
 #define clk_qdss_clk 0x1492202a
 #define clk_qdss_a_clk 0xdd121669
 #define clk_qseecom_ce1_clk 0xaa858373
 #define clk_qseecom_ce2_clk 0x7768a8d3
-#define clk_qseecom_ce3_clk 0xf277bf96
 #define clk_rf_clk1 0xaabeea5a
 #define clk_rf_clk1_ao 0x72a10cb8
 #define clk_rf_clk1_pin 0x8f463562
@@ -95,15 +92,12 @@
 #define clk_rf_clk2_pin_ao 0x2d75eb4d
 #define clk_scm_ce1_clk 0xd8ebcc62
 #define clk_scm_ce2_clk 0x5f97c3fc
-#define clk_scm_ce3_clk 0xc52c879f
 #define clk_snoc_msmbus_clk 0xe6900bb6
 #define clk_snoc_msmbus_a_clk 0x5d4683bd
 #define clk_gcc_ce1_ahb_m_clk 0x2eb28c01
 #define clk_gcc_ce1_axi_m_clk 0xc174dfba
 #define clk_gcc_ce2_ahb_m_clk 0xe57ce2b1
 #define clk_gcc_ce2_axi_m_clk 0x4feb55e3
-#define clk_gcc_ce3_ahb_m_clk 0x527880ff
-#define clk_gcc_ce3_axi_m_clk 0xc8e9a915
 #define clk_rpm_debug_mux 0x25cd1f3a
 #define clk_gcc_bimc_kpss_axi_m_clk 0x1e86d73e
 #define clk_gcc_mmss_bimc_gfx_m_clk 0xcf06f534
@@ -219,7 +213,6 @@
 #define clk_gcc_gp1_clk 0x057f7b69
 #define clk_gcc_gp2_clk 0x9bf83ffd
 #define clk_gcc_gp3_clk 0xec6539ee
-#define clk_gcc_mss_cfg_ahb_clk 0x111cde81
 #define clk_gcc_mss_q6_bimc_axi_clk 0x67544d62
 #define clk_gcc_pcie_0_aux_clk 0x3d2e3ece
 #define clk_gcc_pcie_0_cfg_ahb_clk 0x4dd325c3
@@ -246,6 +239,7 @@
 #define clk_gcc_usb30_sleep_clk 0xd0b65c92
 #define clk_gcc_usb3_phy_aux_clk 0x0d9a36e0
 #define clk_gcc_usb3_phy_pipe_clk 0xf279aff2
+#define clk_gcc_usb3phy_phy_reset 0xb1a4f885
 #define clk_gcc_usb_hs_ahb_clk 0x72ce8032
 #define clk_gcc_usb_hs_system_clk 0xa11972e5
 #define clk_gcc_usb_phy_cfg_ahb2phy_clk 0xd1231a0e
@@ -296,6 +290,7 @@
 #define clk_esc1_clk_src 0x3b0afa42
 #define clk_extpclk_clk_src 0xb2c31abd
 #define clk_hdmi_clk_src 0xb40aeea9
+#define clk_hdmi_20nm_vco_clk 0xacaed5e6
 #define clk_vsync_clk_src 0xecb43940
 #define clk_rbbmtimer_clk_src 0x17649ecc
 #define clk_camss_cci_cci_ahb_clk 0x12aec62d
@@ -382,6 +377,17 @@
 #define clk_indirect_path_div2_clk_8994 0x21cdcc22
 #define clk_ndiv_clk_8994 0x39f41978
 #define clk_dsi_vco_clk_8994 0x976ed967
+#define clk_mdss_pixel_clk_mux 0xf261a1a6
+#define clk_mdss_byte_clk_mux 0x64a23fa0
+#define clk_shadow_byte_clk_src 0x5e69f8ef
+#define clk_shadow_pixel_clk_src 0xa6b20c5a
+#define clk_shadow_fixed_hr_oclk2_div_clk_8994 0xd1ec3fb3
+#define clk_shadow_bypass_lp_div_mux_8994 0xa57bf87b
+#define clk_shadow_hr_oclk3_div_clk_8994 0x20274a2b
+#define clk_shadow_indirect_path_div2_clk_8994 0x5d6b34c8
+#define clk_shadow_ndiv_clk_8994 0x488de275
+#define clk_shadow_dsi_vco_clk_8994 0x7995eebd
+#define clk_mdss_dsi1_vco_clk_src 0xfcd15658
 
 /* clock_cpu controlled clocks */
 #define clk_a57_clk 0x6c7dc3ea
@@ -389,8 +395,8 @@
 #define clk_a57_pll1 0x546813fa
 #define clk_a57_pll0_main 0xe2f766a8
 #define clk_a57_pll1_main 0xe231d575
-#define clk_a57_hf_mux 0x11a12cf4
-#define clk_a57_lf_mux 0xc4923785
+#define clk_a57_hf_mux_v2 0xf03c6e30
+#define clk_a57_lf_mux_v2 0xcc0c0f08
 #define clk_a57_lf_mux_div 0xac0c1150
 #define clk_a57_div_clk 0x4fdce8aa
 #define clk_a53_clk 0x5c9f8836
@@ -398,8 +404,8 @@
 #define clk_a53_pll1 0xdc2957a1
 #define clk_a53_pll0_main 0xb2cc34c0
 #define clk_a53_pll1_main 0x4fea3e81
-#define clk_a53_hf_mux 0xae9fcd1a
-#define clk_a53_lf_mux 0x541f1e40
+#define clk_a53_hf_mux_v2 0xae5899af
+#define clk_a53_lf_mux_v2 0x073a2e36
 #define clk_a53_lf_mux_div 0x6ae626e5
 #define clk_a53_div_clk 0x6006022b
 #define clk_cci_clk 0x96854074

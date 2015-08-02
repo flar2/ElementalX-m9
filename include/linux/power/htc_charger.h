@@ -146,7 +146,7 @@ struct htc_charger {
 			 int chg_limit_timer_sub_mask,
 			 int limit_charge_timer_ma);
 #else
-	int (*set_limit_charge_enable)(bool enable);
+	int (*set_limit_charge_enable)(bool enable, int reason, int restrict);
 #endif
 	int (*set_limit_input_current)(bool enable, int reason);
 	int (*set_chg_iusbmax)(int val);

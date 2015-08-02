@@ -259,6 +259,11 @@ struct cwmcu_ramdump_param {
 #define GENSOR_POSITION			0x65
 #define COMPASS_POSITION		0x75
 #define GYRO_POSITION			0x85
+
+#define CW_I2C_REG_GSENSOR_HW_ID           0x63
+#define CW_I2C_REG_COMPASS_HW_ID           0x73
+#define CW_I2C_REG_GYRO_HW_ID              0x83
+
 #define standardbase			0
 #define	acceleration			CW_ACCELERATION
 #define	magnetic			CW_MAGNETIC

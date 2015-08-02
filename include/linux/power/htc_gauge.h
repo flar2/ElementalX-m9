@@ -34,6 +34,7 @@ struct htc_gauge {
 	int (*get_battery_current)(int *result);
 	int (*get_battery_temperature)(int *result);
 	int (*get_battery_id)(int *result);
+	int (*get_battery_capacity)(int *result);
 	int (*get_battery_id_mv)(int *result);
 	int (*get_battery_soc)(int *result);
 	int (*get_battery_cc)(int *result);

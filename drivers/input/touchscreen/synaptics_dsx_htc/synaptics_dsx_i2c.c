@@ -323,15 +323,16 @@ static int parse_dt(struct device *dev, struct synaptics_dsx_board_data *bdata)
 		coords_size = prop->length / sizeof(u32);
 		if (coords_size != 4)
 			pr_info("%s:Invalid display coords size %d", __func__, coords_size);
+
+		retval = of_property_read_u32_array(np, "synaptics,display-coords", coords, coords_size);
+		if (retval && (retval != -EINVAL)) {
+			pr_err("%s:Fail to read display-coords %d\n", __func__, retval);
+			return retval;
+		}
+		bdata->display_width  = coords[1];
+		bdata->display_height = coords[3];
+		
 	}
-	retval = of_property_read_u32_array(np, "synaptics,display-coords", coords, coords_size);
-	if (retval && (retval != -EINVAL)) {
-		pr_err("%s:Fail to read display-coords %d\n", __func__, retval);
-		return retval;
-	}
-	bdata->display_width  = coords[1];
-	bdata->display_height = coords[3];
-	
 
 	
 	if (of_property_read_u32(np, "htc,eng_id", &bdata->eng_id) == 0) {

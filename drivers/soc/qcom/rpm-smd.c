@@ -1259,12 +1259,12 @@ int msm_rpm_wait_for_ack_handle(struct msm_rpm_wait_data *elem)
 
 					pr_warn("%s: IRQ %d is pending = %d\n", __func__, smd_irq, rpm_smd_irq_is_pending);
 
-					if (smd_irq_chip->irq_enable) {
+					if (smd_irq_chip && smd_irq_chip->irq_enable) {
 						pr_warn("%s: try to enable rpm smd irq %d.\n", __func__, smd_irq);
 						smd_irq_chip->irq_enable(smd_irq_data);
 					}
 
-					if (smd_irq_chip->irq_unmask) {
+					if (smd_irq_chip && smd_irq_chip->irq_unmask) {
 						pr_warn("%s: try to unmask rpm smd irq %d.\n", __func__, smd_irq);
 						smd_irq_chip->irq_unmask(smd_irq_data);
 					}

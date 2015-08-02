@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,7 +23,7 @@
 			compatible = "focaltech,5x06";
 			reg = <0x38>;
 			interrupt-parent = <&msm_gpio>;
-			interrupts = <13 0x2008>;
+			interrupts = <13 0x2>;
 			vdd-supply = <&pm8909_l17>;
 			vcc_i2c-supply = <&pm8909_l6>;
 			/* pins used by touchscreen */
@@ -34,7 +34,7 @@
 			focaltech,name = "ft6336";
 			focaltech,family-id = <0x36>;
 			focaltech,reset-gpio = <&msm_gpio 12 0x0>;
-			focaltech,irq-gpio = <&msm_gpio 13 0x2008>;
+			focaltech,irq-gpio = <&msm_gpio 13 0x0>;
 			focaltech,display-coords = <0 0 480 854>;
 			focaltech,panel-coords = <0 0 480 950>;
 			focaltech,button-map= <139 102 158>;
@@ -43,7 +43,7 @@
 			focaltech,group-id = <1>;
 			focaltech,hard-reset-delay-ms = <20>;
 			focaltech,soft-reset-delay-ms = <200>;
-			focaltech,num-max-touches = <5>;
+			focaltech,num-max-touches = <2>;
 			focaltech,fw-delay-aa-ms = <30>;
 			focaltech,fw-delay-55-ms = <30>;
 			focaltech,fw-upgrade-id1 = <0x79>;
@@ -164,6 +164,12 @@
 	};
 };
 
+&pm8909_vadc {
+	chan@30 {
+		qcom,scale-function = <6>;
+	};
+};
+
 &pm8909_chg {
 	qcom,vddmax-mv = <4350>;
 	qcom,vddsafe-mv = <4380>;
@@ -172,6 +178,7 @@
 	qcom,batt-cold-percentage = <70>;
 	qcom,tchg-mins = <360>;
 	qcom,chgr-led-support;
+	qcom,disable-vbatdet-based-recharge;
 	status = "okay";
 };
 
@@ -186,6 +193,7 @@
 
 &pm8909_bms {
 	status = "okay";
+	qcom,force-bms-active-on-charger;
 	qcom,battery-data = <&qrd_batterydata>;
 };
 
@@ -238,6 +246,10 @@
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
+};
+
+&dsi_hx8379a_fwvga_skua_vid {
+	qcom,cont-splash-enabled;
 };
 
 &pmx_mdss {

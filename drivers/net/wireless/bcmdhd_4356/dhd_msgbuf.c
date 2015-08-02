@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_msgbuf.c 529829 2015-01-28 11:10:53Z $
+ * $Id: dhd_msgbuf.c 556648 2015-05-14 11:08:32Z $
  */
 #include <typedefs.h>
 #include <osl.h>
@@ -50,7 +50,7 @@
 #include <dhd_ip.h>
 
 #define PCIE_D2H_SYNC
-#define PCIE_D2H_SYNC_WAIT_TRIES   2048 
+#define PCIE_D2H_SYNC_WAIT_TRIES   2048
 #if !defined(CONFIG_ARCH_MSM8994)
 #define PCIE_D2H_SYNC_BZERO 
 #endif 
@@ -640,12 +640,17 @@ dhd_pktid_map_fini(dhd_pktid_map_handle_t *handle)
 		if (locker->inuse == TRUE) { 
 			locker->inuse = FALSE; 
 
-			{   
+			if (!PHYSADDRISZERO(locker->physaddr)) {
+				
 				DMA_UNMAP(osh, locker->physaddr, locker->len,
 				          locker->dma, 0, 0);
+			} else {
+				DHD_ERROR(("%s: Invalid physaddr 0\n", __FUNCTION__));
+			}
 #if defined(CONFIG_DHD_USE_STATIC_BUF) && defined(DHD_USE_STATIC_IOCTLBUF)
 #if defined(DHD_DONOT_FORWARD_BCMEVENT_AS_NETWORK_PKT)
-				if ((locker->buf_type == BUFF_TYPE_IOCTL_RX) || (locker->buf_type == BUFF_TYPE_EVENT_RX)) {
+				if ((locker->buf_type == BUFF_TYPE_IOCTL_RX) ||
+					(locker->buf_type == BUFF_TYPE_EVENT_RX)) {
 #else
 				if (locker->buf_type == BUFF_TYPE_IOCTL_RX) {
 #endif
@@ -657,7 +662,6 @@ dhd_pktid_map_fini(dhd_pktid_map_handle_t *handle)
 				}
 #endif 
 
-			}
 		}
 
 		locker->pkt = NULL; 
@@ -712,11 +716,16 @@ dhd_pktid_map_clear(dhd_pktid_map_handle_t *handle)
 #endif 
 
 			DHD_TRACE(("%s free id%d\n", __FUNCTION__, nkey));
-			DMA_UNMAP(osh, locker->physaddr, locker->len,
-				locker->dma, 0, 0);
+			if (!PHYSADDRISZERO(locker->physaddr)) {
+				DMA_UNMAP(osh, locker->physaddr, locker->len,
+				          locker->dma, 0, 0);
+			} else {
+				DHD_ERROR(("%s: Invalid physaddr 0\n", __FUNCTION__));
+			}
 #if defined(CONFIG_DHD_USE_STATIC_BUF) && defined(DHD_USE_STATIC_IOCTLBUF)
 #if defined(DHD_DONOT_FORWARD_BCMEVENT_AS_NETWORK_PKT)
-			if ((locker->buf_type == BUFF_TYPE_IOCTL_RX) || (locker->buf_type == BUFF_TYPE_EVENT_RX)) {
+			if ((locker->buf_type == BUFF_TYPE_IOCTL_RX) ||
+				(locker->buf_type == BUFF_TYPE_EVENT_RX)) {
 #else
 			if (locker->buf_type == BUFF_TYPE_IOCTL_RX) {
 #endif
@@ -918,20 +927,21 @@ dhd_pktid_map_free(dhd_pktid_map_handle_t *handle, uint32 nkey,
 			dll_t *elem_p = NULL;
 			dll_t *next_p = NULL;
 			dhd_pktid_item_t *lr;
-			int i=0;
+			int i = 0;
 
 			for (elem_p = dll_head_p(&map->list_free);
 				!dll_end(&map->list_free, elem_p); elem_p = next_p) {
 				
-				if ( i > 65535 ) break;
+				if (i > 65535) break;
 				i++;
 				next_p = dll_next_p(elem_p);
 				lr = (dhd_pktid_item_t *)elem_p;
-				if ( locker == lr ) {
-					printf("locker is found in free list.\n");
+				if (locker == lr) {
+					DHD_ERROR(("locker is found in free list.\n"));
 				}
-				if ( lr->pkt ) {
-					printf("locker(%p) pkt(%p) is not null.\n", lr, lr->pkt);
+				if (lr->pkt) {
+					DHD_ERROR(("locker(%p) pkt(%p) is not null.\n",
+						lr, lr->pkt));
 				}
 			}
 		}
@@ -1152,7 +1162,7 @@ dhd_prot_init_index_dma_block(dhd_pub_t *dhd, uint8 type, uint32 length)
 
 			if (prot->h2d_dma_writeindx_buf.va == NULL) {
 				DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
-						   __FUNCTION__, __LINE__, dma_block_size));
+					__FUNCTION__, __LINE__, dma_block_size));
 				return BCME_NOMEM;
 			}
 
@@ -1173,7 +1183,7 @@ dhd_prot_init_index_dma_block(dhd_pub_t *dhd, uint8 type, uint32 length)
 				&prot->h2d_dma_readindx_buf.dmah);
 			if (prot->h2d_dma_readindx_buf.va == NULL) {
 				DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
-						   __FUNCTION__, __LINE__, dma_block_size));
+					__FUNCTION__, __LINE__, dma_block_size));
 				return BCME_NOMEM;
 			}
 
@@ -1195,7 +1205,7 @@ dhd_prot_init_index_dma_block(dhd_pub_t *dhd, uint8 type, uint32 length)
 
 			if (prot->d2h_dma_writeindx_buf.va == NULL) {
 				DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
-						   __FUNCTION__, __LINE__, dma_block_size));
+					__FUNCTION__, __LINE__, dma_block_size));
 				return BCME_NOMEM;
 			}
 
@@ -1217,7 +1227,7 @@ dhd_prot_init_index_dma_block(dhd_pub_t *dhd, uint8 type, uint32 length)
 
 			if (prot->d2h_dma_readindx_buf.va == NULL) {
 				DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
-						   __FUNCTION__, __LINE__, dma_block_size));
+					__FUNCTION__, __LINE__, dma_block_size));
 				return BCME_NOMEM;
 			}
 
@@ -1528,7 +1538,11 @@ dhd_prot_packet_free(dhd_pub_t *dhd, uint32 pktid, uint8 buf_type)
 		pa_len, buf_type);
 
 	if (PKTBUF) {
-		DMA_UNMAP(dhd->osh, pa, (uint) pa_len, DMA_TX, 0, 0);
+		if (!PHYSADDRISZERO(pa)) {
+			DMA_UNMAP(dhd->osh, pa, (uint) pa_len, DMA_TX, 0, 0);
+		} else {
+			DHD_ERROR(("%s: Invalid physaddr 0\n", __FUNCTION__));
+		}
 #if defined(CONFIG_DHD_USE_STATIC_BUF) && defined(DHD_USE_STATIC_IOCTLBUF)
 #if defined(DHD_DONOT_FORWARD_BCMEVENT_AS_NETWORK_PKT)
 		if ((buf_type == BUFF_TYPE_IOCTL_RX) || (buf_type == BUFF_TYPE_EVENT_RX)) {
@@ -1544,16 +1558,27 @@ dhd_prot_packet_free(dhd_pub_t *dhd, uint32 pktid, uint8 buf_type)
 #endif 
 	} else {
 #if defined(USE_STATIC_MEMDUMP)
-		printf("%s: pkt id invaild. dump dongle memory.\n", __FUNCTION__);
-                if (dhd->memdump_enabled) {
-                         
-                         dhdpcie_mem_dump(dhd->bus);
-                }
+		DHD_ERROR(("%s: pkt id invaild. dump dongle memory.\n", __FUNCTION__));
+		if (dhd->memdump_enabled) {
+			
+			dhdpcie_mem_dump(dhd->bus);
+		}
 #endif 
 	}
 
 	return;
 }
+
+#if defined(USE_STATIC_MEMDUMP)
+typedef struct dhd_pktid_buftype_map {
+	uint32 pktid;
+	uint8 buf_type;
+} dhd_pkid_buftype_map_t;
+
+#define MAX_LOG_OF_PKTID_HISTORY 100
+static dhd_pkid_buftype_map_t pktid_history_array[MAX_LOG_OF_PKTID_HISTORY];
+static uint32 pktid_history_index = 0;
+#endif 
 
 static INLINE void * BCMFASTPATH
 dhd_prot_packet_get(dhd_pub_t *dhd, uint32 pktid, uint8 buf_type)
@@ -1561,18 +1586,31 @@ dhd_prot_packet_get(dhd_pub_t *dhd, uint32 pktid, uint8 buf_type)
 	void *PKTBUF;
 	dmaaddr_t pa;
 	uint32 pa_len;
+
+#if defined(USE_STATIC_MEMDUMP)
+	pktid_history_array[pktid_history_index].pktid = pktid;
+	pktid_history_array[pktid_history_index].buf_type = buf_type;
+	pktid_history_index = (pktid_history_index + 1) % MAX_LOG_OF_PKTID_HISTORY;
+#endif 
+
 	PKTBUF = PKTID_TO_NATIVE(dhd->prot->pktid_map_handle, pktid, pa, pa_len, buf_type);
 	if (PKTBUF) {
 		DMA_UNMAP(dhd->osh, pa, (uint) pa_len, DMA_RX, 0, 0);
-        } else {
+	} else {
 #if defined(USE_STATIC_MEMDUMP)
-                printf("%s: pkt id invaild. dump dongle memory.\n", __FUNCTION__);
-                if (dhd->memdump_enabled) {
-                         
-                         dhdpcie_mem_dump(dhd->bus);
-                }
+		int i;
+		DHD_ERROR(("%s: dump pktid/buf_type history for debug. idx=%d\n", __FUNCTION__, pktid_history_index));
+		for (i=0; i<MAX_LOG_OF_PKTID_HISTORY; i++) {
+			DHD_ERROR(("%d: %d,%d\n", i, pktid_history_array[i].pktid, pktid_history_array[i].buf_type));
+		}
+
+		DHD_ERROR(("%s: pkt id invaild. dump dongle memory.\n", __FUNCTION__));
+		if (dhd->memdump_enabled) {
+			
+			dhdpcie_mem_dump(dhd->bus);
+		}
 #endif 
-        }
+	}
 
 	return PKTBUF;
 }
@@ -1876,6 +1914,7 @@ dhd_msgbuf_rxbuf_post_ioctlresp_bufs(dhd_pub_t *dhd)
 {
 	dhd_prot_t *prot = dhd->prot;
 	uint16 retcnt = 0;
+	int max_to_post;
 
 	DHD_INFO(("ioctl resp buf post\n"));
 
@@ -1884,8 +1923,14 @@ dhd_msgbuf_rxbuf_post_ioctlresp_bufs(dhd_pub_t *dhd)
 		return 0;
 	}
 
+	max_to_post = prot->max_ioctlrespbufpost - prot->cur_ioctlresp_bufs_posted;
+	if (max_to_post <= 0) {
+		DHD_ERROR(("%s: Cannot post more than max IOCTL resp buffers %d\n",
+			__FUNCTION__, max_to_post));
+		return 0;
+	}
 	retcnt = dhd_msgbuf_rxbuf_post_ctrlpath(dhd, FALSE,
-		prot->max_ioctlrespbufpost - prot->cur_ioctlresp_bufs_posted);
+		max_to_post);
 	prot->cur_ioctlresp_bufs_posted += retcnt;
 	return retcnt;
 }
@@ -1895,15 +1940,23 @@ dhd_msgbuf_rxbuf_post_event_bufs(dhd_pub_t *dhd)
 {
 	dhd_prot_t *prot = dhd->prot;
 	uint16 retcnt = 0;
+	int max_to_post;
+
+	DHD_INFO(("event buf post\n"));
 
 	if (dhd->busstate == DHD_BUS_DOWN) {
 		DHD_ERROR(("%s: bus is already down.\n", __FUNCTION__));
 		return 0;
 	}
 
+	max_to_post = prot->max_eventbufpost - prot->cur_event_bufs_posted;
+	if (max_to_post <= 0) {
+		DHD_ERROR(("%s: Cannot post more than max event buffers %d\n",
+			__FUNCTION__, max_to_post));
+		return 0;
+	}
 	retcnt = dhd_msgbuf_rxbuf_post_ctrlpath(dhd, TRUE,
-		prot->max_eventbufpost - prot->cur_event_bufs_posted);
-
+		max_to_post);
 	prot->cur_event_bufs_posted += retcnt;
 	return retcnt;
 }
@@ -1919,6 +1972,11 @@ dhd_prot_process_msgbuf_rxcpl(dhd_pub_t *dhd, uint bound)
 	while (TRUE) {
 		uint8 *src_addr;
 		uint16 src_len;
+
+		if (dhd->hang_was_sent) {
+			more = FALSE;
+			break;
+		}
 
 		
 		
@@ -1983,6 +2041,11 @@ dhd_prot_process_msgbuf_txcpl(dhd_pub_t *dhd, uint bound)
 		uint8 *src_addr;
 		uint16 src_len;
 
+		if (dhd->hang_was_sent) {
+			more = FALSE;
+			break;
+		}
+
 		src_addr = prot_get_src_addr(dhd, prot->d2hring_tx_cpln, &src_len);
 		if (src_addr == NULL) {
 			more = FALSE;
@@ -2020,6 +2083,11 @@ dhd_prot_process_ctrlbuf(dhd_pub_t * dhd)
 	while (TRUE) {
 		uint8 *src_addr;
 		uint16 src_len;
+
+		if (dhd->hang_was_sent) {
+			break;
+		}
+
 		src_addr = prot_get_src_addr(dhd, prot->d2hring_ctrl_cpln, &src_len);
 
 		if (src_addr == NULL) {
@@ -2052,6 +2120,12 @@ dhd_prot_process_msgtype(dhd_pub_t *dhd, msgbuf_ring_t *ring, uint8* buf, uint16
 
 	while (len > 0) {
 		ASSERT(len > (sizeof(cmn_msg_hdr_t) + prot->rx_dataoffset));
+
+		if (dhd->hang_was_sent) {
+			ret = BCME_ERROR;
+			break;
+		}
+
 		if (prot->rx_dataoffset) {
 			cur_dma_len = *(uint32 *) buf;
 			ASSERT(cur_dma_len <= len);
@@ -2095,6 +2169,11 @@ dhd_process_msgtype(dhd_pub_t *dhd, msgbuf_ring_t *ring, uint8* buf, uint16 len)
 	}
 
 	while (pktlen > 0) {
+		if (dhd->hang_was_sent) {
+			ret = BCME_ERROR;
+			goto done;
+		}
+
 		msg = (cmn_msg_hdr_t *)buf;
 
 #if defined(PCIE_D2H_SYNC)
@@ -2273,7 +2352,8 @@ dhd_msgbuf_dump_ctrlrings(dhd_pub_t *dhd)
 	uchar *msg;
 
 	ring = dhd->prot->h2dring_ctrl_subn;
-	DHD_ERROR(("%s: ctrl post ring RP %d, WP %d\n", __FUNCTION__, RING_READ_PTR(ring), RING_WRITE_PTR(ring)));
+	DHD_ERROR(("%s: ctrl post ring RP %d, WP %d\n",
+		__FUNCTION__, RING_READ_PTR(ring), RING_WRITE_PTR(ring)));
 	msg = (uchar *)ring->ring_base.va;
 	for (i = 0; i < RING_MAX_ITEM(ring); i++) {
 		prhex(NULL, msg, RING_LEN_ITEMS(ring));
@@ -2281,7 +2361,8 @@ dhd_msgbuf_dump_ctrlrings(dhd_pub_t *dhd)
 	}
 
 	ring = dhd->prot->d2hring_ctrl_cpln;
-	DHD_ERROR(("%s: ctrl complete ring RP %d, WP %d\n", __FUNCTION__, RING_READ_PTR(ring), RING_WRITE_PTR(ring)));
+	DHD_ERROR(("%s: ctrl complete ring RP %d, WP %d\n",
+		__FUNCTION__, RING_READ_PTR(ring), RING_WRITE_PTR(ring)));
 	msg = (uchar *)ring->ring_base.va;
 	for (i = 0; i < RING_MAX_ITEM(ring); i++) {
 		prhex(NULL, msg, RING_LEN_ITEMS(ring));
@@ -2846,7 +2927,7 @@ int dmaxfer_prepare_dmaaddr(dhd_pub_t *dhd, uint len,
 	&i, &dma->srcmem.pa, &dma->srcmem.dmah);
 	if (dma->srcmem.va ==  NULL) {
 		DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
-				   __FUNCTION__, __LINE__, len));
+			__FUNCTION__, __LINE__, len));
 		return BCME_NOMEM;
 	}
 
@@ -2860,7 +2941,7 @@ int dmaxfer_prepare_dmaaddr(dhd_pub_t *dhd, uint len,
 	&i, &dma->destmem.pa, &dma->destmem.dmah);
 	if (dma->destmem.va ==  NULL) {
 		DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
-				   __FUNCTION__, __LINE__, len + 8));
+			__FUNCTION__, __LINE__, len + 8));
 		DMA_FREE_CONSISTENT(dhd->osh, dma->srcmem.va,
 			dma->len, dma->srcmem.pa, dma->srcmem.dmah);
 		dma->srcmem.va = NULL;
@@ -3294,24 +3375,24 @@ void *pktid_map_init(void *osh, uint32 count)
 
 	handle = (pktid_map_t *) MALLOC(osh, sizeof(pktid_map_t));
 	if (handle == NULL) {
-		printf("%s:%d: MALLOC failed for size %d\n",
-			__FUNCTION__, __LINE__, (uint32) sizeof(pktid_map_t));
+		DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
+			__FUNCTION__, __LINE__, (uint32) sizeof(pktid_map_t)));
 		return NULL;
 	}
 	handle->osh = osh;
 	handle->count = count;
 	handle->mwbmap_hdl = bcm_mwbmap_init(osh, count);
 	if (handle->mwbmap_hdl == NULL) {
-		printf("%s:%d: bcm_mwbmap_init failed for count %d\n",
-			__FUNCTION__, __LINE__, count);
+		DHD_ERROR(("%s:%d: bcm_mwbmap_init failed for count %d\n",
+			__FUNCTION__, __LINE__, count));
 		MFREE(osh, handle, sizeof(pktid_map_t));
 		return NULL;
 	}
 
 	handle->pktid_list = (pktid_t *) MALLOC(osh, sizeof(pktid_t) * (count+1));
 	if (handle->pktid_list == NULL) {
-		printf("%s:%d: MALLOC failed for count %d / total = %d\n",
-			__FUNCTION__, __LINE__, count, (uint32) sizeof(pktid_t) * count);
+		DHD_ERROR(("%s:%d: MALLOC failed for count %d / total = %d\n",
+			__FUNCTION__, __LINE__, count, (uint32) sizeof(pktid_t) * count));
 		bcm_mwbmap_fini(osh, handle->mwbmap_hdl);
 		MFREE(osh, handle, sizeof(pktid_map_t));
 		return NULL;
@@ -3353,14 +3434,14 @@ pktid_map_unique(void *pktid_map_handle, void *pkt, dmaaddr_t physaddr, uint32 p
 	pktid_map_t *handle = (pktid_map_t *) pktid_map_handle;
 
 	if (handle == NULL) {
-		printf("%s:%d: Error !!! pktid_map_unique called without initing pktid_map\n",
-			__FUNCTION__, __LINE__);
+		DHD_ERROR(("%s:%d: Error !!! pktid_map_unique called without initing pktid_map\n",
+			__FUNCTION__, __LINE__));
 		return 0;
 	}
 	id = bcm_mwbmap_alloc(handle->mwbmap_hdl);
 	if (id == BCM_MWBMAP_INVALID_IDX) {
-		printf("%s:%d: bcm_mwbmap_alloc failed. Free Count = %d\n",
-			__FUNCTION__, __LINE__, bcm_mwbmap_free_cnt(handle->mwbmap_hdl));
+		DHD_ERROR(("%s:%d: bcm_mwbmap_alloc failed. Free Count = %d\n",
+			__FUNCTION__, __LINE__, bcm_mwbmap_free_cnt(handle->mwbmap_hdl)));
 		return 0;
 	}
 
@@ -3380,15 +3461,15 @@ pktid_get_packet(void *pktid_map_handle, uint32 id, dmaaddr_t *physaddr, uint32 
 	void *native = NULL;
 	pktid_map_t *handle = (pktid_map_t *) pktid_map_handle;
 	if (handle == NULL) {
-		printf("%s:%d: Error !!! pktid_get_packet called without initing pktid_map\n",
-			__FUNCTION__, __LINE__);
+		DHD_ERROR(("%s:%d: Error !!! pktid_get_packet called without initing pktid_map\n",
+			__FUNCTION__, __LINE__));
 		return NULL;
 	}
 
 	
 	if (bcm_mwbmap_isfree(handle->mwbmap_hdl, (id-1))) {
-		printf("%s:%d: Error !!!. slot (%d/0x%04x) free but the app is using it.\n",
-			__FUNCTION__, __LINE__, (id-1), (id-1));
+		DHD_ERROR(("%s:%d: Error !!!. slot (%d/0x%04x) free but the app is using it.\n",
+			__FUNCTION__, __LINE__, (id-1), (id-1)));
 		return NULL;
 	}
 
@@ -3447,7 +3528,7 @@ prot_ring_attach(dhd_prot_t * prot, char* name, uint16 max_item, uint16 len_item
 
 	if (ring->ring_base.va == NULL) {
 		DHD_ERROR(("%s:%d: MALLOC failed for size %d\n",
-				   __FUNCTION__, __LINE__, size));
+			__FUNCTION__, __LINE__, size));
 		goto fail;
 	}
 	ring->ringmem->base_addr.high_addr = htol32(PHYSADDRHI(ring->ring_base.pa));

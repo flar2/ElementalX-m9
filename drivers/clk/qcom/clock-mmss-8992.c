@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -296,7 +296,6 @@ static struct alpha_pll_clk mmpll3 = {
 DEFINE_EXT_CLK(mmpll3_out_main, &mmpll3.c);
 
 static struct clk_freq_tbl ftbl_axi_clk_src[] = {
-	F_MM(  75000000,     mmsscc_gpll0,    8,    0,     0),
 	F_MM( 150000000,     mmsscc_gpll0,    4,    0,     0),
 	F_MM( 300000000,     mmsscc_gpll0,    2,    0,     0),
 	F_MM( 404000000,  mmpll1_out_main,    2,    0,     0),
@@ -363,7 +362,7 @@ static struct clk_freq_tbl ftbl_vcodec0_clk_src[] = {
 	F_MM( 100000000,     mmsscc_gpll0,    6,    0,     0),
 	F_MM( 133330000,     mmsscc_gpll0,  4.5,    0,     0),
 	F_MM( 200000000,  mmpll0_out_main,    4,    0,     0),
-	F_MM( 266670000,  mmpll0_out_main,    3,    0,     0),
+	F_MM( 320000000,  mmpll0_out_main,  2.5,    0,     0),
 	F_MM( 510000000,  mmpll3_out_main,    2,    0,     0),
 	F_END
 };
@@ -378,7 +377,7 @@ static struct rcg_clk vcodec0_clk_src = {
 		.dbg_name = "vcodec0_clk_src",
 		.ops = &clk_ops_rcg_mnd,
 		VDD_DIG_FMAX_MAP4(LOWER, 66670000, LOW, 133330000,
-				  NOMINAL, 266670000, HIGH, 510000000),
+				  NOMINAL, 320000000, HIGH, 510000000),
 		CLK_INIT(vcodec0_clk_src.c),
 	},
 };
@@ -569,6 +568,7 @@ static struct rcg_clk pclk0_clk_src = {
 		.dbg_name = "pclk0_clk_src",
 		.parent = &ext_pclk0_clk_src.c,
 		.ops = &clk_ops_pixel,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 75000000, LOW, 150000000,
 				  NOMINAL, 250000000),
 		CLK_INIT(pclk0_clk_src.c),
@@ -593,6 +593,7 @@ static struct rcg_clk pclk1_clk_src = {
 		.dbg_name = "pclk1_clk_src",
 		.parent = &ext_pclk1_clk_src.c,
 		.ops = &clk_ops_pixel,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 75000000, LOW, 150000000,
 				  NOMINAL, 250000000),
 		CLK_INIT(pclk1_clk_src.c),
@@ -751,6 +752,7 @@ static struct clk_freq_tbl ftbl_mclk0_clk_src[] = {
 	F_MM(   6000000,  mmpll4_out_main,   10,    1,    16),
 	F_MM(   8000000,  mmpll4_out_main,   10,    1,    12),
 	F_MM(   9600000,        mmsscc_xo,    2,    0,     0),
+	F_MM(  12000000,  mmpll4_out_main,   10,    1,     8),
 	F_MM(  16000000,  mmpll4_out_main,   10,    1,     6),
 	F_MM(  19200000,        mmsscc_xo,    1,    0,     0),
 	F_MM(  24000000,  mmpll4_out_main,   10,    1,     4),
@@ -941,6 +943,7 @@ static struct rcg_clk byte0_clk_src = {
 		.dbg_name = "byte0_clk_src",
 		.parent = &ext_byte0_clk_src.c,
 		.ops = &clk_ops_byte,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 60000000, LOW, 112500000,
 				  NOMINAL, 187500000),
 		CLK_INIT(byte0_clk_src.c),
@@ -964,6 +967,7 @@ static struct rcg_clk byte1_clk_src = {
 		.dbg_name = "byte1_clk_src",
 		.parent = &ext_byte1_clk_src.c,
 		.ops = &clk_ops_byte,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 60000000, LOW, 112500000,
 				  NOMINAL, 187500000),
 		CLK_INIT(byte1_clk_src.c),
@@ -1466,7 +1470,7 @@ static struct branch_clk camss_jpeg_dma_clk = {
 
 static struct branch_clk camss_jpeg_jpeg0_clk = {
 	.cbcr_reg = CAMSS_JPEG_JPEG0_CBCR,
-	.has_sibling = 1,
+	.has_sibling = 0,
 	.base = &virt_base,
 	.c = {
 		.dbg_name = "camss_jpeg_jpeg0_clk",
@@ -1609,6 +1613,7 @@ static struct branch_clk camss_top_ahb_clk = {
 static struct branch_clk camss_vfe_vfe0_clk = {
 	.cbcr_reg = CAMSS_VFE_VFE0_CBCR,
 	.has_sibling = 0,
+	.toggle_memory = true,
 	.base = &virt_base,
 	.c = {
 		.dbg_name = "camss_vfe_vfe0_clk",
@@ -1621,6 +1626,7 @@ static struct branch_clk camss_vfe_vfe0_clk = {
 static struct branch_clk camss_vfe_vfe1_clk = {
 	.cbcr_reg = CAMSS_VFE_VFE1_CBCR,
 	.has_sibling = 0,
+	.toggle_memory = true,
 	.base = &virt_base,
 	.c = {
 		.dbg_name = "camss_vfe_vfe1_clk",
@@ -1684,6 +1690,7 @@ static struct branch_clk mdss_byte0_clk = {
 		.dbg_name = "mdss_byte0_clk",
 		.parent = &byte0_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_byte0_clk.c),
 	},
 };
@@ -1696,6 +1703,7 @@ static struct branch_clk mdss_byte1_clk = {
 		.dbg_name = "mdss_byte1_clk",
 		.parent = &byte1_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_byte1_clk.c),
 	},
 };
@@ -1779,6 +1787,7 @@ static struct branch_clk mdss_pclk0_clk = {
 		.dbg_name = "mdss_pclk0_clk",
 		.parent = &pclk0_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_pclk0_clk.c),
 	},
 };
@@ -1791,6 +1800,7 @@ static struct branch_clk mdss_pclk1_clk = {
 		.dbg_name = "mdss_pclk1_clk",
 		.parent = &pclk1_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_pclk1_clk.c),
 	},
 };
@@ -2297,12 +2307,16 @@ int msm_mmsscc_8992_probe(struct platform_device *pdev)
 
 	ext_pclk0_clk_src.dev = &pdev->dev;
 	ext_pclk0_clk_src.clk_id = "pclk0_src";
+	ext_pclk0_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
 	ext_pclk1_clk_src.dev = &pdev->dev;
 	ext_pclk1_clk_src.clk_id = "pclk1_src";
+	ext_pclk1_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
 	ext_byte0_clk_src.dev = &pdev->dev;
 	ext_byte0_clk_src.clk_id = "byte0_src";
+	ext_byte0_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
 	ext_byte1_clk_src.dev = &pdev->dev;
 	ext_byte1_clk_src.clk_id = "byte1_src";
+	ext_byte1_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
 	ext_extpclk_clk_src.dev = &pdev->dev;
 	ext_extpclk_clk_src.clk_id = "extpclk_src";
 

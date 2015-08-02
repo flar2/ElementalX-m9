@@ -2,7 +2,7 @@
  * drivers/mmc/host/sdhci-msm.c - Qualcomm MSM SDHCI Platform
  * driver source file
  *
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -41,6 +41,7 @@
 #include <linux/iopoll.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/msm-bus.h>
+#include <linux/syscalls.h>
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -151,6 +152,8 @@ enum sdc_mpm_pin_state {
 
 #define CORE_DLL_CONFIG_2	0x1B4
 #define CORE_DDR_CAL_EN		(1 << 0)
+#define CORE_FLL_CYCLE_CNT	(1 << 18)
+#define CORE_DLL_CLOCK_DISABLE	(1 << 21)
 
 #define CORE_DDR_CONFIG			0x1B8
 #define DDR_CONFIG_POR_VAL		0x80040853
@@ -188,6 +191,7 @@ enum sdc_mpm_pin_state {
 #define SDHCI_MSM_MMC_CLK_GATE_DELAY	200 
 
 #define CORE_FREQ_100MHZ	(100 * 1000 * 1000)
+#define TCXO_FREQ		19200000
 
 #define INVALID_TUNING_PHASE	-1
 
@@ -196,6 +200,9 @@ enum sdc_mpm_pin_state {
 
 #define NUM_TUNING_PHASES		16
 #define MAX_DRV_TYPES_SUPPORTED_HS200	3
+
+#define SDHCI_NORMAL_REMOVE		0x00
+#define SDHCI_COMMAND_REMOVE		0x10
 
 #define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
@@ -218,6 +225,9 @@ static const u32 tuning_block_128[] = {
 };
 
 static int disable_slots;
+static unsigned int special_removed = SDHCI_NORMAL_REMOVE;
+extern unsigned int disable_auto_sd;
+
 module_param(disable_slots, int, S_IRUGO|S_IWUSR);
 
 struct sdhci_msm_reg_data {
@@ -289,19 +299,23 @@ struct sdhci_msm_pltfm_data {
 	struct sdhci_msm_slot_reg_data *vreg_data;
 	bool nonremovable;
 	bool nonhotplug;
+	bool no_1p8v;
 	bool pin_cfg_sts;
 	struct sdhci_msm_pin_data *pin_data;
 	struct sdhci_pinctrl_data *pctrl_data;
-	u32 cpu_dma_latency_us;
+	u32 *cpu_dma_latency_us;
+	unsigned int cpu_dma_latency_tbl_sz;
 	int status_gpio; 
 	struct sdhci_msm_bus_voting_data *voting_data;
 	u32 *sup_clk_table;
 	unsigned char sup_clk_cnt;
 	int mpm_sdiowakeup_int;
 	int sdiowakeup_irq;
+	int extended_debounce;
 	int slot_type;
 	enum pm_qos_req_type cpu_affinity_type;
-	cpumask_t cpu_affinity_mask;
+	u32 *cpu_affinity_mask;
+	unsigned int cpu_affinity_mask_tbl_sz;
 };
 
 struct sdhci_msm_bus_vote {
@@ -343,6 +357,7 @@ struct sdhci_msm_host {
 	bool is_sdiowakeup_enabled;
 	atomic_t controller_clock;
 	bool use_cdclp533;
+	bool use_updated_dll_reset;
 	u32 caps_0;
 };
 
@@ -371,7 +386,20 @@ mmc_redetect_sd(struct device *dev, struct device_attribute *attr,
 			mmc_remove_sd_card(mmc);
 			mmc_detect_change(mmc, 0);
 		}
-		printk("%s : needs re-detect SD card\n", mmc_hostname(mmc));
+		printk("%s : needs to re-detect SD card\n", mmc_hostname(mmc));
+	} else if (buf[0] == '1') {
+		mmc->rescan_only_remove = 1;
+		if(mmc->card) {
+			sys_sync();
+			special_removed = SDHCI_COMMAND_REMOVE;
+			mmc_remove_sd_card(mmc);
+		}
+		printk("%s : needs to remove SD card\n", mmc_hostname(mmc));
+	} else if (buf[0] == '2') {
+		special_removed = SDHCI_NORMAL_REMOVE;
+		mmc->rescan_only_remove = 0;
+		mmc_detect_change(mmc, 0);
+		printk("%s : needs detect SD card\n", mmc_hostname(mmc));
 	}
 
 	return count;
@@ -382,7 +410,10 @@ mmc_show_status(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct sdhci_host *host = dev_get_drvdata(dev);
 
-	return snprintf(buf, PAGE_SIZE, "%d", !!host->mmc->card);
+	if (disable_auto_sd)
+		return snprintf(buf, PAGE_SIZE, "%d", (!!host->mmc->card) | special_removed);
+	else
+		return snprintf(buf, PAGE_SIZE, "%d", !!host->mmc->card);
 }
 
 static DEVICE_ATTR(redetect, 0700, mmc_show_status, mmc_redetect_sd);
@@ -792,6 +823,8 @@ static inline void msm_cm_dll_set_freq(struct sdhci_host *host)
 
 static int msm_init_cm_dll(struct sdhci_host *host)
 {
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
 	struct mmc_host *mmc = host->mmc;
 	int rc = 0;
 	unsigned long flags;
@@ -810,6 +843,17 @@ static int msm_init_cm_dll(struct sdhci_host *host)
 		curr_pwrsave = false;
 	}
 
+	if (msm_host->use_updated_dll_reset) {
+		
+		writel_relaxed((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG)
+				& ~CORE_CK_OUT_EN),
+				host->ioaddr + CORE_DLL_CONFIG);
+
+		writel_relaxed((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG_2)
+				| CORE_DLL_CLOCK_DISABLE),
+				host->ioaddr + CORE_DLL_CONFIG_2);
+	}
+
 	
 	writel_relaxed((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG)
 			| CORE_DLL_RST), host->ioaddr + CORE_DLL_CONFIG);
@@ -819,6 +863,22 @@ static int msm_init_cm_dll(struct sdhci_host *host)
 			| CORE_DLL_PDN), host->ioaddr + CORE_DLL_CONFIG);
 	msm_cm_dll_set_freq(host);
 
+	if (msm_host->use_updated_dll_reset) {
+		u32 mclk_freq = 0;
+
+		if ((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG_2)
+					& CORE_FLL_CYCLE_CNT))
+			mclk_freq = (u32) ((host->clock / TCXO_FREQ) * 8);
+		else
+			mclk_freq = (u32) ((host->clock / TCXO_FREQ) * 4);
+
+		writel_relaxed(((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG_2)
+				& ~(0xFF << 10)) | (mclk_freq << 10)),
+				host->ioaddr + CORE_DLL_CONFIG_2);
+		
+		udelay(5);
+	}
+
 	
 	writel_relaxed((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG)
 			& ~CORE_DLL_RST), host->ioaddr + CORE_DLL_CONFIG);
@@ -826,6 +886,14 @@ static int msm_init_cm_dll(struct sdhci_host *host)
 	
 	writel_relaxed((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG)
 			& ~CORE_DLL_PDN), host->ioaddr + CORE_DLL_CONFIG);
+
+	if (msm_host->use_updated_dll_reset) {
+		msm_cm_dll_set_freq(host);
+		
+		writel_relaxed((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG_2)
+				& ~CORE_DLL_CLOCK_DISABLE),
+				host->ioaddr + CORE_DLL_CONFIG_2);
+	}
 
 	
 	writel_relaxed((readl_relaxed(host->ioaddr + CORE_DLL_CONFIG)
@@ -1539,43 +1607,65 @@ out:
 }
 
 #ifdef CONFIG_SMP
-static void sdhci_msm_populate_affinity(struct sdhci_msm_pltfm_data *pdata,
-					     struct device_node *np)
+static void sdhci_msm_populate_affinity(struct device *dev,
+					struct sdhci_msm_pltfm_data *pdata,
+					struct device_node *np)
 {
 	const char *cpu_affinity = NULL;
-	u32 cpu_mask;
+	u32 prop_val = 0;
 
 	pdata->cpu_affinity_type = PM_QOS_REQ_AFFINE_IRQ;
 	if (!of_property_read_string(np, "qcom,cpu-affinity", &cpu_affinity)) {
-		if (!strcmp(cpu_affinity, "all_cores"))
+		if (!strcmp(cpu_affinity, "all_cores")) {
 			pdata->cpu_affinity_type = PM_QOS_REQ_ALL_CORES;
-		else if (!strcmp(cpu_affinity, "affine_cores") &&
-			 !of_property_read_u32(np, "qcom,cpu-affinity-mask",
-						&cpu_mask)) {
-				cpumask_bits(&pdata->cpu_affinity_mask)[0] =
-					cpu_mask;
-				pdata->cpu_affinity_type =
-					PM_QOS_REQ_AFFINE_CORES;
+		} else if (!strcmp(cpu_affinity, "affine_cores") &&
+			   of_get_property(np, "qcom,cpu-affinity-mask",
+					   &prop_val)) {
+			pdata->cpu_affinity_mask_tbl_sz =
+				prop_val/sizeof(*pdata->cpu_affinity_mask);
+
+			pdata->cpu_affinity_mask = devm_kzalloc(dev,
+				sizeof(*pdata->cpu_affinity_mask) *
+				pdata->cpu_affinity_mask_tbl_sz,
+				GFP_KERNEL);
+
+			if (!pdata->cpu_affinity_mask) {
+				dev_err(dev, "cpu_affinity_mask alloc fail\n");
+				return;
+			}
+			if (of_property_read_u32_array(np,
+				"qcom,cpu-affinity-mask",
+				pdata->cpu_affinity_mask,
+				pdata->cpu_affinity_mask_tbl_sz)) {
+				dev_err(dev, "cpu-affinity-mask parse fail\n");
+				return;
+			}
+			pdata->cpu_affinity_type = PM_QOS_REQ_AFFINE_CORES;
 		}
 	}
+
 }
 #else
-static void sdhci_msm_populate_affinity(struct sdhci_msm_pltfm_data *pdata,
-							struct device_node *np)
+static void sdhci_msm_populate_affinity(struct device *dev,
+					struct sdhci_msm_pltfm_data *pdata,
+					struct device_node *np)
 {
 }
 #endif
 
-static struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev)
+static
+struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev,
+						struct sdhci_msm_host *msm_host)
 {
 	struct sdhci_msm_pltfm_data *pdata = NULL;
 	struct device_node *np = dev->of_node;
 	u32 bus_width = 0;
-	u32 cpu_dma_latency;
+	u32 prop_val = 0;
 	int len, i, mpm_int;
 	int clk_table_len;
 	u32 *clk_table = NULL;
 	enum of_gpio_flags flags = OF_GPIO_ACTIVE_LOW;
+	bool skip_qos_from_dt = false;
 	unsigned int mmc_pid_info = 0;
 	struct device_node *mmc_pid = NULL;
 
@@ -1612,11 +1702,6 @@ static struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev)
 		pdata->mmc_bus_width = 0;
 	}
 
-	if (!of_property_read_u32(np, "qcom,cpu-dma-latency-us",
-				&cpu_dma_latency))
-		pdata->cpu_dma_latency_us = cpu_dma_latency;
-	else
-		pdata->cpu_dma_latency_us = MSM_MMC_DEFAULT_CPU_DMA_LATENCY;
 	if ((mmc_pid_info == 367)  && (pdata->slot_type == MMC_TYPE_MMC)) {
 		if (sdhci_msm_dt_get_array(dev, "htc,clk-rates",
 				&clk_table, &clk_table_len, 0)) {
@@ -1629,6 +1714,58 @@ static struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev)
 			dev_err(dev, "failed parsing supported clock rates\n");
 			goto out;
 		}
+	}
+
+	if (of_get_property(np, "qcom,cpu-dma-latency-us",
+				&prop_val)) {
+
+		pdata->cpu_dma_latency_tbl_sz =
+			prop_val/sizeof(*pdata->cpu_dma_latency_us);
+
+		if (!(pdata->cpu_dma_latency_tbl_sz >= 1 &&
+			pdata->cpu_dma_latency_tbl_sz <= 3)) {
+			dev_warn(dev, "incorrect Qos param passed from DT: %d\n",
+				pdata->cpu_dma_latency_tbl_sz);
+			skip_qos_from_dt = true;
+		} else {
+			pdata->cpu_dma_latency_us = devm_kzalloc(dev,
+				sizeof(*pdata->cpu_dma_latency_us) *
+				pdata->cpu_dma_latency_tbl_sz,
+				GFP_KERNEL);
+			if (!pdata->cpu_dma_latency_us) {
+				dev_err(dev, "No memory for cpu_dma_latency_us\n");
+				goto out;
+			}
+			if (of_property_read_u32_array(np,
+					"qcom,cpu-dma-latency-us",
+					pdata->cpu_dma_latency_us,
+					pdata->cpu_dma_latency_tbl_sz)) {
+				dev_err(dev, "failed to parse cpu-dma-latency\n");
+				goto out;
+			}
+		}
+	} else {
+		dev_info(dev, "no qcom,cpu-dma-latency-us found\n");
+		skip_qos_from_dt = true;
+	}
+
+	if (skip_qos_from_dt) {
+		pdata->cpu_dma_latency_tbl_sz = 1;
+		pdata->cpu_dma_latency_us = devm_kzalloc(dev,
+			sizeof(*pdata->cpu_dma_latency_us) *
+			pdata->cpu_dma_latency_tbl_sz,
+			GFP_KERNEL);
+		if (!pdata->cpu_dma_latency_us) {
+			dev_err(dev, "No memory for cpu_dma_latency_us\n");
+			goto out;
+		}
+		pdata->cpu_dma_latency_us[0] = MSM_MMC_DEFAULT_CPU_DMA_LATENCY;
+	}
+
+	if (sdhci_msm_dt_get_array(dev, "qcom,clk-rates",
+			&clk_table, &clk_table_len, 0)) {
+		dev_err(dev, "failed parsing supported clock rates\n");
+		goto out;
 	}
 	if (!clk_table || !clk_table_len) {
 		dev_err(dev, "Invalid clock table\n");
@@ -1702,13 +1839,22 @@ static struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev)
 		pr_info("mmc: bkops support\n");
 	}
 
+	if (of_property_read_bool(np, "qcom,no-1p8v"))
+		pdata->no_1p8v = true;
+
 	if (!of_property_read_u32(np, "qcom,dat1-mpm-int",
 				  &mpm_int))
 		pdata->mpm_sdiowakeup_int = mpm_int;
 	else
 		pdata->mpm_sdiowakeup_int = -1;
 
-	sdhci_msm_populate_affinity(pdata, np);
+	if (of_property_read_u32(np, "htc,extended-debounce", &pdata->extended_debounce))
+		pdata->extended_debounce = 0;
+
+	sdhci_msm_populate_affinity(dev, pdata, np);
+
+	if (of_property_read_bool(np, "qcom,wakeup-on-idle"))
+		msm_host->mmc->wakeup_on_idle = true;
 
 	return pdata;
 out:
@@ -2411,14 +2557,18 @@ static void sdhci_msm_check_power_status(struct sdhci_host *host, u32 req_type)
 
 static void sdhci_msm_toggle_cdr(struct sdhci_host *host, bool enable)
 {
-	if (enable)
-		writel_relaxed((readl_relaxed(host->ioaddr +
-					      CORE_DLL_CONFIG) | CORE_CDR_EN),
-			       host->ioaddr + CORE_DLL_CONFIG);
-	else
-		writel_relaxed((readl_relaxed(host->ioaddr +
-					      CORE_DLL_CONFIG) & ~CORE_CDR_EN),
-			       host->ioaddr + CORE_DLL_CONFIG);
+	u32 config;
+	config = readl_relaxed(host->ioaddr + CORE_DLL_CONFIG);
+
+	if (enable) {
+		config |= CORE_CDR_EN;
+		config &= ~CORE_CDR_EXT_EN;
+		writel_relaxed(config, host->ioaddr + CORE_DLL_CONFIG);
+	} else {
+		config &= ~CORE_CDR_EN;
+		config |= CORE_CDR_EXT_EN;
+		writel_relaxed(config, host->ioaddr + CORE_DLL_CONFIG);
+	}
 }
 
 static unsigned int sdhci_msm_max_segs(void)
@@ -2923,6 +3073,9 @@ static void sdhci_set_default_hw_caps(struct sdhci_msm_host *msm_host,
 	if ((major == 1) && (minor < 0x34))
 		msm_host->use_cdclp533 = true;
 
+	if ((major == 1) && (minor >= 0x42))
+		msm_host->use_updated_dll_reset = true;
+
 	caps &= ~CORE_SYS_BUS_SUPPORT_64_BIT;
 	writel_relaxed(caps, host->ioaddr + CORE_VENDOR_SPEC_CAPABILITIES0);
 	
@@ -2975,10 +3128,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 			goto pltfm_free;
 		}
 
-		msm_host->pdata = sdhci_msm_populate_pdata(&pdev->dev);
+		msm_host->pdata = sdhci_msm_populate_pdata(&pdev->dev,
+							   msm_host);
 		if (!msm_host->pdata) {
 			dev_err(&pdev->dev, "DT parsing error\n");
 			goto pltfm_free;
+		} else {
+			host->mmc->extended_debounce = msm_host->pdata->extended_debounce;
 		}
 	} else {
 		dev_err(&pdev->dev, "No device tree node\n");
@@ -3139,6 +3295,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	host->quirks2 |= SDHCI_QUIRK2_IGN_DATA_END_BIT_ERROR;
 	host->quirks2 |= SDHCI_QUIRK2_ADMA_SKIP_DATA_ALIGNMENT;
 
+	if (msm_host->pdata->no_1p8v)
+		host->quirks2 |= SDHCI_QUIRK2_NO_1_8_V;
+
 	
 	msm_host->pwr_irq = platform_get_irq_byname(pdev, "pwr_irq");
 	if (msm_host->pwr_irq < 0) {
@@ -3188,17 +3347,17 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		msm_host->mmc->caps2 |= MMC_CAP2_NONHOTPLUG;
 
 	host->cpu_dma_latency_us = msm_host->pdata->cpu_dma_latency_us;
+	host->cpu_dma_latency_tbl_sz = msm_host->pdata->cpu_dma_latency_tbl_sz;
 	host->pm_qos_req_dma.type = msm_host->pdata->cpu_affinity_type;
 	if (host->pm_qos_req_dma.type == PM_QOS_REQ_AFFINE_CORES)
-		bitmap_copy(cpumask_bits(&host->pm_qos_req_dma.cpus_affine),
-			    cpumask_bits(&msm_host->pdata->cpu_affinity_mask),
-			    nr_cpumask_bits);
+		host->cpu_affinity_mask = msm_host->pdata->cpu_affinity_mask;
 
 	init_completion(&msm_host->pwr_irq_completion);
 
 	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
 		sdhci_msm_setup_pins(msm_host->pdata, true);
 
+		usleep_range(10000, 10500);
 		ret = mmc_gpio_request_cd(msm_host->mmc,
 				msm_host->pdata->status_gpio);
 		if (ret) {

@@ -345,6 +345,10 @@ static int hw_ep_flush(int num, int dir)
 					dir ? "IN" : "OUT");
 				debug_ept_flush_info(num, dir);
 				_udc->skip_flush = true;
+				
+				if (_udc->udc_driver->notify_event)
+					_udc->udc_driver->notify_event(_udc,
+						CI13XXX_CONTROLLER_ERROR_EVENT);
 				return 0;
 			}
 		}
@@ -1254,6 +1258,10 @@ static int ci13xxx_wakeup(struct usb_gadget *_gadget)
 		goto out;
 	}
 	spin_unlock_irqrestore(udc->lock, flags);
+
+	
+	if (udc->udc_driver->cancel_pending_suspend)
+		udc->udc_driver->cancel_pending_suspend(udc);
 
 	if ((udc->udc_driver->in_lpm != NULL) &&
 	    (udc->udc_driver->in_lpm(udc))) {
@@ -2433,6 +2441,10 @@ static int ci13xxx_exit_lpm(struct ci13xxx *udc, bool allow_sleep)
 		return -ENODEV;
 
 	
+	if (udc->udc_driver->cancel_pending_suspend && allow_sleep)
+		udc->udc_driver->cancel_pending_suspend(udc);
+
+	
 	if (udc->udc_driver->in_lpm &&
 	    udc->udc_driver->in_lpm(udc) &&
 	    udc->transceiver) {
@@ -3127,8 +3139,7 @@ static irqreturn_t udc_irq(void)
 
 	spin_lock(udc->lock);
 
-	if ((udc->udc_driver->flags & CI13XXX_PULLUP_ON_VBUS) &&
-				!udc->vbus_active) {
+	if (udc->udc_driver->in_lpm && udc->udc_driver->in_lpm(udc)) {
 		spin_unlock(udc->lock);
 		return IRQ_NONE;
 	}

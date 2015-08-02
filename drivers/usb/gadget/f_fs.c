@@ -355,10 +355,13 @@ static ssize_t ffs_ep0_write(struct file *file, const char __user *buf,
 		} else {
 			pr_info("read strings\n");
 			ret = __ffs_data_got_strings(ffs, data, len);
+			printk("[USB]%s:line#%d, ret of __ffs_data_got_strings=%zd\n", __func__, __LINE__, ret);
 			if (unlikely(ret < 0))
 				break;
 
 			ret = ffs_epfiles_create(ffs);
+			printk("[USB]%s:line#%d, ret of ffs_epfiles_create=%zd\n", __func__, __LINE__, ret);
+
 			if (unlikely(ret)) {
 				ffs->state = FFS_CLOSING;
 				break;
@@ -368,6 +371,7 @@ static ssize_t ffs_ep0_write(struct file *file, const char __user *buf,
 			mutex_unlock(&ffs->mutex);
 
 			ret = functionfs_ready_callback(ffs);
+			printk("[USB]%s:line#%d, ret of functionfs_ready_callback=%zd\n", __func__, __LINE__, ret);
 			if (unlikely(ret < 0)) {
 				ffs->state = FFS_CLOSING;
 				return ret;
@@ -572,6 +576,7 @@ static int ffs_ep0_open(struct inode *inode, struct file *file)
 	if (unlikely(ffs->state == FFS_CLOSING))
 		return -EBUSY;
 
+	smp_mb__before_atomic();
 	if (atomic_read(&ffs->opened))
 		return -EBUSY;
 
@@ -1186,6 +1191,7 @@ static void ffs_data_get(struct ffs_data *ffs)
 {
 	ENTER();
 
+	smp_mb__before_atomic();
 	atomic_inc(&ffs->ref);
 }
 
@@ -1193,6 +1199,7 @@ static void ffs_data_opened(struct ffs_data *ffs)
 {
 	ENTER();
 
+	smp_mb__before_atomic();
 	atomic_inc(&ffs->ref);
 	atomic_inc(&ffs->opened);
 }
@@ -1201,6 +1208,7 @@ static void ffs_data_put(struct ffs_data *ffs)
 {
 	ENTER();
 
+	smp_mb__before_atomic();
 	if (unlikely(atomic_dec_and_test(&ffs->ref))) {
 		pr_info("%s(): freeing\n", __func__);
 		ffs_data_clear(ffs);
@@ -1215,6 +1223,7 @@ static void ffs_data_closed(struct ffs_data *ffs)
 {
 	ENTER();
 
+	smp_mb__before_atomic();
 	if (atomic_dec_and_test(&ffs->opened)) {
 		ffs->state = FFS_CLOSING;
 		ffs_data_reset(ffs);
@@ -1251,15 +1260,19 @@ static void ffs_data_clear(struct ffs_data *ffs)
 {
 	ENTER();
 
-	pr_debug("%s: ffs->gadget= %p, ffs->flags= %lu\n", __func__,
-						ffs->gadget, ffs->flags);
+	
+	
+	pr_err("%s: ffs->gadget= %p, ffs->flags= %lu\n", __func__,
+							ffs->gadget, ffs->flags);
+
+	
 	if (test_and_clear_bit(FFS_FL_CALL_CLOSED_CALLBACK, &ffs->flags))
 		functionfs_closed_callback(ffs);
 
 	
 	if (ffs->gadget)
-		pr_err("%s: ffs->gadget= %p, ffs->flags= %lu\n", __func__,
-						ffs->gadget, ffs->flags);
+		pr_err("%s: ffs:%p ffs->gadget= %p, ffs->flags= %lu\n",
+				__func__, ffs, ffs->gadget, ffs->flags);
 	BUG_ON(ffs->gadget);
 
 	if (ffs->epfiles)
@@ -1307,6 +1320,8 @@ static int functionfs_bind(struct ffs_data *ffs, struct usb_composite_dev *cdev)
 
 	ENTER();
 
+	printk("[USB]%s:line#%d\n", __func__, __LINE__);
+
 	if (WARN_ON(ffs->state != FFS_ACTIVE
 		 || test_and_set_bit(FFS_FL_BOUND, &ffs->flags)))
 		return -EBADFD;
@@ -1336,6 +1351,8 @@ static int functionfs_bind(struct ffs_data *ffs, struct usb_composite_dev *cdev)
 	}
 
 	ffs->gadget = cdev->gadget;
+	printk("[USB]%s:line#%d,set ffs->gadget\n", __func__, __LINE__);
+
 	ffs_data_get(ffs);
 	return 0;
 }
@@ -1350,6 +1367,11 @@ static void functionfs_unbind(struct ffs_data *ffs)
 		ffs->gadget = NULL;
 		ffs_data_put(ffs);
 		clear_bit(FFS_FL_BOUND, &ffs->flags);
+		printk("[USB]%s:ffs->gadget cleared\n", __func__);
+	}
+	else
+	{
+		printk("[USB]%s:ffs->gagdet not set to NULL!!!!!!\n", __func__);
 	}
 }
 

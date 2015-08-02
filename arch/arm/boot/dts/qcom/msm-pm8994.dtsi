@@ -40,7 +40,7 @@
 		qcom,pmic-dog@0 {
 			compatible = "qcom,qpnp-pmic-dog";
 			reg = <0x800 0x100>;
-			qcom,pmic-wd-reset-type = <1>;
+			qcom,pmic-wd-reset-type = <7>;
 			qcom,pmic-wd-bark-time = <8>;
 			qcom,pmic-wd-bite-time = <2>;
 			qcom,pmic-wd-disable-start = <5>;
@@ -55,7 +55,7 @@
 				     <0x0 0x8 0x5>;
 			interrupt-names = "kpdpwr", "resin",
 					"resin-bark", "kpdpwr-resin-bark";
-			qcom,pon-dbc-delay = <500000>;
+			qcom,pon-dbc-delay = <15625>;
 			qcom,system-reset;
 			qcom,s3-debounce = <32>;
 			qcom,s3-src = "kpdpwr-and-resin";
@@ -374,7 +374,7 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 			qcom,qpnp-rtc-write = <1>;
-			qcom,qpnp-rtc-alarm-pwrup = <0>;
+			qcom,qpnp-rtc-alarm-pwrup = <1>;
 
 			qcom,pm8994_rtc_rw@6000 {
 				reg = <0x6000 0x100>;

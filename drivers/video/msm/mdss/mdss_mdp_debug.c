@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -111,9 +111,11 @@ static void __dump_mixer(struct seq_file *s, struct mdss_mdp_mixer *mixer)
 		return;
 
 	seq_printf(s, "\n%s Mixer #%d  res=%dx%d  %s\n",
-		mixer->type == MDSS_MDP_MIXER_TYPE_INTF ? "Intf" : "Writeback",
-		mixer->num, mixer->width, mixer->height,
-		mixer->cursor_enabled ? "w/cursor" : "");
+			mixer->type != MDSS_MDP_MIXER_TYPE_WRITEBACK ?
+			(mixer->type != MDSS_MDP_MIXER_TYPE_INTF ?
+			 "Intf without DSPP" : "Intf") : "Writeback",
+			mixer->num, mixer->width, mixer->height,
+			mixer->cursor_enabled ? "w/cursor" : "");
 
 	for (i = 0; i < ARRAY_SIZE(mixer->stage_pipe); i++) {
 		pipe = mixer->stage_pipe[i];
@@ -289,6 +291,10 @@ static void __stats_ctl_dump(struct mdss_mdp_ctl *ctl, struct seq_file *s)
 				ctl->intf_num, ctl->play_cnt);
 		seq_printf(s, "vsync: %08u \tunderrun: %08u\n",
 				ctl->vsync_cnt, ctl->underrun_cnt);
+		if (ctl->mfd) {
+			seq_printf(s, "user_bl: %08u \tmod_bl: %08u\n",
+				ctl->mfd->bl_level, ctl->mfd->bl_level_scaled);
+		}
 	} else {
 		seq_printf(s, "wb: \tmode=%x \tplay: %08u\n",
 				ctl->opmode, ctl->play_cnt);
@@ -346,6 +352,8 @@ int mdss_mdp_debugfs_init(struct mdss_data_type *mdata)
 			&mdss_debugfs_buffers_fops);
 	debugfs_create_file("stat", 0644, mdd->root, mdata,
 			&mdss_debugfs_stats_fops);
+	debugfs_create_bool("serialize_wait4pp", 0644, mdd->root,
+		(u32 *)&mdata->serialize_wait4pp);
 
 	return 0;
 }

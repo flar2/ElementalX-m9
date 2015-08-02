@@ -108,6 +108,8 @@
 #define SYNC_ACK_MAGIC  0x66
 #define EXHAUSTED_MAGIC 0x77
 
+#define CRASH_REASON_NUM 4
+
 #define CALIBRATION_DATA_PATH "/calibration_data"
 #define G_SENSOR_FLASH_DATA "gs_flash"
 #define GYRO_SENSOR_FLASH_DATA "gyro_flash"
@@ -118,6 +120,8 @@
 #define MCU_CHIP_MODE_APPLICATION   0
 #define MCU_CHIP_MODE_BOOTLOADER    1
 
+#define MCU_CRASH_REASON_WATCH_DOG 0x000d
+#define MCU_CRASH_REASON_NO_DATA 0x0005
 #define MCU_CRASH_REASON_UNKNOWN 0xffff
 
 typedef enum {
@@ -199,6 +203,8 @@ struct cwmcu_data {
 	struct device *sensor_dev;
 	struct class *bma250_class;
 	struct device *bma250_dev;
+	struct class *gs_cali_class;
+	struct device *gs_cali_dev;
 	u8	acceleration_axes;
 	u8	magnetic_axes;
 	u8	gyro_axes;
@@ -256,6 +262,8 @@ struct cwmcu_data {
 	u8  als_goldl;
 	u8  als_goldh;
 	u8  als_polling;
+	u8  als_lux_ratio_n;
+	u8  als_lux_ratio_d;
 	u32 *als_levels;
 	u32 als_kvalue;
         u32 ps_kvalue;
@@ -330,9 +338,9 @@ struct cwmcu_data {
 	bool is_display_on;
 #endif 
 
-    u16 jenkins_build_ver;
-    u16 crash_reason;
-    u32 crash_count;
+	u16 jenkins_build_ver;
+	u16 crash_reason;
+	u32 crash_count[CRASH_REASON_NUM]; 
 };
 
 static struct cwmcu_data *s_mcu_data = NULL;
@@ -466,11 +474,26 @@ static void mcu_state_enter_shub_run(struct cwmcu_data *mcu_data)
 }
 
 #ifdef SHUB_DLOAD_SUPPORT
+static u16 to_crash_count_index(u16 crash_reason)
+{
+	switch (crash_reason) {
+	case MCU_CRASH_REASON_WATCH_DOG:
+		return 1;
+	case MCU_CRASH_REASON_NO_DATA:
+		return 2;
+	case MCU_CRASH_REASON_UNKNOWN:
+		return 3;
+	default:
+		return 0;
+	}
+}
+
 static void mcu_state_enter_dload(struct cwmcu_data *mcu_data)
 {
     struct timespec ts;
     struct rtc_time tm;
     int ret;
+    u16 idx;
 
     if (!mcu_data)
         return;
@@ -516,11 +539,31 @@ static void mcu_state_enter_dload(struct cwmcu_data *mcu_data)
     wake_lock_timeout(&mcu_data->mcu_dload_wake_lock,
         15 * HZ);
 
-    mcu_data->crash_count++;
-    E("%s[%d]: MCU Crash, reason[0x%x], ver[%d], s_mcu_state enter MCU_STATE_DLOAD at (%d-%02d-%02d %02d:%02d:%02d.%09lu UTC) !!!!!!!!!!\n", __func__, __LINE__,
-        mcu_data->crash_reason,
-        mcu_data->jenkins_build_ver,
-        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+    idx = to_crash_count_index(mcu_data->crash_reason);;
+    idx = (idx < CRASH_REASON_NUM) ? idx : 0;
+
+    mcu_data->crash_count[idx]++;
+
+    if ((mcu_data->crash_reason == MCU_CRASH_REASON_UNKNOWN) &&
+	((mcu_data->crash_count[idx] % 100) == 1)) {
+	E("%s[%d]: Silent recover, reason[0x%x], ver[%d], "
+	  "crash_count[%d] = %d, s_mcu_state enter MCU_STATE_DLOAD at "
+	  "(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC) !!!!!!!!!!\n",
+	  __func__, __LINE__,
+	  mcu_data->crash_reason,
+	  mcu_data->jenkins_build_ver, idx, mcu_data->crash_count[idx],
+	  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
+	  tm.tm_sec, ts.tv_nsec);
+    } else {
+	I("%s[%d]: Silent recover - Enter dload DBG, reason[0x%x], ver[%d], "
+	  "crash_count[%d] = %d, s_mcu_state enter MCU_STATE_DLOAD at "
+	  "(%d-%02d-%02d %02d:%02d:%02d.%09lu UTC) !!!!!!!!!!\n",
+	  __func__, __LINE__,
+	  mcu_data->crash_reason,
+	  mcu_data->jenkins_build_ver, idx, mcu_data->crash_count[idx],
+	  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
+	  tm.tm_sec, ts.tv_nsec);
+    }
 
     mcu_boot_status_reset(mcu_data);
     complete(&s_mcu_ramdump_avail);
@@ -659,11 +702,13 @@ static int cw_send_event(struct cwmcu_data *mcu_data, u8 id, u16 *data,
 	  mcu_data->indio_dev->masklength,
 	  *(s16 *)&event[1], *(s16 *)&event[3], *(s16 *)&event[5]);
 
-	if (mcu_data->indio_dev->active_scan_mask &&
+	if (mcu_data->indio_dev && mcu_data->indio_dev->active_scan_mask &&
 	    (!bitmap_empty(mcu_data->indio_dev->active_scan_mask,
 			   mcu_data->indio_dev->masklength))) {
 		mutex_lock(&mcu_data->mutex_lock);
-		if (mcu_data->indio_dev && ((!mcu_data->w_clear_fifo_running) || (!is_continuous_sensor(id))))
+		if (atomic_read(&mcu_data->pseudo_irq_enable)
+		    && ((!mcu_data->w_clear_fifo_running)
+		     || (!is_continuous_sensor(id))))
 			iio_push_to_buffers(mcu_data->indio_dev, event);
 		else {
 			D(
@@ -678,9 +723,8 @@ static int cw_send_event(struct cwmcu_data *mcu_data, u8 id, u16 *data,
 		}
 
 		return 0;
-	} else if (mcu_data->indio_dev->active_scan_mask == NULL)
-		D("%s: active_scan_mask = NULL, event might be missing\n",
-		  __func__);
+	} else
+		D("%s: Event might be missing\n", __func__);
 
 	return -EIO;
 }
@@ -697,11 +741,14 @@ static int cw_send_event_special(struct cwmcu_data *mcu_data, u8 id, u16 *data,
 	memcpy(&event[1+(2*sizeof(u16)*REPORT_EVENT_COMMON_LEN)], &timestamp,
 	       sizeof(timestamp));
 
-	if (mcu_data->indio_dev->active_scan_mask &&
+	if (mcu_data->indio_dev && mcu_data->indio_dev->active_scan_mask &&
 	    (!bitmap_empty(mcu_data->indio_dev->active_scan_mask,
 			   mcu_data->indio_dev->masklength))) {
 		mutex_lock(&mcu_data->mutex_lock);
-		if (mcu_data->indio_dev && ((!mcu_data->w_clear_fifo_running) || (!is_continuous_sensor(id))))
+		if (atomic_read(&mcu_data->pseudo_irq_enable)
+		    && mcu_data->indio_dev
+		    && ((!mcu_data->w_clear_fifo_running)
+		     || (!is_continuous_sensor(id))))
 			iio_push_to_buffers(mcu_data->indio_dev, event);
 		else {
 			D(
@@ -716,9 +763,8 @@ static int cw_send_event_special(struct cwmcu_data *mcu_data, u8 id, u16 *data,
 		}
 
 		return 0;
-	} else if (mcu_data->indio_dev->active_scan_mask == NULL)
-		D("%s: active_scan_mask = NULL, event might be missing\n",
-		  __func__);
+	} else
+		D("%s: Event might be missing\n", __func__);
 
 	return -EIO;
 }
@@ -777,7 +823,7 @@ static int cwmcu_get_calibrator(struct cwmcu_data *mcu_data, u8 sensor_id,
 		E("%s: invalid arguments, sensor_id = %u, len = %u\n",
 		  __func__, sensor_id, len);
 
-	D("sensors_id = %u, calibrator data = (%d, %d, %d)\n", sensor_id,
+	I("sensors_id = %u, calibrator data = (%d, %d, %d)\n", sensor_id,
 	  data[0], data[1], data[2]);
 	return error_msg;
 }
@@ -1006,6 +1052,8 @@ static ssize_t set_k_value(struct cwmcu_data *mcu_data, const char *buf,
 	  "%s: count = %lu, strlen(buf) = %lu, PAGE_SIZE = %lu,"
 	  " reg_addr = 0x%x\n",
 	  __func__, count, strlen(buf), PAGE_SIZE, reg_addr);
+
+	memset(data_temp, 0, len);
 
 	str_buf = kstrndup(buf, count, GFP_KERNEL);
 	if (str_buf == NULL) {
@@ -1738,7 +1786,8 @@ static ssize_t get_ls_mechanism(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct cwmcu_data *mcu_data = dev_get_drvdata(dev);
-	return snprintf(buf, PAGE_SIZE, "%u\n", mcu_data->als_polling);
+	return snprintf(buf, PAGE_SIZE, "%u %u\n", mcu_data->als_polling
+					, mcu_data->als_lux_ratio_d);
 }
 
 static ssize_t read_mcu_data(struct device *dev, struct device_attribute *attr,
@@ -1766,7 +1815,7 @@ static ssize_t read_mcu_data(struct device *dev, struct device_attribute *attr,
 
 		token = strsep(&running, " ");
 
-		if (i == 0)
+		if (token && (i == 0))
 			error = kstrtol(token, 16, &data_temp[i]);
 		else {
 			if (token == NULL) {
@@ -2011,11 +2060,29 @@ static int CWMCU_i2c_multi_write(struct cwmcu_data *mcu_data,
 	return 0;
 }
 
+static int cwmcu_set_g_sensor_kvalue(struct cwmcu_data *mcu_data)
+{
+	u8 *gs_data = (u8 *)&mcu_data->gs_kvalue; 
+	int rc = 0;
+
+	if (gs_data[3] == 0x67) {
+		__be32 be32_gs_data = cpu_to_be32(mcu_data->gs_kvalue);
+		gs_data = (u8 *)&be32_gs_data;
+
+		rc = CWMCU_i2c_write_power(mcu_data,
+			CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_ACC,
+			gs_data + 1, ACC_CALIBRATOR_LEN);
+		mcu_data->gs_calibrated = 1;
+		I("Set g-sensor kvalue (x, y, z) = (0x%x, 0x%x, 0x%x)\n",
+			gs_data[1], gs_data[2], gs_data[3]);
+	}
+	return rc;
+}
+
 static int cwmcu_set_sensor_kvalue(struct cwmcu_data *mcu_data)
 {
 	
 
-	u8 *gs_data = (u8 *)&mcu_data->gs_kvalue; 
 	u8 *gy_data = (u8 *)&mcu_data->gy_kvalue; 
 	u8 *bs_data = (u8 *)&mcu_data->bs_kvalue; 
         u8 als_goldh = (mcu_data->als_goldh == 0) ? 0x0A : (mcu_data->als_goldh);
@@ -2025,6 +2092,7 @@ static int cwmcu_set_sensor_kvalue(struct cwmcu_data *mcu_data)
 	int i = 0;
 	u8 firmware_version[FW_VER_COUNT] = {0};
 	u8 firmware_info[6] = {0};
+	u8 gs_hw_id, mag_hw_id, gyro_hw_id = 0;
 
 	mcu_data->gs_calibrated = 0;
 	mcu_data->gy_calibrated = 0;
@@ -2052,17 +2120,12 @@ static int cwmcu_set_sensor_kvalue(struct cwmcu_data *mcu_data)
         firmware_info[4], firmware_info[5]);
 	mcu_data->jenkins_build_ver = (firmware_info[0] << 8) | firmware_info[1];
 
-	if (gs_data[3] == 0x67) {
-		__be32 be32_gs_data = cpu_to_be32(mcu_data->gs_kvalue);
-		gs_data = (u8 *)&be32_gs_data;
+	CWMCU_i2c_read_power(mcu_data, CW_I2C_REG_GSENSOR_HW_ID, &gs_hw_id, sizeof(gs_hw_id));
+	CWMCU_i2c_read_power(mcu_data, CW_I2C_REG_COMPASS_HW_ID, &mag_hw_id, sizeof(mag_hw_id));
+	CWMCU_i2c_read_power(mcu_data, CW_I2C_REG_GYRO_HW_ID, &gyro_hw_id, sizeof(gyro_hw_id));
+	I("Sensor hw_id, acc = %d, mag = %d, gyro = %d\n", gs_hw_id, mag_hw_id, gyro_hw_id);
 
-		CWMCU_i2c_write(mcu_data,
-			CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_ACC,
-			gs_data + 1, ACC_CALIBRATOR_LEN, 1);
-		mcu_data->gs_calibrated = 1;
-		D("Set g-sensor kvalue (x, y, z) = (0x%x, 0x%x, 0x%x)\n",
-			gs_data[1], gs_data[2], gs_data[3]);
-	}
+	cwmcu_set_g_sensor_kvalue(mcu_data);
 
 	if (gy_data[3] == 0x67) {
 		__be32 be32_gy_data = cpu_to_be32(mcu_data->gy_kvalue);
@@ -2550,10 +2613,11 @@ static int CWMCU_i2c_read(struct cwmcu_data *mcu_data,
 			mcu_data->i2c_total_retry++;
 			if (rc == LATCH_ERROR_NO)
 				mcu_data->i2c_latch_retry++;
-			E("%s: rc = %d, total_retry = %d, latch_retry = %d\n",
+			E("%s: i2c read error, rc = %d, total_retry = %d, latch_retry = %d, read_addr = 0x%x\n",
 			  __func__,
 			  rc, mcu_data->i2c_total_retry,
-			  mcu_data->i2c_latch_retry);
+			  mcu_data->i2c_latch_retry,
+			  reg_addr);
 		}
 	}
 
@@ -3013,7 +3077,7 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 
 		token = strsep(&running, " ");
 
-		if (i == 0)
+		if (token && (i == 0))
 			error = kstrtol(token, 10, &sensors_id);
 		else {
 			if (token == NULL) {
@@ -3040,7 +3104,7 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 		return 0;
 	}
 
-	if ((sensors_id > CW_SENSORS_ID_TOTAL) ||
+	if ((sensors_id >= CW_SENSORS_ID_TOTAL) ||
 	    (sensors_id < 0)
 	   ) {
 		E("%s: Invalid sensors_id = %ld\n", __func__, sensors_id);
@@ -3229,7 +3293,7 @@ static ssize_t interval_set(struct device *dev, struct device_attribute *attr,
 
 		token = strsep(&running, " ");
 
-		if (i == 0)
+		if (token && (i == 0))
 			error = kstrtol(token, 10, &sensors_id);
 		else {
 			if (token == NULL) {
@@ -3518,27 +3582,36 @@ static ssize_t flush_set(struct device *dev, struct device_attribute *attr,
 		return rc;
 	}
 
-	D("%s: handle = %lu\n", __func__, handle);
+	I("%s++: handle = %lu\n", __func__, handle);
 
 	data = handle;
 
 	if ((handle == CW_SIGNIFICANT_MOTION) ||(handle == CW_PROXIMITY)) {
+		I("%s: Before mcu_data->lock\n", __func__);
 		mutex_lock(&mcu_data->lock);
+		I("%s: Get mcu_data->lock\n", __func__);
 		cwmcu_send_flush(mcu_data, handle);
 		mutex_unlock(&mcu_data->lock);
+		I("%s: Release mcu_data->lock\n", __func__);
 	} else {
-		D("%s: addr = 0x%x, data = 0x%x\n", __func__, CWSTM32_BATCH_FLUSH, data);
+		I("%s: addr = 0x%x, data = 0x%x\n", __func__,
+		  CWSTM32_BATCH_FLUSH, data);
 
-		rc = CWMCU_i2c_write_power(mcu_data, CWSTM32_BATCH_FLUSH, &data, 1);
+		rc = CWMCU_i2c_write_power(mcu_data, CWSTM32_BATCH_FLUSH, &data,
+					   1);
 		if (rc)
 			E("%s: CWMCU_i2c_write fails, rc = %d\n", __func__, rc);
 
 		mcu_data->pending_flush |= (1LL << handle);
-		D("%s: mcu_data->pending_flush = 0x%llx\n", __func__, mcu_data->pending_flush);
+		I("%s: mcu_data->pending_flush = 0x%llx\n", __func__,
+		  mcu_data->pending_flush);
 	}
 
 	mcu_data->w_flush_fifo = true;
 	queue_work(mcu_data->mcu_wq, &mcu_data->one_shot_work);
+
+	I("%s--: mcu_data->pending_flush = 0x%llx\n", __func__,
+	  mcu_data->pending_flush);
 
 	return count;
 }
@@ -3927,10 +4000,9 @@ static void cwmcu_read(struct cwmcu_data *mcu_data, struct iio_poll_func *pf)
 				                        I("light polling data[1] = 0x%X,"
 				                          " data[2] = 0x%X\n ", data[1], data[2]);
 
-				                
+						
 				                light_adc = (data[2] << 8) | data[1];
-				                
-				                light_lux = ADC_TO_LUX(light_adc);
+				                light_lux = light_adc * mcu_data->als_lux_ratio_n;
 
 				                if (DEBUG_FLAG_LIGHT_POLLING >= 2)
 				                        I("light polling light_adc = 0x%X,"
@@ -4277,8 +4349,7 @@ static irqreturn_t cwmcu_irq_handler(int irq, void *handle)
 				if (mcu_data->als_polling) {
 					
 					light_adc = (data[2] << 8) | data[1];
-					
-					light_lux = ADC_TO_LUX(light_adc);
+					light_lux = light_adc * mcu_data->als_lux_ratio_n;
 					data_buff[0] = light_lux & 0xFFFF;
 					data_buff[1] = (light_lux >> 16) & 0xFFFF;
 
@@ -4291,7 +4362,6 @@ static irqreturn_t cwmcu_irq_handler(int irq, void *handle)
 					mcu_data->light_last_data[0] = data_buff[0];
 				}
 
-				
 				cw_send_event(mcu_data, CW_LIGHT, data_buff, 0);
 				I(
 				  "light interrupt occur value is %u, adc "
@@ -4767,7 +4837,7 @@ static int mcu_parse_dt(struct device *dev, struct cwmcu_data *pdata)
 	unsigned char *baro_sensor_cali_data = NULL;
 
 	int i;
-	struct regulator *sr_2v85;
+
 	g_sensor_offset = of_find_node_by_path(CALIBRATION_DATA_PATH);
 	if (g_sensor_offset) {
 		g_sensor_cali_data = (unsigned char *)
@@ -5004,9 +5074,19 @@ static int mcu_parse_dt(struct device *dev, struct cwmcu_data *pdata)
         if (prop) {
                 of_property_read_u32(dt, "mcu,als_polling", &buf);
                 pdata->als_polling = buf;
-                I("%s: als_polling = 0x%x", __func__, pdata->als_polling);
+                I("%s: als_polling = %d\n", __func__, pdata->als_polling);
+
+                of_property_read_u32(dt, "mcu,als_lux_ratio_n", &buf);
+                pdata->als_lux_ratio_n = buf;
+                I("%s: als_lux_ratio_n = %d\n", __func__, pdata->als_lux_ratio_n);
+
+                of_property_read_u32(dt, "mcu,als_lux_ratio_d", &buf);
+                pdata->als_lux_ratio_d = buf;
+                I("%s: als_lux_ratio_d = %d\n", __func__, pdata->als_lux_ratio_d);
         } else {
                 pdata->als_polling = 0;
+		pdata->als_lux_ratio_n = 1;
+		pdata->als_lux_ratio_d = 1;
                 E("%s: als_polling not found", __func__);
         }
 
@@ -5025,14 +5105,6 @@ static int mcu_parse_dt(struct device *dev, struct cwmcu_data *pdata)
                 I("%s: ps_thd_add = 0x%x\n",__func__, pdata->ps_thd_add);
         } else
                 E("%s: ps_thd_add not found", __func__);
-
-	prop = of_find_property(dt, "SR_2v85-supply", NULL);
-	if (prop) {
-		E("%s: SR_2v85-supply is exist, set normal mode\n",__func__);
-		sr_2v85 = devm_regulator_get(dev, "SR_2v85");
-		regulator_set_mode(sr_2v85, REGULATOR_MODE_NORMAL);
-        } else
-            E("%s: SR_2v85-supply is not exist\n", __func__);
 
 	return 0;
 }
@@ -5068,6 +5140,67 @@ static ssize_t bma250_get_powerkry_pressed(struct device *dev,
 }
 static DEVICE_ATTR(clear_powerkey_flag, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP,
 		bma250_get_powerkry_pressed, bma250_clear_powerkey_pressed);
+
+static ssize_t set_g_sensor_user_offset(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct cwmcu_data *mcu_data = dev_get_drvdata(dev);
+	char *token;
+	char *str_buf;
+	char *running;
+	long input_val[3] = {0};
+	int rc, i;
+	s8 temp_kvalue[3] = {0};
+
+	str_buf = kstrndup(buf, count, GFP_KERNEL);
+	if (str_buf == NULL) {
+		E("%s: cannot allocate buffer\n", __func__);
+		return -1;
+	}
+	running = str_buf;
+
+	for (i = 0; i < 3; i++) {
+		token = strsep(&running, " ");
+		if (token == NULL) {
+			E("%s: token = NULL, i = %d\n", __func__, i);
+			break;
+		}
+
+		rc = kstrtol(token, 10, &input_val[i]);
+		if (rc) {
+			E("%s: kstrtol fails, rc = %d, i = %d\n",
+			  __func__, rc, i);
+			kfree(str_buf);
+			return rc;
+		}
+	}
+	kfree(str_buf);
+
+	I("%s: User Calibration(x, y, z) = (%ld, %ld, %ld)\n", __func__,
+	  input_val[0], input_val[1], input_val[2]);
+
+	temp_kvalue[0] = (s8)(input_val[0] / 3);
+	temp_kvalue[1] = (s8)(input_val[1] / 3);
+	temp_kvalue[2] = (s8)(input_val[2] / 3);
+
+	I("%s: temp_kvalue(x, y, z) = (0x%x, 0x%x, 0x%x)\n", __func__,
+	  temp_kvalue[0] & 0xFF, temp_kvalue[1] & 0xFF, temp_kvalue[2] & 0xFF);
+
+	mcu_data->gs_kvalue = 0x67000000;
+	mcu_data->gs_kvalue |= (temp_kvalue[2] & 0xFF);
+	mcu_data->gs_kvalue |= (temp_kvalue[1] & 0xFF) << 8;
+	mcu_data->gs_kvalue |= (temp_kvalue[0] & 0xFF) << 16;
+
+	I("%s: gs_kvalue = 0x%x\n", __func__, mcu_data->gs_kvalue);
+
+	cwmcu_set_g_sensor_kvalue(mcu_data);
+
+	return count;
+}
+
+static DEVICE_ATTR(g_sensor_user_offset, S_IWUSR|S_IWGRP, NULL,
+		   set_g_sensor_user_offset);
 
 static ssize_t p_status_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -5175,9 +5308,20 @@ static ssize_t crash_count_show(struct device *dev,
                                  struct device_attribute *attr,
                                  char *buf)
 {
-    struct cwmcu_data *mcu_data = dev_get_drvdata(dev);
+	struct cwmcu_data *mcu_data = dev_get_drvdata(dev);
 
-    return snprintf(buf, PAGE_SIZE, "%d\n", mcu_data->crash_count);
+	int i;
+	int rc;
+	size_t buf_remaining = PAGE_SIZE;
+
+	for (i = 0; i < CRASH_REASON_NUM; i++) {
+		rc = scnprintf(buf, buf_remaining, "%d%c",
+				mcu_data->crash_count[i],
+				(i == CRASH_REASON_NUM - 1) ? '\n' : ' ');
+		buf += rc;
+		buf_remaining -= rc;
+	}
+	return PAGE_SIZE - buf_remaining;
 }
 
 #ifdef SHUB_LOGGING_SUPPORT
@@ -5269,6 +5413,39 @@ static int create_sysfs_interfaces(struct cwmcu_data *mcu_data)
 		goto err_create_bma250_device_file;
 	}
 
+
+	mcu_data->gs_cali_class = class_create(THIS_MODULE, "htc_g_sensor");
+	if (IS_ERR(mcu_data->gs_cali_class)) {
+		res = PTR_ERR(mcu_data->gs_cali_class);
+		mcu_data->gs_cali_class = NULL;
+		E("%s: could not allocate htc_g_sensor, res = %d\n",
+		  __func__, res);
+		goto error_gs_cali_class;
+	}
+
+	mcu_data->gs_cali_dev = device_create(mcu_data->gs_cali_class,
+					    NULL, 0, "%s", "g_sensor");
+	if (IS_ERR(mcu_data->gs_cali_dev)) {
+		res = PTR_ERR(mcu_data->gs_cali_dev);
+		E("%s: gs_cali_dev PTR_ERR, res = %d\n", __func__, res);
+		goto err_gs_cali_device_create;
+	}
+
+	res = dev_set_drvdata(mcu_data->gs_cali_dev, mcu_data);
+	if (res) {
+		E("%s: dev_set_drvdata(gs_cali_dev) fails, res = %d\n",
+		  __func__, res);
+		goto err_gs_cali_set_drvdata;
+	}
+
+	res = device_create_file(mcu_data->gs_cali_dev,
+				 &dev_attr_g_sensor_user_offset);
+	if (res) {
+		E("%s, create g_sensor_user_offset fail!\n", __func__);
+		goto err_create_g_sensor_user_offset_device_file;
+	}
+
+
 	optical_class = class_create(THIS_MODULE, "optical_sensors");
 	if (IS_ERR(optical_class)) {
 		res = PTR_ERR(optical_class);
@@ -5333,6 +5510,15 @@ err_class_create:
 err_create_proximty_device_file:
 	class_destroy(optical_class);
 error_optical_class_create:
+	device_remove_file(mcu_data->gs_cali_dev,
+			   &dev_attr_g_sensor_user_offset);
+err_create_g_sensor_user_offset_device_file:
+err_gs_cali_set_drvdata:
+	put_device(mcu_data->gs_cali_dev);
+	device_unregister(mcu_data->gs_cali_dev);
+err_gs_cali_device_create:
+	class_destroy(mcu_data->gs_cali_class);
+error_gs_cali_class:
 	device_remove_file(mcu_data->bma250_dev, &dev_attr_clear_powerkey_flag);
 err_create_bma250_device_file:
 err_bma250_set_drvdata:
@@ -5357,6 +5543,11 @@ static void destroy_sysfs_interfaces(struct cwmcu_data *mcu_data)
 	put_device(mcu_data->sensor_dev);
 	device_unregister(mcu_data->sensor_dev);
 	class_destroy(mcu_data->sensor_class);
+	device_remove_file(mcu_data->gs_cali_dev,
+			   &dev_attr_g_sensor_user_offset);
+	put_device(mcu_data->gs_cali_dev);
+	device_unregister(mcu_data->gs_cali_dev);
+	class_destroy(mcu_data->gs_cali_class);
 	device_remove_file(mcu_data->bma250_dev, &dev_attr_clear_powerkey_flag);
 	put_device(mcu_data->bma250_dev);
 	device_unregister(mcu_data->bma250_dev);
@@ -6109,12 +6300,17 @@ static void mcu_bl_enter_leave(uint8_t enter)
 
 static uint32_t mcu_get_firmware_checksum(uint32_t firmware_size)
 {
+    int ret = 0;
     mcu_fw_checksum_t fw_checksum = {0, 0};
     unsigned long  start_jiffies = jiffies;
 
     I("%s[%d]: start get checksum firmware_size:%d\n", __func__, __LINE__, firmware_size);
 
-    CWMCU_i2c_write_block_power(s_mcu_data, CW_I2C_REG_FLASH_CHECKSUM, (u8*)&firmware_size, 4);
+    ret = CWMCU_i2c_write_block_power(s_mcu_data, CW_I2C_REG_FLASH_CHECKSUM, (u8*)&firmware_size, 4);
+    if(ret < 0) {
+        E("%s[%d]: checksum i2c failed.\n", __func__, __LINE__);
+        return fw_checksum.check_sum;
+    }
 
     while (fw_checksum.calculate_done != 1) {
         CWMCU_i2c_read_power(s_mcu_data, CW_I2C_REG_FLASH_CHECKSUM, (u8*)&fw_checksum, sizeof(fw_checksum));
@@ -6439,6 +6635,16 @@ static long shub_fw_flash_ioctl(struct file *file, unsigned int cmd, unsigned lo
         }
         break;
 
+    case SHUB_FW_IOCTL_START_FW_CHECKSUM:
+        {
+            if(!MCU_IN_BOOTLOADER()) {
+                
+                mcu_fw_img_crc_checksum = mcu_get_firmware_checksum((uint32_t)arg);
+                I("%s(%d): firmware checksum:0x%X\n", __func__, __LINE__, mcu_fw_img_crc_checksum);
+            }
+        }
+        break;
+
     case SHUB_FW_IOCTL_GET_FW_CHECKSUM:
         {
             I("%s(%d): SHUB_FW_IOCTL_GET_FW_CHECKSUM\n", __func__, __LINE__);
@@ -6747,7 +6953,7 @@ static ssize_t sensor_placement_store(struct device *dev,
 
 		token = strsep(&running, " ");
 
-		if (i == 0)
+		if (token && (i == 0))
 			error = kstrtol(token, 10, &sensors_id);
 		else {
 			if (token == NULL) {
@@ -7665,7 +7871,9 @@ static int CWMCU_i2c_probe(struct i2c_client *client,
 	struct iio_dev *indio_dev;
 	int error;
 	int i;
-	I("%s++: Add bma250 set_drvdata to mcu data\n", __func__);
+
+	I("%s++: Do not call iio_push_to_buffers when !pseudo_irq_enable\n",
+	  __func__);
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		E("%s: i2c_check_functionality error\n", __func__);

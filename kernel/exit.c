@@ -574,8 +574,12 @@ void do_exit(long code)
 	validate_creds_for_do_exit(tsk);
 
 	if (unlikely(tsk->flags & PF_EXITING)) {
+#ifdef CONFIG_PANIC_ON_RECURSIVE_FAULT
+		panic("Recursive fault!\n");
+#else
 		printk(KERN_ALERT
 			"Fixing recursive fault but reboot is needed!\n");
+#endif
 		tsk->flags |= PF_EXITPIDONE;
 		set_current_state(TASK_UNINTERRUPTIBLE);
 		schedule();

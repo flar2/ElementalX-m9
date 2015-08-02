@@ -15,6 +15,7 @@
 #include <linux/msm_bus_rules.h>
 #include <linux/slab.h>
 #include <linux/types.h>
+#include <trace/events/trace_msm_bus.h>
 
 struct node_vote_info {
 	int id;
@@ -188,10 +189,7 @@ static bool check_rule(struct rules_def *rule,
 	case OP_GE:
 	{
 		u64 src_field = get_field(rule, inp->id);
-		if (!src_field)
-			ret = false;
-		else
-			ret = do_compare_op(src_field, rule->rule_ops.thresh,
+		ret = do_compare_op(src_field, rule->rule_ops.thresh,
 							rule->rule_ops.op);
 		break;
 	}
@@ -207,41 +205,24 @@ static void match_rule(struct rule_update_path_info *inp_node,
 {
 	struct rules_def *rule;
 	int i;
-	bool match_found = false;
-	bool relevant_trans = false;
 
 	list_for_each_entry(rule, &node->node_rules, link) {
 		for (i = 0; i < rule->num_src; i++) {
 			if (rule->src_info[i].id == inp_node->id) {
-				relevant_trans = true;
 				if (check_rule(rule, inp_node)) {
-					node->cur_rule = rule->rule_id;
+					trace_bus_rules_matches(node->cur_rule,
+						inp_node->id, inp_node->ab,
+						inp_node->ib, inp_node->clk);
 					if (rule->state ==
-						RULE_STATE_NOT_APPLIED) {
-						rule->state =
-							RULE_STATE_APPLIED;
+						RULE_STATE_NOT_APPLIED)
 						rule->state_change = true;
-						match_found = true;
-					}
-					break;
+					rule->state = RULE_STATE_APPLIED;
+				} else {
+					if (rule->state ==
+						RULE_STATE_APPLIED)
+						rule->state_change = true;
+					rule->state = RULE_STATE_NOT_APPLIED;
 				}
-			}
-		}
-		if (match_found)
-			break;
-	}
-
-	if (!relevant_trans)
-		return;
-
-	if (!match_found)
-		node->cur_rule = -1;
-
-	list_for_each_entry(rule, &node->node_rules, link) {
-		if (rule->rule_id != node->cur_rule) {
-			if (rule->state == RULE_STATE_APPLIED) {
-				rule->state = RULE_STATE_NOT_APPLIED;
-				rule->state_change = true;
 			}
 		}
 	}
@@ -252,7 +233,12 @@ static void apply_rule(struct rule_node_info *node,
 {
 	struct rules_def *rule;
 
+	node->cur_rule = -1;
 	list_for_each_entry(rule, &node->node_rules, link) {
+		if ((rule->state == RULE_STATE_APPLIED) &&
+						(node->cur_rule == -1))
+			node->cur_rule = rule->rule_id;
+
 		if (node->id == NB_ID) {
 			if (rule->state_change) {
 				rule->state_change = false;
@@ -260,13 +246,14 @@ static void apply_rule(struct rule_node_info *node,
 					rule->state, (void *)&rule->rule_ops);
 			}
 		} else {
-			rule->state_change = false;
-			if ((rule->state == RULE_STATE_APPLIED)) {
+			if ((rule->state == RULE_STATE_APPLIED) &&
+				(node->cur_rule == rule->rule_id)) {
 				node->apply.id = rule->rule_ops.dst_node[0];
 				node->apply.throttle = rule->rule_ops.mode;
 				node->apply.lim_bw = rule->rule_ops.dst_bw;
 				list_add_tail(&node->apply.link, output_list);
 			}
+			rule->state_change = false;
 		}
 	}
 
@@ -313,6 +300,16 @@ static bool ops_equal(int op1, int op2)
 	return ret;
 }
 
+static bool is_throttle_rule(int mode)
+{
+	bool ret = true;
+
+	if (mode == THROTTLE_OFF)
+		ret = false;
+
+	return ret;
+}
+
 static int node_rules_compare(void *priv, struct list_head *a,
 					struct list_head *b)
 {
@@ -343,10 +340,16 @@ static int node_rules_compare(void *priv, struct list_head *a,
 			}
 		} else
 			ret = ra->rule_ops.op - rb->rule_ops.op;
+	} else if (is_throttle_rule(ra->rule_ops.mode) &&
+				is_throttle_rule(rb->rule_ops.mode)) {
+		if (ra->rule_ops.mode == THROTTLE_ON)
+			ret = -1;
+		else
+			ret = 1;
 	} else if ((ra->rule_ops.mode == THROTTLE_OFF) &&
-		(rb->rule_ops.mode == THROTTLE_ON)) {
+		is_throttle_rule(rb->rule_ops.mode)) {
 		ret = 1;
-	} else if ((ra->rule_ops.mode == THROTTLE_ON) &&
+	} else if (is_throttle_rule(ra->rule_ops.mode) &&
 		(rb->rule_ops.mode == THROTTLE_OFF)) {
 		ret = -1;
 	}

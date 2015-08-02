@@ -160,14 +160,14 @@ struct msm_vfe_fetch_eng_start {
 };
 
 struct msm_vfe_axi_plane_cfg {
-	uint32_t output_width; /*Include padding*/
+	uint32_t output_width; 
 	uint32_t output_height;
 	uint32_t output_stride;
 	uint32_t output_scan_lines;
-	uint32_t output_plane_format; /*Y/Cb/Cr/CbCr*/
+	uint32_t output_plane_format; 
 	uint32_t plane_addr_offset;
-	uint8_t csid_src; /*RDI 0-2*/
-	uint8_t rdi_cid;/*CID 1-16*/
+	uint8_t csid_src; 
+	uint8_t rdi_cid;
 };
 
 enum msm_stream_memory_input_t {
@@ -179,22 +179,22 @@ struct msm_vfe_axi_stream_request_cmd {
 	uint32_t session_id;
 	uint32_t stream_id;
 	uint32_t vt_enable;
-	uint32_t output_format;/*Planar/RAW/Misc*/
-	enum msm_vfe_axi_stream_src stream_src; /*CAMIF/IDEAL/RDIs*/
+	uint32_t output_format;
+	enum msm_vfe_axi_stream_src stream_src; 
 	struct msm_vfe_axi_plane_cfg plane_cfg[MAX_PLANES_PER_STREAM];
 
 	uint32_t burst_count;
 	uint32_t hfr_mode;
 	uint8_t frame_base;
 
-	uint32_t init_frame_drop; /*MAX 31 Frames*/
+	uint32_t init_frame_drop; 
 	enum msm_vfe_frame_skip_pattern frame_skip_pattern;
-	uint8_t buf_divert; /* if TRUE no vb2 buf done. */
-	/*Return values*/
+	uint8_t buf_divert; 
+	
 	uint32_t axi_stream_handle;
 	uint32_t controllable_output;
 	uint32_t burst_len;
-	/* Flag indicating memory input stream */
+	
 	enum msm_stream_memory_input_t memory_input;
 };
 
@@ -270,21 +270,21 @@ struct msm_vfe_smmu_attach_cmd {
 };
 
 enum msm_isp_stats_type {
-	MSM_ISP_STATS_AEC,   /* legacy based AEC */
-	MSM_ISP_STATS_AF,    /* legacy based AF */
-	MSM_ISP_STATS_AWB,   /* legacy based AWB */
-	MSM_ISP_STATS_RS,    /* legacy based RS */
-	MSM_ISP_STATS_CS,    /* legacy based CS */
-	MSM_ISP_STATS_IHIST, /* legacy based HIST */
-	MSM_ISP_STATS_SKIN,  /* legacy based SKIN */
-	MSM_ISP_STATS_BG,    /* Bayer Grids */
-	MSM_ISP_STATS_BF,    /* Bayer Focus */
-	MSM_ISP_STATS_BE,    /* Bayer Exposure*/
-	MSM_ISP_STATS_BHIST, /* Bayer Hist */
-	MSM_ISP_STATS_BF_SCALE, /* Bayer Focus scale */
-	MSM_ISP_STATS_HDR_BE, /* HDR Bayer Exposure */
-	MSM_ISP_STATS_HDR_BHIST, /* HDR Bayer Hist */
-	MSM_ISP_STATS_MAX    /* MAX */
+	MSM_ISP_STATS_AEC,   
+	MSM_ISP_STATS_AF,    
+	MSM_ISP_STATS_AWB,   
+	MSM_ISP_STATS_RS,    
+	MSM_ISP_STATS_CS,    
+	MSM_ISP_STATS_IHIST, 
+	MSM_ISP_STATS_SKIN,  
+	MSM_ISP_STATS_BG,    
+	MSM_ISP_STATS_BF,    
+	MSM_ISP_STATS_BE,    
+	MSM_ISP_STATS_BHIST, 
+	MSM_ISP_STATS_BF_SCALE, 
+	MSM_ISP_STATS_HDR_BE, 
+	MSM_ISP_STATS_HDR_BHIST, 
+	MSM_ISP_STATS_MAX    
 };
 
 struct msm_vfe_stats_stream_request_cmd {
@@ -293,7 +293,7 @@ struct msm_vfe_stats_stream_request_cmd {
 	enum msm_isp_stats_type stats_type;
 	uint32_t composite_flag;
 	uint32_t framedrop_pattern;
-	uint32_t init_frame_drop; /*MAX 31 Frames*/
+	uint32_t init_frame_drop; 
 	uint32_t irq_subsample_pattern;
 	uint32_t buffer_offset;
 	uint32_t stream_handle;
@@ -355,8 +355,8 @@ struct msm_vfe_reg_mask_info {
 };
 
 struct msm_vfe_reg_dmi_info {
-	uint32_t hi_tbl_offset; /*Optional*/
-	uint32_t lo_tbl_offset; /*Required*/
+	uint32_t hi_tbl_offset; 
+	uint32_t lo_tbl_offset; 
 	uint32_t len;
 };
 
@@ -397,9 +397,9 @@ struct msm_isp_qbuf_buffer {
 struct msm_isp_qbuf_info {
 	uint32_t handle;
 	int32_t buf_idx;
-	/*Only used for prepare buffer*/
+	
 	struct msm_isp_qbuf_buffer buffer;
-	/*Only used for diverted buffer*/
+	
 	uint32_t dirty_buf;
 };
 
@@ -426,7 +426,8 @@ enum msm_isp_event_idx {
 	ISP_CAMIF_ERROR     = 8,
 	ISP_BUF_DONE        = 9,
 	ISP_FE_RD_DONE      = 10,
-	ISP_EVENT_MAX       = 11
+	ISP_IOMMU_P_FAULT   = 11,
+	ISP_EVENT_MAX       = 12
 };
 
 #define ISP_EVENT_OFFSET          8
@@ -451,11 +452,9 @@ enum msm_isp_event_idx {
 #define ISP_EVENT_STATS_NOTIFY    (ISP_STATS_EVENT_BASE)
 #define ISP_EVENT_COMP_STATS_NOTIFY (ISP_EVENT_STATS_NOTIFY + MSM_ISP_STATS_MAX)
 #define ISP_EVENT_FE_READ_DONE    (ISP_EVENT_BASE + ISP_FE_RD_DONE)
+#define ISP_EVENT_IOMMU_P_FAULT   (ISP_EVENT_BASE + ISP_IOMMU_P_FAULT)
 #define ISP_EVENT_STREAM_UPDATE_DONE   (ISP_STREAM_EVENT_BASE)
 
-/* The msm_v4l2_event_data structure should match the
- * v4l2_event.u.data field.
- * should not exceed 64 bytes */
 
 struct msm_isp_buf_event {
 	uint32_t session_id;
@@ -465,8 +464,8 @@ struct msm_isp_buf_event {
 	int8_t buf_idx;
 };
 struct msm_isp_stats_event {
-	uint32_t stats_mask;                        /* 4 bytes */
-	uint8_t stats_buf_idxs[MSM_ISP_STATS_MAX];  /* 11 bytes */
+	uint32_t stats_mask;                        
+	uint8_t stats_buf_idxs[MSM_ISP_STATS_MAX];  
 };
 
 struct msm_isp_stream_ack {
@@ -476,16 +475,13 @@ struct msm_isp_stream_ack {
 };
 
 struct msm_isp_error_info {
-	/* 1 << msm_isp_event_idx */
+	
 	uint32_t error_mask;
 };
 
 struct msm_isp_event_data {
-	/*Wall clock except for buffer divert events
-	 *which use monotonic clock
-	 */
 	struct timeval timestamp;
-	/* Monotonic timestamp since bootup */
+	
 	struct timeval mono_timestamp;
 	enum msm_vfe_input_src input_intf;
 	uint32_t frame_id;
@@ -493,7 +489,7 @@ struct msm_isp_event_data {
 		struct msm_isp_stats_event stats;
 		struct msm_isp_buf_event buf_done;
 		struct msm_isp_error_info error_info;
-	} u; /* union can have max 52 bytes */
+	} u; 
 };
 
 #define V4L2_PIX_FMT_QBGGR8  v4l2_fourcc('Q', 'B', 'G', '8')
@@ -519,10 +515,10 @@ struct msm_isp_event_data {
 #define V4L2_PIX_FMT_NV14 v4l2_fourcc('N', 'V', '1', '4')
 #define V4L2_PIX_FMT_NV41 v4l2_fourcc('N', 'V', '4', '1')
 #define V4L2_PIX_FMT_META v4l2_fourcc('Q', 'M', 'E', 'T')
-#define V4L2_PIX_FMT_SBGGR14 v4l2_fourcc('B', 'G', '1', '4') /* 14 BGBG.GRGR.*/
-#define V4L2_PIX_FMT_SGBRG14 v4l2_fourcc('G', 'B', '1', '4') /* 14 GBGB.RGRG.*/
-#define V4L2_PIX_FMT_SGRBG14 v4l2_fourcc('B', 'A', '1', '4') /* 14 GRGR.BGBG.*/
-#define V4L2_PIX_FMT_SRGGB14 v4l2_fourcc('R', 'G', '1', '4') /* 14 RGRG.GBGB.*/
+#define V4L2_PIX_FMT_SBGGR14 v4l2_fourcc('B', 'G', '1', '4') 
+#define V4L2_PIX_FMT_SGBRG14 v4l2_fourcc('G', 'B', '1', '4') 
+#define V4L2_PIX_FMT_SGRBG14 v4l2_fourcc('B', 'A', '1', '4') 
+#define V4L2_PIX_FMT_SRGGB14 v4l2_fourcc('R', 'G', '1', '4') 
 
 #define VIDIOC_MSM_VFE_REG_CFG \
 	_IOWR('V', BASE_VIDIOC_PRIVATE, struct msm_vfe_cfg_cmd2)
@@ -589,4 +585,4 @@ struct msm_isp_event_data {
 #define VIDIOC_MSM_ISP_FETCH_ENG_START \
 	_IOWR('V', BASE_VIDIOC_PRIVATE+20, struct msm_vfe_fetch_eng_start)
 
-#endif /* __MSMB_ISP__ */
+#endif 

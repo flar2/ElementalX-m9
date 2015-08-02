@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -42,6 +42,10 @@
 #define DPSE_INTR_HIGH_SEL              BIT(1)
 #define DPSE_INTR_EN                    BIT(0)
 
+#define QUSB2PHY_PORT_UTMI_STATUS	0xF4
+#define LINESTATE_DP			BIT(0)
+#define LINESTATE_DM			BIT(1)
+
 #define UTMI_OTG_VBUS_VALID             BIT(20)
 #define SW_SESSVLD_SEL                  BIT(28)
 
@@ -56,6 +60,14 @@
 
 #define PORT_OFFSET(i) ((i == 0) ? 0x0 : ((i == 1) ? 0x6c : 0x88))
 #define HS_PHY_CTRL_REG(i)              (0x10 + PORT_OFFSET(i))
+
+#define QUSB2PHY_1P8_VOL_MIN           1800000 /* uV */
+#define QUSB2PHY_1P8_VOL_MAX           1800000 /* uV */
+#define QUSB2PHY_1P8_HPM_LOAD          30000   /* uA */
+
+#define QUSB2PHY_3P3_VOL_MIN		3075000 /* uV */
+#define QUSB2PHY_3P3_VOL_MAX		3200000 /* uV */
+#define QUSB2PHY_3P3_HPM_LOAD		30000	/* uA */
 
 struct qusb_phy {
 	struct usb_phy		phy;
@@ -93,49 +105,139 @@ static int qusb_phy_reset(struct usb_phy *phy)
 	return 0;
 }
 
+static int qusb_phy_config_vdd(struct qusb_phy *qphy, int high)
+{
+	int min, ret;
+
+	min = high ? 1 : 0; /* low or none? */
+	ret = regulator_set_voltage(qphy->vdd, qphy->vdd_levels[min],
+						qphy->vdd_levels[2]);
+	if (ret) {
+		dev_err(qphy->phy.dev, "unable to set voltage for qusb vdd\n");
+		return ret;
+	}
+
+	dev_dbg(qphy->phy.dev, "min_vol:%d max_vol:%d\n",
+			qphy->vdd_levels[min], qphy->vdd_levels[2]);
+	return ret;
+}
+
 static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on)
 {
 	int ret = 0;
 
-	dev_dbg(qphy->phy.dev, "%s turn %s regulators\n", __func__,
-			on ? "on" : "off");
+	dev_dbg(qphy->phy.dev, "%s turn %s regulators. power_enabled:%d\n",
+			__func__, on ? "on" : "off", qphy->power_enabled);
 
-	if (qphy->power_enabled == on)
+	if (qphy->power_enabled == on) {
+		dev_dbg(qphy->phy.dev, "PHYs' regulators are already ON.\n");
 		return 0;
+	}
 
 	if (!on)
 		goto disable_vdda33;
 
+	ret = qusb_phy_config_vdd(qphy, true);
+	if (ret) {
+		dev_err(qphy->phy.dev, "Unable to config VDD:%d\n", ret);
+		goto err_vdd;
+	}
+
 	ret = regulator_enable(qphy->vdd);
 	if (ret) {
-		dev_err(qphy->phy.dev, "unable to enable vdd\n");
-		return ret;
+		dev_err(qphy->phy.dev, "Unable to enable VDD\n");
+		goto unconfig_vdd;
+	}
+
+	ret = regulator_set_optimum_mode(qphy->vdda18, QUSB2PHY_1P8_HPM_LOAD);
+	if (ret < 0) {
+		dev_err(qphy->phy.dev, "Unable to set HPM of vdda18:%d\n", ret);
+		goto disable_vdd;
+	}
+
+	ret = regulator_set_voltage(qphy->vdda18, QUSB2PHY_1P8_VOL_MIN,
+						QUSB2PHY_1P8_VOL_MAX);
+	if (ret) {
+		dev_err(qphy->phy.dev,
+				"Unable to set voltage for vdda18:%d\n", ret);
+		goto put_vdda18_lpm;
 	}
 
 	ret = regulator_enable(qphy->vdda18);
 	if (ret) {
-		dev_err(qphy->phy.dev, "unable to enable vdda18\n");
-		goto disable_vdd;
+		dev_err(qphy->phy.dev, "Unable to enable vdda18:%d\n", ret);
+		goto unset_vdda18;
+	}
+
+	ret = regulator_set_optimum_mode(qphy->vdda33, QUSB2PHY_3P3_HPM_LOAD);
+	if (ret < 0) {
+		dev_err(qphy->phy.dev, "Unable to set HPM of vdda33:%d\n", ret);
+		goto disable_vdda18;
+	}
+
+	ret = regulator_set_voltage(qphy->vdda33, QUSB2PHY_3P3_VOL_MIN,
+						QUSB2PHY_3P3_VOL_MAX);
+	if (ret) {
+		dev_err(qphy->phy.dev,
+				"Unable to set voltage for vdda33:%d\n", ret);
+		goto put_vdda33_lpm;
 	}
 
 	ret = regulator_enable(qphy->vdda33);
 	if (ret) {
-		dev_err(qphy->phy.dev, "unable to enable vdda33\n");
-		goto disable_vdda18;
+		dev_err(qphy->phy.dev, "Unable to enable vdda33:%d\n", ret);
+		goto unset_vdd33;
 	}
 
 	qphy->power_enabled = true;
-
+	pr_debug("%s(): QUSB PHY's regulators are turned ON.\n", __func__);
 	return 0;
 
 disable_vdda33:
-	regulator_disable(qphy->vdda33);
-disable_vdda18:
-	regulator_disable(qphy->vdda18);
-disable_vdd:
-	regulator_disable(qphy->vdd);
+	ret = regulator_disable(qphy->vdda33);
+	if (ret)
+		dev_err(qphy->phy.dev, "Unable to disable vdda33:%d\n", ret);
 
+unset_vdd33:
+	ret = regulator_set_voltage(qphy->vdda33, 0, QUSB2PHY_3P3_VOL_MAX);
+	if (ret)
+		dev_err(qphy->phy.dev,
+			"Unable to set (0) voltage for vdda33:%d\n", ret);
+
+put_vdda33_lpm:
+	ret = regulator_set_optimum_mode(qphy->vdda33, 0);
+	if (ret < 0)
+		dev_err(qphy->phy.dev, "Unable to set (0) HPM of vdda33\n");
+
+disable_vdda18:
+	ret = regulator_disable(qphy->vdda18);
+	if (ret)
+		dev_err(qphy->phy.dev, "Unable to disable vdda18:%d\n", ret);
+
+unset_vdda18:
+	ret = regulator_set_voltage(qphy->vdda18, 0, QUSB2PHY_1P8_VOL_MAX);
+	if (ret)
+		dev_err(qphy->phy.dev,
+			"Unable to set (0) voltage for vdda18:%d\n", ret);
+
+put_vdda18_lpm:
+	ret = regulator_set_optimum_mode(qphy->vdda18, 0);
+	if (ret < 0)
+		dev_err(qphy->phy.dev, "Unable to set LPM of vdda18\n");
+
+disable_vdd:
+	ret = regulator_disable(qphy->vdd);
+	if (ret)
+		dev_err(qphy->phy.dev, "Unable to disable vdd:%d\n", ret);
+
+unconfig_vdd:
+	ret = qusb_phy_config_vdd(qphy, false);
+	if (ret)
+		dev_err(qphy->phy.dev, "Unable unconfig VDD:%d\n", ret);
+
+err_vdd:
 	qphy->power_enabled = false;
+	dev_dbg(qphy->phy.dev, "QUSB PHY's regulators are turned OFF.\n");
 	return ret;
 }
 
@@ -268,7 +370,7 @@ static void qusb_write_readback(void *base, u32 offset,
 static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 {
 	struct qusb_phy *qphy = container_of(phy, struct qusb_phy, phy);
-	u32 intr_mask = 0;
+	u32 linestate = 0, intr_mask = 0;
 
 	if (!qphy->clocks_enabled) {
 		dev_dbg(phy->dev, "clocks not enabled yet\n");
@@ -289,11 +391,23 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 			writel_relaxed(0x00,
 				qphy->base + QUSB2PHY_PORT_INTR_CTRL);
 
-			/* Enable D+ interrupt */
-			intr_mask |= DPSE_INTR_EN;
+			linestate = readl_relaxed(qphy->base +
+					QUSB2PHY_PORT_UTMI_STATUS);
 
-			/* Select D+ falling edge as the trigger */
-			intr_mask &= ~DPSE_INTR_HIGH_SEL;
+			/*
+			 * D+/D- interrupts are level-triggered, but we are
+			 * only interested if the line state changes, so enable
+			 * the high/low trigger based on current state. In
+			 * other words, enable the triggers _opposite_ of what
+			 * the current D+/D- levels are.
+			 * e.g. if currently D+ high, D- low (HS 'J'/Suspend),
+			 * configure the mask to trigger on D+ low OR D- high
+			 */
+			intr_mask = DPSE_INTR_EN | DMSE_INTR_EN;
+			if (!(linestate & LINESTATE_DP)) /* D+ low */
+				intr_mask |= DPSE_INTR_HIGH_SEL;
+			if (!(linestate & LINESTATE_DM)) /* D- low */
+				intr_mask |= DMSE_INTR_HIGH_SEL;
 
 			writel_relaxed(intr_mask,
 				qphy->base + QUSB2PHY_PORT_INTR_CTRL);

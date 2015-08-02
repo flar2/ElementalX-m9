@@ -11,31 +11,17 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-/*
- * Header file of MobiCore Driver Kernel Module Platform
- * specific structures
- *
- * Internal structures of the McDrvModule
- *
- * Header file the MobiCore Driver Kernel Module,
- * its internal structures and defines.
- */
 #ifndef _MC_PLATFORM_H_
 #define _MC_PLATFORM_H_
 
-/* MobiCore Interrupt for Qualcomm */
 #define MC_INTR_SSIQ						280
 
-/* Use SMC for fastcalls */
 #define MC_SMC_FASTCALL
-
-/*--------------- Implementation -------------- */
-#if defined(CONFIG_ARCH_APQ8084) || defined(CONFIG_ARCH_MSM8916) || \
-	defined(CONFIG_ARCH_MSM8994)
 
 #include <soc/qcom/scm.h>
 
-#if defined(CONFIG_ARM64) || defined(CONFIG_ARCH_MSM8916)
+#if defined(CONFIG_ARCH_APQ8084) || defined(CONFIG_ARCH_MSM8916) || \
+	defined(CONFIG_ARCH_MSM8994)
 
 	#include <soc/qcom/qseecomi.h>
 	#include <linux/slab.h>
@@ -56,11 +42,6 @@
 
 #endif
 
-#else
-#include <mach/scm.h>
-#endif
-
-/* from following file */
 #define SCM_SVC_MOBICORE		250
 #define SCM_CMD_MOBICORE		1
 
@@ -106,21 +87,16 @@ static inline int smc_fastcall(void *fc_generic, size_t size)
 #endif
 }
 
-/* Enable mobicore mem traces */
 #define MC_MEM_TRACES
 
-/* Enable the use of vm_unamp instead of the deprecated do_munmap
- * and other 3.7 features
- */
 #define MC_VM_UNMAP
 
-/*
- *  Perform crypto clock enable/disable
- */
+#if !defined(CONFIG_ARCH_MSM8960) && !defined(CONFIG_ARCH_MSM8994)
 #define MC_CRYPTO_CLOCK_MANAGEMENT
+#endif
 
-#if defined(CONFIG_ARCH_MSM8916)
+#if defined(CONFIG_ARCH_MSM8916) || defined(CONFIG_ARCH_MSM8909)
 #define MC_USE_DEVICE_TREE
 #endif
 
-#endif /* _MC_PLATFORM_H_ */
+#endif 

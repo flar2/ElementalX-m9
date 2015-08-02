@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,6 +22,7 @@ struct hdmi_edid_init_data {
 	struct kobject *sysfs_kobj;
 
 	struct hdmi_tx_ddc_ctrl *ddc_ctrl;
+	struct hdmi_util_ds_data *ds_data;
 };
 
 int hdmi_edid_read(void *edid_ctrl, u8 write_burst_vic);
@@ -32,5 +33,7 @@ int hdmi_edid_get_audio_blk(void *edid_ctrl,
 void hdmi_edid_set_video_resolution(void *edid_ctrl, u32 resolution);
 void hdmi_edid_deinit(void *edid_ctrl);
 void *hdmi_edid_init(struct hdmi_edid_init_data *init_data);
+bool hdmi_edid_is_s3d_mode_supported(void *input,
+	u32 video_mode, u32 s3d_mode);
 
 #endif 

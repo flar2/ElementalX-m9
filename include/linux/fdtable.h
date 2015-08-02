@@ -17,6 +17,8 @@
 struct fdt_user {
 	pid_t remover;
 	pid_t installer;
+	unsigned long remove_ts;
+	unsigned long install_ts;
 };
 
 struct fdtable {

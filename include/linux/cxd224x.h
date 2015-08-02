@@ -19,10 +19,14 @@
 #ifndef _CXD224X_H
 #define _CXD224X_H
 
-#define CXDNFC_MAGIC	0xFA
+#define CONFIG_CXD224X_NFC_RST
 
+#define CXDNFC_MAGIC 'S'
 #define CXDNFC_POWER_CTL		_IO(CXDNFC_MAGIC, 0x01)
 #define CXDNFC_WAKE_CTL			_IO(CXDNFC_MAGIC, 0x02)
+#define CXDNFC_RST_CTL			_IO(CXDNFC_MAGIC, 0x03)
+
+#define CXDNFC_RST_ACTIVE 1            
 
 struct cxd224x_platform_data {
 	unsigned int irq_gpio;
@@ -30,8 +34,9 @@ struct cxd224x_platform_data {
 	unsigned int en_gpio;
 	uint32_t en_gpio_flags;
 	unsigned int wake_gpio;	
-	unsigned int rfs_gpio;	
 	uint32_t wake_gpio_flags;
+	unsigned int rst_gpio;
+	unsigned int rfs_gpio;	
 };
 
 #endif

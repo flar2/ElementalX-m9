@@ -201,7 +201,6 @@ static struct msm_led_flash_ctrl_t fctrl = {
 	.func_tbl = &adp1660_func_tbl,
 };
 
-/*subsys_initcall(msm_flash_i2c_add_driver);*/
 module_init(msm_flash_adp1660_init_module);
 module_exit(msm_flash_adp1660_exit_module);
 MODULE_DESCRIPTION("adp1660 FLASH");

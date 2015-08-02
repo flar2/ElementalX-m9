@@ -82,7 +82,6 @@ static int set_hdmi_params(struct mhl_dev_context *dev_context);
 static void hsic_init(struct drv_hw_context *hw_context);
 
 static void si_mhl_tx_drv_enable_emsc_block(struct drv_hw_context *hw_context);
-static void si_mhl_tx_drv_disable_emsc_block(struct drv_hw_context *hw_context);
 static void disable_gen2_write_burst_rcv(struct drv_hw_context *hw_context);
 static void disable_gen2_write_burst_xmit(struct drv_hw_context *hw_context);
 static void si_mhl_tx_drv_start_gen2_write_burst(
@@ -520,9 +519,8 @@ static int block_input_buffer_available(struct drv_hw_context *hw_context)
 static int alloc_block_input_buffer(struct drv_hw_context *hw_context,
 				    uint8_t **pbuffer)
 {
-	uint16_t head, tail;
+	uint16_t tail;
 	int index;
-	head = hw_context->block_protocol.head;
 	tail = hw_context->block_protocol.tail;
 
 	if (!block_input_buffer_available(hw_context)) {
@@ -913,6 +911,8 @@ static int tdm_isr(struct drv_hw_context *hw_context, uint8_t intr_status)
 					hw_context->block_protocol.
 						received_byte_count = 0;
 
+				
+				si_mhl_tx_send_blk_rcv_buf_info(dev_context);
 #ifdef EARLY_HSIC
 					hsic_init(hw_context);
 #endif
@@ -1352,9 +1352,6 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 				BIT_CTRL1_GPIO_I_6, BIT_CTRL1_GPIO_I_6);
 #endif
 #endif
-		si_mhl_tx_initialize_block_transport(dev_context);
-		si_mhl_tx_drv_enable_emsc_block(hw_context);
-
 		MHL_TX_DBG_WARN("hpd status: 0x%02x\n",
 				mhl_tx_read_reg(hw_context,
 						REG_CBUS_STATUS));
@@ -1395,7 +1392,11 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 		
 		mhl_tx_write_reg(hw_context, REG_PWD_SRST, 0xA0);
 
-		mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL1, 0xBD);
+		if (!dev_context->drv_info->mhl_coc_swing)
+			mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL1, 0xBD);
+		else
+			mhl_tx_write_reg(hw_context, REG_MHL_COC_CTL1,
+				dev_context->drv_info->mhl_coc_swing);
 
 		
 		mhl_tx_write_reg(hw_context, REG_PWD_SRST, 0x20);
@@ -1477,15 +1478,16 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 			BIT_CTRL1_GPIO_I_7 | BIT_CTRL1_GPIO_I_6, 0);
 	#endif
 #endif
+		
+		msleep(50);
+		si_mhl_tx_initialize_block_transport(dev_context);
+		si_mhl_tx_drv_enable_emsc_block(hw_context);
 
 		break;
 
 	case CM_eCBUS_D_BIST:
 	case CM_eCBUS_D:
 		hw_context->cbus_mode = CM_TRANSITIONAL_TO_eCBUS_D;
-
-		si_mhl_tx_initialize_block_transport(dev_context);
-		si_mhl_tx_drv_enable_emsc_block(hw_context);
 
 		switch (mode_sel) {
 		case CM_eCBUS_D_BIST:
@@ -1519,6 +1521,11 @@ int si_mhl_tx_drv_switch_cbus_mode(struct drv_hw_context *hw_context,
 		slot_total += hw_context->tdm_virt_chan_slot_counts[VC_T_CBUS];
 		mhl_tx_write_reg(hw_context, REG_TTXTOTNUMS, 199);
 		mhl_tx_write_reg(hw_context, REG_TRXTOTNUMS, 199);
+
+		
+		msleep(50);
+		si_mhl_tx_initialize_block_transport(dev_context);
+		si_mhl_tx_drv_enable_emsc_block(hw_context);
 
 		break;
 
@@ -3561,17 +3568,6 @@ int si_mhl_tx_drv_set_upstream_edid(struct drv_hw_context *hw_context,
 	MHL_TX_DBG_ERR("Expose EDID\n");
 
 	
-	{
-		struct mhl_dev_context *dev_context;
-		dev_context = container_of((void *)hw_context,
-		struct mhl_dev_context, drv_context);
-		msleep(500);
-		si_mhl_tx_initialize_block_transport(dev_context);
-		si_mhl_tx_drv_enable_emsc_block(hw_context);
-		si_mhl_tx_send_blk_rcv_buf_info(dev_context);
-	}
-
-	
 	reg_val = drive_hpd_high(hw_context, edid, length);
 
 	
@@ -3793,9 +3789,6 @@ static int init_regs(struct drv_hw_context *hw_context)
 	disable_heartbeat(hw_context);
 	disable_gen2_write_burst_rcv(hw_context);
 	disable_gen2_write_burst_xmit(hw_context);
-
-	
-	si_mhl_tx_drv_disable_emsc_block(hw_context);
 	return ret_val;
 }
 
@@ -5495,8 +5488,6 @@ static void disconnect_mhl(struct drv_hw_context *hw_context,
 	hw_context->current_cbus_req.command = 0x00;
 	hw_context->hawb_write_pending = false;
 	hw_context->cbus1_state = CBUS1_IDLE_RCV_DISABLED;
-	
-	si_mhl_tx_drv_disable_emsc_block(hw_context);
 }
 
 static int int_4_isr(struct drv_hw_context *hw_context, uint8_t int_4_status)
@@ -5904,11 +5895,6 @@ static void si_mhl_tx_drv_enable_emsc_block(struct drv_hw_context *hw_context)
 	enable_intr(hw_context, INTR_BLOCK, BIT_EMSCINTR_SPI_DVLD);
 }
 
-static void si_mhl_tx_drv_disable_emsc_block(struct drv_hw_context *hw_context)
-{
-	mhl_tx_modify_reg(hw_context, REG_GENCTL, BIT_GENCTL_EMSC_EN, 0);
-	enable_intr(hw_context, INTR_BLOCK, 0);
-}
 
 void si_mhl_tx_drv_device_isr(struct drv_hw_context *hw_context,
 	struct interrupt_info *intr_info)
@@ -5947,6 +5933,13 @@ void si_mhl_tx_drv_device_isr(struct drv_hw_context *hw_context,
 	
 	for (intr_num = 0;
 	     (intr_num < MAX_INTR) && (is_interrupt_asserted()); intr_num++) {
+		struct mhl_dev_context *dev_context =
+			container_of((void *)hw_context, struct mhl_dev_context, drv_context);
+		if (dev_context->fake_cable_out) {
+			dev_context->fake_cable_out = false;
+			cancel_delayed_work(&dev_context->irq_timeout_work);
+		}
+
 		if (g_intr_tbl[intr_num].mask) {
 			uint8_t aggregated_index, aggregated_id_bit,
 			    aggregated_status;

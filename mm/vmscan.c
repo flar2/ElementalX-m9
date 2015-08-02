@@ -408,8 +408,11 @@ static pageout_t pageout(struct page *page, struct address_space *mapping,
 		if (!PageWriteback(page)) {
 			
 			ClearPageReclaim(page);
-			if (PageError(page))
+			if (PageError(page) && PageSwapCache(page)) {
+				ClearPageError(page);
+				__set_page_locked(page);
 				return PAGE_ACTIVATE;
+			}
 		}
 		trace_mm_vmscan_writepage(page, trace_reclaim_flags(page));
 		inc_zone_page_state(page, NR_VMSCAN_WRITE);
@@ -960,29 +963,56 @@ int isolate_lru_page(struct page *page)
 	return ret;
 }
 
-static int too_many_isolated(struct zone *zone, int file,
-		struct scan_control *sc)
+static int __too_many_isolated(struct zone *zone, int file,
+	struct scan_control *sc, int safe)
 {
 	unsigned long inactive, isolated;
 
-	if (current_is_kswapd())
-		return 0;
-
-	if (!global_reclaim(sc))
-		return 0;
-
 	if (file) {
-		inactive = zone_page_state(zone, NR_INACTIVE_FILE);
-		isolated = zone_page_state(zone, NR_ISOLATED_FILE);
+		if (safe) {
+			inactive = zone_page_state_snapshot(zone,
+					NR_INACTIVE_FILE);
+			isolated = zone_page_state_snapshot(zone,
+					NR_ISOLATED_FILE);
+		} else {
+			inactive = zone_page_state(zone, NR_INACTIVE_FILE);
+			isolated = zone_page_state(zone, NR_ISOLATED_FILE);
+		}
 	} else {
-		inactive = zone_page_state(zone, NR_INACTIVE_ANON);
-		isolated = zone_page_state(zone, NR_ISOLATED_ANON);
+		if (safe) {
+			inactive = zone_page_state_snapshot(zone,
+					NR_INACTIVE_ANON);
+			isolated = zone_page_state_snapshot(zone,
+					NR_ISOLATED_ANON);
+		} else {
+			inactive = zone_page_state(zone, NR_INACTIVE_ANON);
+			isolated = zone_page_state(zone, NR_ISOLATED_ANON);
+		}
 	}
 
 	if ((sc->gfp_mask & GFP_IOFS) == GFP_IOFS)
 		inactive >>= 3;
 
 	return isolated > inactive;
+}
+
+static int too_many_isolated(struct zone *zone, int file,
+		struct scan_control *sc, int safe)
+{
+	if (current_is_kswapd())
+		return 0;
+
+	if (!global_reclaim(sc))
+		return 0;
+
+	if (unlikely(__too_many_isolated(zone, file, sc, 0))) {
+		if (safe)
+			return __too_many_isolated(zone, file, sc, safe);
+		else
+			return 1;
+	}
+
+	return 0;
 }
 
 static noinline_for_stack void
@@ -1048,15 +1078,18 @@ shrink_inactive_list(unsigned long nr_to_scan, struct lruvec *lruvec,
 	unsigned long nr_immediate = 0;
 	isolate_mode_t isolate_mode = 0;
 	int file = is_file_lru(lru);
+	int safe = 0;
 	struct zone *zone = lruvec_zone(lruvec);
 	struct zone_reclaim_stat *reclaim_stat = &lruvec->reclaim_stat;
 
-	while (unlikely(too_many_isolated(zone, file, sc))) {
+	while (unlikely(too_many_isolated(zone, file, sc, safe))) {
 		congestion_wait(BLK_RW_ASYNC, HZ/10);
 
 		
 		if (fatal_signal_pending(current))
 			return SWAP_CLUSTER_MAX;
+
+		safe = 1;
 	}
 
 	lru_add_drain();
@@ -1738,7 +1771,6 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 	bool aborted_reclaim;
 	unsigned long start_jiffies = jiffies;
 	unsigned int msecs_age;
-	unsigned long lru = 0xFFFFFF;
 
 	if (reclaim_state)
 		reclaim_state->trigger_lmk = 0;
@@ -1763,7 +1795,6 @@ static unsigned long do_try_to_free_pages(struct zonelist *zonelist,
 				lru_pages += zone_reclaimable_pages(zone);
 			}
 
-			lru = lru_pages;
 			shrink_slab(shrink, sc->nr_scanned, lru_pages);
 			if (reclaim_state) {
 				sc->nr_reclaimed += reclaim_state->reclaimed_slab;
@@ -1790,10 +1821,8 @@ out:
 
 	msecs_age = jiffies_to_msecs(jiffies - start_jiffies);
 	if ((reclaim_state && reclaim_state->trigger_lmk && sc->order >= 2) || msecs_age / 1000 > 10) {
-		pr_warn("%s(%d:%d): alloc order:%d mode:0x%x, reclaim %lu in %d.%03ds pri %d, scan %lu, lru %lu, trigger lmk %d times\n",
-		        current->comm, current->tgid, current->pid,
-		        sc->order, sc->gfp_mask, sc->nr_reclaimed, msecs_age / 1000, msecs_age % 1000, sc->priority, total_scanned, lru,
-		        reclaim_state->trigger_lmk);
+		pr_warn("%s(%d:%d): (reclaim  %d.%03ds), trigger lmk %d times, order:%d, mode:0x%x\n",
+		        current->comm, current->pid, current->tgid, msecs_age / 1000, msecs_age % 1000, reclaim_state->trigger_lmk, sc->order, sc->gfp_mask);
 		dump_stack();
 	}
 

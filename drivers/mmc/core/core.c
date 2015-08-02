@@ -32,11 +32,16 @@
 #include <linux/jiffies.h>
 #include <linux/statfs.h>
 #include <linux/debugfs.h>
+#include <linux/f2fs_fs.h>
+
+#include "../../../fs/f2fs/f2fs.h"
+#include "../../../fs/f2fs/segment.h"
 
 
 #include <trace/events/mmc.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/mmcio.h>
+#include <trace/events/f2fs.h>
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
@@ -57,6 +62,7 @@
 
 static void mmc_clk_scaling(struct mmc_host *host, bool from_wq);
 extern unsigned int get_tamper_sf(void);
+extern unsigned int disable_auto_sd;
 
 #define MMC_BKOPS_MAX_TIMEOUT	(30 * 1000) 
 
@@ -66,6 +72,7 @@ extern unsigned int get_tamper_sf(void);
 
 static struct workqueue_struct *workqueue;
 struct workqueue_struct *stats_workqueue = NULL;
+extern struct workqueue_struct *enable_detection_workqueue;
 static const unsigned freqs[] = { 400000, 300000, 200000, 100000 };
 
 #ifdef CONFIG_HTC_PNPMGR
@@ -743,7 +750,9 @@ EXPORT_SYMBOL(mmc_blk_init_bkops_statistics);
 
 void mmc_start_delayed_bkops(struct mmc_card *card)
 {
-	if (!card || !card->ext_csd.bkops_en || mmc_card_doing_bkops(card))
+	if (!card ||
+		!(mmc_card_get_bkops_en_manual(card)) ||
+		mmc_card_doing_bkops(card))
 		return;
 
 	if (card->bkops_info.sectors_changed <
@@ -765,7 +774,7 @@ void mmc_start_bkops(struct mmc_card *card, bool from_exception)
 	int err;
 
 	BUG_ON(!card);
-	if (!card->ext_csd.bkops_en)
+	if (!(mmc_card_get_bkops_en_manual(card)))
 		return;
 
 	if ((card->bkops_info.cancel_delayed_work) && !from_exception) {
@@ -2858,7 +2867,8 @@ out:
 	return;
 }
 
-static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host)
+static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host,
+				enum mmc_load state)
 {
 	struct mmc_card *card = host->card;
 	u32 status;
@@ -2866,7 +2876,8 @@ static bool mmc_is_vaild_state_for_clk_scaling(struct mmc_host *host)
 
 	if (!card || (mmc_card_mmc(card) &&
 			card->part_curr == EXT_CSD_PART_CONFIG_ACC_RPMB)
-			|| host->clk_scaling.invalid_state)
+			|| (state != MMC_LOAD_LOW &&
+				host->clk_scaling.invalid_state))
 		goto out;
 
 	if (mmc_send_status(card, &status)) {
@@ -2897,7 +2908,7 @@ static int mmc_clk_update_freq(struct mmc_host *host,
 	}
 
 	if (freq != host->clk_scaling.curr_freq) {
-		if (!mmc_is_vaild_state_for_clk_scaling(host)) {
+		if (!mmc_is_vaild_state_for_clk_scaling(host, state)) {
 			err = -EAGAIN;
 			goto error;
 		}
@@ -2999,6 +3010,8 @@ void mmc_disable_clk_scaling(struct mmc_host *host)
 		return;
 
 	cancel_delayed_work_sync(&host->clk_scaling.work);
+	if (host->ops->notify_load)
+		host->ops->notify_load(host, MMC_LOAD_LOW);
 	host->clk_scaling.enable = false;
 }
 EXPORT_SYMBOL_GPL(mmc_disable_clk_scaling);
@@ -3017,8 +3030,8 @@ void mmc_init_clk_scaling(struct mmc_host *host)
 	INIT_DELAYED_WORK(&host->clk_scaling.work, mmc_clk_scale_work);
 	host->clk_scaling.curr_freq = mmc_get_max_frequency(host);
 	if (host->ops->notify_load)
-		host->ops->notify_load(host, MMC_LOAD_HIGH);
-	host->clk_scaling.state = MMC_LOAD_HIGH;
+		host->ops->notify_load(host, MMC_LOAD_INIT);
+	host->clk_scaling.state = MMC_LOAD_INIT;
 	mmc_reset_clk_scale_stats(host);
 	host->clk_scaling.enable = true;
 	host->clk_scaling.initialized = true;
@@ -3032,6 +3045,8 @@ void mmc_exit_clk_scaling(struct mmc_host *host)
 		return;
 
 	cancel_delayed_work_sync(&host->clk_scaling.work);
+	if (host->ops->notify_load)
+		host->ops->notify_load(host, MMC_LOAD_LOW);
 	memset(&host->clk_scaling, 0, sizeof(host->clk_scaling));
 }
 EXPORT_SYMBOL_GPL(mmc_exit_clk_scaling);
@@ -3193,6 +3208,11 @@ void mmc_rescan(struct work_struct *work)
 		goto out;
 	}
 
+	if (host->rescan_only_remove) {
+		pr_info("%s rescan only do remove card\n", mmc_hostname(host));
+		goto out;
+	}
+
 	mmc_rpm_hold(host, &host->class_dev);
 	mmc_claim_host(host);
 	mmc_rescan_try_freq(host, host->f_min);
@@ -3204,6 +3224,7 @@ void mmc_rescan(struct work_struct *work)
 		mmc_schedule_delayed_work(&host->detect, HZ);
 	} else
 		wake_unlock(&host->detect_wake_lock);
+	host->rescan_only_remove = 0;
 }
 
 void mmc_start_host(struct mmc_host *host)
@@ -3214,9 +3235,17 @@ void mmc_start_host(struct mmc_host *host)
 		mmc_power_off(host);
 	else
 		mmc_power_up(host);
-	mmc_detect_change(host, 0);
-	if (mmc_is_sd_host(host))
-		mmc_detect_change(host, msecs_to_jiffies(3000));
+
+	host->rescan_only_remove = 0;
+
+	if (!disable_auto_sd) {	
+		mmc_detect_change(host, 0);
+		if (mmc_is_sd_host(host))
+			mmc_detect_change(host, msecs_to_jiffies(3000));
+	} else { 
+		if (mmc_is_mmc_host(host))
+			mmc_detect_change(host, 0);
+	}
 }
 
 void mmc_stop_host(struct mmc_host *host)
@@ -3620,7 +3649,7 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 #endif
 		host->rescan_disable = 0;
 
-		if (mmc_is_sd_host(host))
+		if (mmc_is_sd_host(host) && !disable_auto_sd)
 			mmc_detect_change(host, 0);
 		break;
 
@@ -3728,6 +3757,10 @@ static int __init mmc_init(void)
 	if (!stats_workqueue)
 		return -ENOMEM;
 
+	enable_detection_workqueue = create_singlethread_workqueue("enable_sd_detect");
+	if (!enable_detection_workqueue)
+		return -ENOMEM;
+
 	if (get_tamper_sf() == 1)
 		stats_interval = MMC_STATS_LOG_INTERVAL;
 
@@ -3754,6 +3787,8 @@ destroy_workqueue:
 	destroy_workqueue(workqueue);
 	if (stats_workqueue)
 		destroy_workqueue(stats_workqueue);
+	if (enable_detection_workqueue)
+		destroy_workqueue(enable_detection_workqueue);
 	return ret;
 }
 
@@ -3765,6 +3800,11 @@ static void __exit mmc_exit(void)
 	destroy_workqueue(workqueue);
 	if (stats_workqueue)
 		destroy_workqueue(stats_workqueue);
+	if (enable_detection_workqueue) {
+		flush_workqueue(enable_detection_workqueue);
+		destroy_workqueue(enable_detection_workqueue);
+		enable_detection_workqueue = NULL;
+	}
 }
 
 subsys_initcall(mmc_init);

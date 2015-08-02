@@ -54,6 +54,15 @@ config FB_MSM_MDSS_MDP3
 	The MDP3 provides support for an older version display controller
 	included in latest display sub-system, known as MDSS.
 
+config FB_MSM_MDSS_XLOG_DEBUG
+	depends on FB_MSM_MDSS
+	bool "Enable MDSS debugging"
+	---help---
+	The MDSS debugging provides support to enable display debugging
+	features to: Dump MDSS registers during driver errors, panic
+	driver during fatal errors and enable some display-driver logging
+	into an internal buffer (this avoids logging overhead).
+
 config FB_MSM_MDSS_HDMI_MHL_SII8620
 	depends on FB_MSM_MDSS_HDMI_PANEL
 	bool 'MHL SII8620 support '
@@ -74,3 +83,9 @@ config INTERNAL_CHARGING_SUPPORT_8620
 	default n
 	---help---
 	Support hTC internal charging support
+
+config MHL_DEBUG_DRIVER
+	bool 'MHL SII8620 hTC edid debug print support'
+	default n
+	---help---
+	Support hTC edid debug print support

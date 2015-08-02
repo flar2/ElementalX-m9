@@ -139,9 +139,19 @@ done:
 	return pkt;
 }
 
-void BCMFASTPATH 
+int BCMFASTPATH 
 dhd_flow_queue_reinsert(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt)
 {
+	int ret = BCME_OK;
+
+	ASSERT(queue != NULL);
+
+	if (queue->len >= queue->max) {
+		queue->failures++;
+		ret = (*queue->cb)(queue, pkt);
+		goto done;
+	}
+
 	if (queue->head == NULL) {
 		queue->tail = pkt;
 	}
@@ -149,6 +159,9 @@ dhd_flow_queue_reinsert(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt)
 	FLOW_QUEUE_PKT_SETNEXT(pkt, queue->head);
 	queue->head = pkt;
 	queue->len++;
+
+done:
+	return ret;
 }
 
 

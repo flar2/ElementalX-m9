@@ -189,6 +189,13 @@ static const struct qmp_reg_val qmp_settings_rev0_misc[] = {
 	{-1, -1} 
 };
 
+static const struct qmp_reg_val qmp_settings_rev1_misc[] = {
+	{0x0C, 0x03}, 
+	{0x10, 0x00}, 
+	{0xA0, 0xFF}, 
+	{-1, -1} 
+};
+
 struct msm_ssphy_qmp {
 	struct usb_phy		phy;
 	void __iomem		*base;
@@ -429,6 +436,7 @@ static int msm_ssphy_qmp_init(struct usb_phy *uphy)
 		break;
 	case 0x10000001:
 		reg = qmp_settings_rev1;
+		misc = qmp_settings_rev1_misc;
 		break;
 	default:
 		dev_err(uphy->dev, "Unknown revid 0x%x, cannot initialize PHY\n",

@@ -119,7 +119,10 @@
 	};
 
 	mpp@a100 { /* MPP 2 */
-		qcom,master-en = <0>;
+		qcom,mode = <0>;        /* QPNP_PIN_MODE_DIG_IN */
+		qcom,vin-sel = <2>;     /* QPNP_PIN_VIN2 */
+		qcom,src-sel = <0>;     /* QPNP_PIN_SEL_FUNC_CONSTANT */
+		qcom,master-en = <1>;   /* Enable */
 		status = "okay";
 	};
 };

@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -83,6 +83,9 @@
 #define MSM8939_TOOLS_ID	4103
 #define APQ8026_TOOLS_ID	4104
 #define MSM8909_TOOLS_ID	4108
+#define MSM8992_TOOLS_ID	4111
+#define MSMTELLURIUM_TOOLS_ID	4110
+#define MSM8929_TOOLS_ID	4113
 
 #define MSG_MASK_0			(0x00000001)
 #define MSG_MASK_1			(0x00000002)
@@ -132,10 +135,10 @@
 #define MSG_LVL_NONE			0
 
 #define MSG_MASK_TBL_CNT		25
-#define APPS_EVENT_LAST_ID		0x0A70
+#define APPS_EVENT_LAST_ID		0x0A7C
 
 #define MSG_SSID_0			0
-#define MSG_SSID_0_LAST			111
+#define MSG_SSID_0_LAST			112
 #define MSG_SSID_1			500
 #define MSG_SSID_1_LAST			506
 #define MSG_SSID_2			1000
@@ -167,7 +170,7 @@
 #define MSG_SSID_15			8000
 #define MSG_SSID_15_LAST		8000
 #define MSG_SSID_16			8500
-#define MSG_SSID_16_LAST		8524
+#define MSG_SSID_16_LAST		8529
 #define MSG_SSID_17			9000
 #define MSG_SSID_17_LAST		9008
 #define MSG_SSID_18			9500
@@ -314,7 +317,8 @@ static const uint32_t msg_bld_masks_0[] = {
 	MSG_LVL_HIGH,
 	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL,
 	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL,
-	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL
+	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL,
+	MSG_LVL_LOW
 };
 
 static const uint32_t msg_bld_masks_1[] = {
@@ -659,6 +663,11 @@ static const uint32_t msg_bld_masks_16[] = {
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
+	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL,
+	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL,
+	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL,
+	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL,
+	MSG_LVL_LOW|MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR|MSG_LVL_FATAL
 };
 
 static const uint32_t msg_bld_masks_17[] =  {
@@ -777,7 +786,7 @@ static const uint32_t msg_bld_masks_23[] = {
 
 static const uint32_t log_code_last_tbl[] = {
 	0x0,	
-	0x18A4,	
+	0x18C1,	
 	0x0,	
 	0x0,	
 	0x4910,	

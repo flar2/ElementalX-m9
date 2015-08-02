@@ -2036,6 +2036,9 @@ static inline void msm_pcie_save_shadow(struct msm_pcie_dev_t *dev,
 	}
 }
 
+static void msm_pcie_notify_client(struct msm_pcie_dev_t *dev, enum msm_pcie_event event);
+int oper_conf_fail_cnt = 0;
+
 static inline int msm_pcie_oper_conf(struct pci_bus *bus, u32 devfn, int oper,
 				     int where, int size, u32 *val)
 {
@@ -2141,12 +2144,35 @@ static inline int msm_pcie_oper_conf(struct pci_bus *bus, u32 devfn, int oper,
 		writel_relaxed(wr_val, config_base + word_offset);
 		wmb(); /* ensure config data is written to hardware register */
 
+#if 0
 		if (rd_val == PCIE_LINK_DOWN)
 			PCIE_ERR(dev,
 				"Read of RC%d %d:0x%02x + 0x%04x[%d] is all FFs\n",
 				rc_idx, bus->number, devfn, where, size);
 		else if (dev->shadow_en)
 			msm_pcie_save_shadow(dev, word_offset, wr_val, bdf, rc);
+#endif
+		if (rd_val == PCIE_LINK_DOWN) {
+			PCIE_ERR(dev,
+				"Read of RC%d %d:0x%02x + 0x%04x[%d] is all FFs\n",
+				rc_idx, bus->number, devfn, where, size);
+
+			oper_conf_fail_cnt++;
+			if ( oper_conf_fail_cnt > 10 && dev->link_status == MSM_PCIE_LINK_ENABLED ) {
+				PCIE_ERR(dev, "Trigger recover for DPM on RC%d \n", dev->rc_idx);
+				oper_conf_fail_cnt = 0;
+				dev->link_status = MSM_PCIE_LINK_DISABLED;
+				dev->shadow_en = false;
+				gpio_set_value(dev->gpio[MSM_PCIE_GPIO_PERST].num,
+						dev->gpio[MSM_PCIE_GPIO_PERST].on);
+				msm_pcie_notify_client(dev, MSM_PCIE_EVENT_LINKDOWN);
+			}
+		} else if (dev->shadow_en) {
+			msm_pcie_save_shadow(dev, word_offset, wr_val, bdf, rc);
+			oper_conf_fail_cnt = 0;
+		} else {
+			oper_conf_fail_cnt = 0;
+		}
 
 		PCIE_DBG3(dev,
 			"RC%d %d:0x%02x + 0x%04x[%d] <- 0x%08x; rd 0x%08x val 0x%08x\n",

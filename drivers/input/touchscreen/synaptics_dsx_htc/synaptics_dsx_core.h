@@ -44,7 +44,7 @@
 #endif
 
 #define dev_fm(fmt) "[TP]:" fmt
-#define dev_err_fm(fmt) "[TP]: [ERR]:" fmt
+#define dev_err_fm(fmt) "[TP]:[ERR]:" fmt
 
 #ifdef pr_info
 #undef pr_info

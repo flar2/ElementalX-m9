@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,6 +32,7 @@
 #define RPM_MEM_CLK_TYPE	0x326b6c63
 #define RPM_IPA_CLK_TYPE	0x617069
 #define RPM_CE_CLK_TYPE		0x6563
+#define RPM_MCFG_CLK_TYPE	0x6766636d
 
 #define RPM_SMD_KEY_ENABLE	0x62616E45
 
@@ -51,7 +52,8 @@
 
 #define CE1_CLK_ID		0x0
 #define CE2_CLK_ID		0x1
-#define CE3_CLK_ID		0x2
+
+#define MSS_CFG_AHB_CLK_ID	0x0
 
 #define BB_CLK1_ID	0x1
 #define BB_CLK2_ID	0x2
@@ -104,12 +106,15 @@ DEFINE_CLK_RPM_SMD(ipa_clk, ipa_a_clk, RPM_IPA_CLK_TYPE,
 DEFINE_CLK_RPM_SMD_XO_BUFFER(ln_bb_clk, ln_bb_a_clk, LN_BB_CLK_ID);
 DEFINE_CLK_RPM_SMD(mmssnoc_ahb_clk, mmssnoc_ahb_a_clk, RPM_BUS_CLK_TYPE,
 		   MMSSNOC_AHB_CLK_ID, NULL);
+DEFINE_CLK_RPM_SMD_BRANCH(mss_cfg_ahb_clk, mss_cfg_ahb_a_clk, RPM_MCFG_CLK_TYPE,
+		   MSS_CFG_AHB_CLK_ID, 19200000);
 static DEFINE_CLK_VOTER(ocmemgx_core_clk, &ocmemgx_clk.c, INT_MAX);
 static DEFINE_CLK_VOTER(ocmemgx_msmbus_clk, &ocmemgx_clk.c, INT_MAX);
 static DEFINE_CLK_VOTER(ocmemgx_msmbus_a_clk, &ocmemgx_a_clk.c, INT_MAX);
 static DEFINE_CLK_VOTER(oxili_gfx3d_clk_src, &gfx3d_clk_src.c, INT_MAX);
 static DEFINE_CLK_VOTER(pnoc_keepalive_a_clk, &pnoc_a_clk.c, INT_MAX);
 static DEFINE_CLK_VOTER(pnoc_msmbus_clk, &pnoc_clk.c, INT_MAX);
+static DEFINE_CLK_VOTER(pnoc_modem_clk, &pnoc_clk.c, INT_MAX);
 static DEFINE_CLK_VOTER(pnoc_msmbus_a_clk, &pnoc_a_clk.c, INT_MAX);
 static DEFINE_CLK_VOTER(pnoc_pm_clk, &pnoc_clk.c, INT_MAX);
 static DEFINE_CLK_VOTER(pnoc_sps_clk, &pnoc_clk.c, 0);
@@ -143,15 +148,6 @@ static DEFINE_CLK_VOTER(scm_ce2_clk, &ce2_clk.c, 85710000);
 static DEFINE_CLK_VOTER(qcedev_ce2_clk, &ce2_clk.c, 85710000);
 static DEFINE_CLK_VOTER(qcrypto_ce2_clk, &ce2_clk.c, 85710000);
 
-DEFINE_CLK_RPM_SMD(ce3_clk, ce3_a_clk, RPM_CE_CLK_TYPE,
-		   CE3_CLK_ID, NULL);
-DEFINE_CLK_DUMMY(gcc_ce3_ahb_m_clk, 0);
-DEFINE_CLK_DUMMY(gcc_ce3_axi_m_clk, 0);
-static DEFINE_CLK_VOTER(mcd_ce3_clk, &ce3_clk.c, 85710000);
-static DEFINE_CLK_VOTER(qseecom_ce3_clk, &ce3_clk.c, 85710000);
-static DEFINE_CLK_VOTER(scm_ce3_clk, &ce3_clk.c, 85710000);
-static DEFINE_CLK_VOTER(qcedev_ce3_clk, &ce3_clk.c, 85710000);
-static DEFINE_CLK_VOTER(qcrypto_ce3_clk, &ce3_clk.c, 85710000);
 DEFINE_CLK_DUMMY(gcc_bimc_kpss_axi_m_clk, 0);
 DEFINE_CLK_DUMMY(gcc_mmss_bimc_gfx_m_clk, 0);
 
@@ -165,6 +161,7 @@ static struct mux_clk rpm_debug_mux = {
 		{ &pnoc_clk.c, 0x0010 },
 		{ &snoc_clk.c, 0x0000 },
 		{ &bimc_clk.c, 0x015c },
+		{ &mss_cfg_ahb_clk.c, 0x0030 },
 		{ &gcc_mmss_bimc_gfx_m_clk.c, 0x002c },
 		{ &ce1_clk.c, 0x0138 },
 		{ &gcc_ce1_axi_m_clk.c, 0x0139 },
@@ -173,9 +170,6 @@ static struct mux_clk rpm_debug_mux = {
 		{ &gcc_ce2_axi_m_clk.c, 0x0141 },
 		{ &gcc_ce2_ahb_m_clk.c, 0x0142 },
 		{ &gcc_bimc_kpss_axi_m_clk.c, 0x0155 },
-		{ &ce3_clk.c, 0x0228 },
-		{ &gcc_ce3_axi_m_clk.c, 0x0229 },
-		{ &gcc_ce3_ahb_m_clk.c, 0x022a },
 	),
 	.c = {
 		.dbg_name = "rpm_debug_mux",
@@ -210,7 +204,6 @@ static struct clk_lookup msm_clocks_rpm_8992[] = {
 	CLK_LIST(bimc_msmbus_a_clk),
 	CLK_LIST(ce1_a_clk),
 	CLK_LIST(ce2_a_clk),
-	CLK_LIST(ce3_a_clk),
 	CLK_LIST(cnoc_msmbus_clk),
 	CLK_LIST(cnoc_msmbus_a_clk),
 	CLK_LIST(cxo_clk_src_ao),
@@ -231,29 +224,28 @@ static struct clk_lookup msm_clocks_rpm_8992[] = {
 	CLK_LIST(ln_bb_a_clk),
 	CLK_LIST(mcd_ce1_clk),
 	CLK_LIST(mcd_ce2_clk),
-	CLK_LIST(mcd_ce3_clk),
 	CLK_LIST(mmssnoc_ahb_clk),
 	CLK_LIST(mmssnoc_ahb_a_clk),
+	CLK_LIST(mss_cfg_ahb_clk),
+	CLK_LIST(mss_cfg_ahb_a_clk),
 	CLK_LIST(ocmemgx_core_clk),
 	CLK_LIST(ocmemgx_msmbus_clk),
 	CLK_LIST(ocmemgx_msmbus_a_clk),
 	CLK_LIST(oxili_gfx3d_clk_src),
 	CLK_LIST(pnoc_keepalive_a_clk),
 	CLK_LIST(pnoc_msmbus_clk),
+	CLK_LIST(pnoc_modem_clk),
 	CLK_LIST(pnoc_msmbus_a_clk),
 	CLK_LIST(pnoc_pm_clk),
 	CLK_LIST(pnoc_sps_clk),
 	CLK_LIST(qcedev_ce1_clk),
 	CLK_LIST(qcedev_ce2_clk),
-	CLK_LIST(qcedev_ce3_clk),
 	CLK_LIST(qcrypto_ce1_clk),
 	CLK_LIST(qcrypto_ce2_clk),
-	CLK_LIST(qcrypto_ce3_clk),
 	CLK_LIST(qdss_clk),
 	CLK_LIST(qdss_a_clk),
 	CLK_LIST(qseecom_ce1_clk),
 	CLK_LIST(qseecom_ce2_clk),
-	CLK_LIST(qseecom_ce3_clk),
 	CLK_LIST(rf_clk1),
 	CLK_LIST(rf_clk1_ao),
 	CLK_LIST(rf_clk1_pin),
@@ -264,7 +256,6 @@ static struct clk_lookup msm_clocks_rpm_8992[] = {
 	CLK_LIST(rf_clk2_pin_ao),
 	CLK_LIST(scm_ce1_clk),
 	CLK_LIST(scm_ce2_clk),
-	CLK_LIST(scm_ce3_clk),
 	CLK_LIST(snoc_msmbus_clk),
 	CLK_LIST(snoc_msmbus_a_clk),
 	CLK_LIST(ce1_clk),
@@ -273,9 +264,6 @@ static struct clk_lookup msm_clocks_rpm_8992[] = {
 	CLK_LIST(ce2_clk),
 	CLK_LIST(gcc_ce2_ahb_m_clk),
 	CLK_LIST(gcc_ce2_axi_m_clk),
-	CLK_LIST(ce3_clk),
-	CLK_LIST(gcc_ce3_ahb_m_clk),
-	CLK_LIST(gcc_ce3_axi_m_clk),
 	CLK_LIST(gcc_bimc_kpss_axi_m_clk),
 	CLK_LIST(gcc_mmss_bimc_gfx_m_clk),
 	CLK_LIST(rpm_debug_mux),
@@ -286,7 +274,7 @@ static int msm_rpmcc_8992_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret;
 
-	ret = enable_rpm_scaling();
+	ret = vote_bimc(&bimc_clk, INT_MAX);
 	if (ret < 0)
 		return ret;
 
@@ -304,6 +292,10 @@ static int msm_rpmcc_8992_probe(struct platform_device *pdev)
 	ret = of_msm_clock_register(pdev->dev.of_node, msm_clocks_rpm_8992,
 				    ARRAY_SIZE(msm_clocks_rpm_8992));
 	if (ret)
+		return ret;
+
+	ret = enable_rpm_scaling();
+	if (ret < 0)
 		return ret;
 
 	/*

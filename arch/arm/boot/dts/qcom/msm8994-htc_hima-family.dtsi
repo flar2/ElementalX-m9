@@ -86,10 +86,6 @@
 		};
 	};
 //htc audio --
-	htc_mnemosyne@0 {
-		compatible = "htc,mnemosyne";
-		linux,contiguous-region = <&htc_mnemosyne_mem>;
-	};
 
 	gpio_keys {
 		compatible = "gpio-keys";

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,9 +26,10 @@
 #include <linux/power_supply.h>
 #include "leds.h"
 #include <linux/htc_flashlight.h>
+#include <linux/of_gpio.h>
 
 #define FLT_DBG_LOG(fmt, ...) \
-		printk(KERN_DEBUG "[FLT] " fmt, ##__VA_ARGS__)
+		printk(KERN_DEBUG "[FLT][DBG] " fmt, ##__VA_ARGS__)
 #define FLT_INFO_LOG(fmt, ...) \
 		printk(KERN_INFO "[FLT] " fmt, ##__VA_ARGS__)
 #define FLT_ERR_LOG(fmt, ...) \
@@ -45,6 +46,7 @@
 #define FLASH_LED_TMR_CTRL(base)				(base + 0x48)
 #define FLASH_HEADROOM(base)					(base + 0x4A)
 #define	FLASH_STARTUP_DELAY(base)				(base + 0x4B)
+#define FLASH_MASK_ENABLE(base)					(base + 0x4C)
 #define FLASH_VREG_OK_FORCE(base)				(base + 0x4F)
 #define FLASH_FAULT_DETECT(base)				(base + 0x51)
 #define	FLASH_THERMAL_DRATE(base)				(base + 0x52)
@@ -71,6 +73,7 @@
 #define FLASH_CURRENT_RAMP_MASK					0xBF
 #define FLASH_VPH_PWR_DROOP_MASK				0xF3
 #define FLASH_LED_HDRM_SNS_ENABLE_MASK				0x81
+#define	FLASH_MASK_MODULE_CONTRL_MASK				0xE0
 
 #define FLASH_LED_TRIGGER_DEFAULT				"none"
 #define FLASH_LED_HEADROOM_DEFAULT_MV				500
@@ -100,6 +103,7 @@
 #define	FLASH_LED_VPH_DROOP_THRESHOLD_DIVIDER			100
 #define FLASH_LED_HDRM_SNS_ENABLE				0x81
 #define	FLASH_LED_UA_PER_MA					1000
+#define	FLASH_LED_MASK_MODULE_MASK2_ENABLE			0x20
 
 #define FLASH_UNLOCK_SECURE					0xA5
 #define FLASH_LED_TORCH_ENABLE					0x00
@@ -205,6 +209,7 @@ struct qpnp_flash_led {
 	int				num_leds;
 	u16				base;
 	u8				peripheral_type;
+	uint32_t			flash_strobe;
 };
 
 static u8 qpnp_flash_led_ctrl_dbg_regs[] = {
@@ -224,6 +229,42 @@ int pmi8994_flashlight_torch2(int, int);
 int (*htc_flash_main)(int led1, int led2);
 int (*htc_torch_main)(int led1, int led2);
 
+static int
+qpnp_flash_led_get_max_avail_current(struct flash_node_data *flash_node,
+					struct qpnp_flash_led *led)
+{
+	union power_supply_propval prop;
+	int max_curr_avail_ma;
+	int rc;
+
+	if (led->battery_psy) {
+		rc = led->battery_psy->get_property(led->battery_psy,
+				POWER_SUPPLY_PROP_FLASH_CURRENT_MAX,
+				&prop);
+		if (rc) {
+			dev_err(&led->spmi_dev->dev,
+				"Failed to get power supply property\n");
+			return -EINVAL;
+		}
+
+		if (!prop.intval) {
+			dev_err(&led->spmi_dev->dev,
+				"battery too low for flash\n");
+			return 0;
+		}
+	} else {
+		dev_err(&led->spmi_dev->dev,
+			"failed to query power supply battery device\n");
+		return -EINVAL;
+	}
+	max_curr_avail_ma = (int)(prop.intval / FLASH_LED_UA_PER_MA);
+	max_curr_avail_ma = max_curr_avail_ma / 2;
+
+	if (max_curr_avail_ma > flash_node->max_current)
+		max_curr_avail_ma = flash_node->max_current;
+
+	return max_curr_avail_ma;
+}
 
 static ssize_t qpnp_led_strobe_type_store(struct device *dev,
 			struct device_attribute *attr,
@@ -282,12 +323,67 @@ static ssize_t qpnp_flash_led_dump_regs_show(struct device *dev,
 	return count;
 }
 
+static ssize_t qpnp_flash_led_current_derate_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct qpnp_flash_led *led;
+	struct flash_node_data *flash_node;
+	unsigned long val;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	ssize_t ret;
+
+	ret = kstrtoul(buf, 10, &val);
+	if (ret)
+		return ret;
+
+	flash_node = container_of(led_cdev, struct flash_node_data, cdev);
+	led = dev_get_drvdata(&flash_node->spmi_dev->dev);
+
+	
+	if (val == 0)
+		led->pdata->power_detect_en = false;
+	else
+		led->pdata->power_detect_en = true;
+
+	return count;
+}
+
+static ssize_t qpnp_flash_led_max_current_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct qpnp_flash_led *led;
+	struct flash_node_data *flash_node;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	int max_curr_avail_ma;
+	flash_node = container_of(led_cdev, struct flash_node_data, cdev);
+	led = dev_get_drvdata(&flash_node->spmi_dev->dev);
+
+	if (led->pdata->power_detect_en) {
+		max_curr_avail_ma =
+			qpnp_flash_led_get_max_avail_current(flash_node, led);
+
+		if (max_curr_avail_ma < 0)
+			return -EINVAL;
+		else
+			max_curr_avail_ma = (int)flash_node->max_current;
+	}
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", max_curr_avail_ma);
+}
+
 static struct device_attribute qpnp_flash_led_attrs[] = {
 	__ATTR(strobe, (S_IRUGO | S_IWUSR | S_IWGRP),
 				NULL,
 				qpnp_led_strobe_type_store),
 	__ATTR(reg_dump, (S_IRUGO | S_IWUSR | S_IWGRP),
 				qpnp_flash_led_dump_regs_show,
+				NULL),
+	__ATTR(enable_current_derate, (S_IRUGO | S_IWUSR | S_IWGRP),
+				NULL,
+				qpnp_flash_led_current_derate_store),
+	__ATTR(max_allowed_current, (S_IRUGO | S_IWUSR | S_IWGRP),
+				qpnp_flash_led_max_current_show,
 				NULL),
 };
 
@@ -407,6 +503,7 @@ qpnp_flash_led_get_peripheral_type(struct qpnp_flash_led *led)
 static int qpnp_flash_led_module_disable(struct qpnp_flash_led *led,
 				struct flash_node_data *flash_node)
 {
+	union power_supply_propval psy_prop;
 	int rc;
 	u8 val, tmp;
 
@@ -449,6 +546,19 @@ static int qpnp_flash_led_module_disable(struct qpnp_flash_led *led,
 			dev_err(&led->spmi_dev->dev, "Module disable failed\n");
 			return -EINVAL;
 		}
+
+		FLT_DBG_LOG("DISABLE OTG PULSE SKIP MODE\n");
+		if (led->battery_psy) {
+			psy_prop.intval = false;
+			rc = led->battery_psy->set_property(led->battery_psy,
+						POWER_SUPPLY_PROP_OTG_PULSE_SKIP_ENABLE,	
+								&psy_prop);
+			if (rc) {
+				dev_err(&led->spmi_dev->dev,
+					"Failed to setup OTG pulse skip enable\n");
+				return -EINVAL;
+			}
+		}
 	} else {
 		rc = qpnp_led_masked_write(led->spmi_dev,
 			FLASH_MODULE_ENABLE_CTRL(led->base),
@@ -458,7 +568,6 @@ static int qpnp_flash_led_module_disable(struct qpnp_flash_led *led,
 			return -EINVAL;
 		}
 	}
-
 	return 0;
 }
 
@@ -496,6 +605,9 @@ static int flashlight_turn_off(void)
 			goto exit_flash_led_work;
 		}
 	}
+
+	if( gpio_is_valid(this_led->flash_strobe) )
+		gpio_set_value(this_led->flash_strobe, 0);
 
 	usleep(FLASH_RAMP_DN_DELAY_US);
 
@@ -541,6 +653,9 @@ int pmi8994_flashlight_mode2(int mode2, int mode13)
 {
 	int rc;
 	u8 val;
+	union power_supply_propval psy_prop;
+	int max_curr_avail_ma;
+
 	this_led->flash_node->trigger = FLASH_LED0_TRIGGER | FLASH_LED1_TRIGGER;
 	this_led->flash_node->max_current = 1000;
 
@@ -573,6 +688,44 @@ int pmi8994_flashlight_mode2(int mode2, int mode13)
 	if (mode2 == 0 && mode13 == 0)
 		flashlight_turn_off();
 	else {
+		FLT_DBG_LOG("ENABLE OTG PULSE SKIP MODE\n");
+		if (!this_led->battery_psy)
+			this_led->battery_psy = power_supply_get_by_name("battery");
+		if (!this_led->battery_psy) {
+			dev_err(&this_led->spmi_dev->dev,
+				"Failed to get battery power supply\n");
+			goto exit_flash_led_work;
+		}
+
+		psy_prop.intval = true;
+		rc = this_led->battery_psy->set_property(this_led->battery_psy,
+						POWER_SUPPLY_PROP_OTG_PULSE_SKIP_ENABLE,	
+								&psy_prop);
+		if (rc) {
+			dev_err(&this_led->spmi_dev->dev,
+				"Failed to setup OTG pulse skip enable\n");
+			goto exit_flash_led_work;
+		}
+
+		if (this_led->pdata->power_detect_en) {
+			max_curr_avail_ma =
+				qpnp_flash_led_get_max_avail_current
+							(this_led->flash_node, this_led);
+			if (max_curr_avail_ma < 0) {
+				dev_err(&this_led->spmi_dev->dev,
+					"Failed to get Max available curr\n");
+				goto exit_flash_led_work;
+			} else {
+				if (max_curr_avail_ma <
+					this_led->flash_node->prgm_current) {
+					dev_err(&this_led->spmi_dev->dev,
+						"battery only supports %d mA.\n",
+						max_curr_avail_ma);
+					this_led->flash_node->prgm_current =
+						(u16) max_curr_avail_ma;
+				}
+			}
+		}
 
 		val = 0x3B;	
 		rc = qpnp_led_masked_write(this_led->spmi_dev,
@@ -630,6 +783,9 @@ int pmi8994_flashlight_mode2(int mode2, int mode13)
 				"Module enable reg write failed\n");
 			goto exit_flash_led_work;
 		}
+
+		if( gpio_is_valid(this_led->flash_strobe) )
+			gpio_set_value(this_led->flash_strobe, 1);
 
 		usleep(FLASH_RAMP_UP_DELAY_US);
 
@@ -814,9 +970,9 @@ static void qpnp_flash_led_work(struct work_struct *work)
 				struct flash_node_data, work);
 	struct qpnp_flash_led *led =
 			dev_get_drvdata(&flash_node->spmi_dev->dev);
-	union power_supply_propval prop;
+	union power_supply_propval psy_prop;
 	int rc, brightness = flash_node->cdev.brightness;
-	u16 max_curr_avail_ma;
+	int max_curr_avail_ma;
 	u8 val;
 
 	mutex_lock(&led->flash_led_lock);
@@ -830,8 +986,7 @@ static void qpnp_flash_led_work(struct work_struct *work)
 	flash_node->prgm_current = brightness;
 
 	if (flash_node->boost_regulator && !flash_node->flash_on) {
-		if (regulator_count_voltages(flash_node->boost_regulator)
-									> 0) {
+		if (regulator_count_voltages(flash_node->boost_regulator) > 0) {
 			rc = regulator_set_voltage(flash_node->boost_regulator,
 				flash_node->boost_voltage_max,
 				flash_node->boost_voltage_max);
@@ -910,35 +1065,42 @@ static void qpnp_flash_led_work(struct work_struct *work)
 			goto exit_flash_led_work;
 		}
 	} else if (flash_node->type == FLASH) {
+		FLT_DBG_LOG("ENABLE OTG PULSE SKIP MODE\n");
+		if (!led->battery_psy)
+			led->battery_psy = power_supply_get_by_name("battery");
+		if (!led->battery_psy) {
+			dev_err(&led->spmi_dev->dev,
+				"Failed to get battery power supply\n");
+			goto exit_flash_led_work;
+		}
+
+		psy_prop.intval = true;
+		rc = led->battery_psy->set_property(led->battery_psy,
+						POWER_SUPPLY_PROP_OTG_PULSE_SKIP_ENABLE,	
+								&psy_prop);
+		if (rc) {
+			dev_err(&led->spmi_dev->dev,
+				"Failed to setup OTG pulse skip enable\n");
+			goto exit_flash_led_work;
+		}
+
 		if (led->pdata->power_detect_en) {
-			if (!led->battery_psy)
-				led->battery_psy =
-					power_supply_get_by_name("battery");
-
-			if (led->battery_psy) {
-				led->battery_psy->get_property(led->battery_psy,
-					POWER_SUPPLY_PROP_FLASH_CURRENT_MAX,
-					&prop);
-				if (!prop.intval) {
-					dev_err(&led->spmi_dev->dev,
-						"battery too low for flash\n");
-					goto exit_flash_led_work;
-				}
-			} else {
+			max_curr_avail_ma =
+				qpnp_flash_led_get_max_avail_current
+							(flash_node, led);
+			if (max_curr_avail_ma < 0) {
 				dev_err(&led->spmi_dev->dev,
-					"failed to query battery level\n");
+					"Failed to get Max available curr\n");
 				goto exit_flash_led_work;
-			}
-
-			max_curr_avail_ma = (u16)(prop.intval /
-							FLASH_LED_UA_PER_MA);
-			max_curr_avail_ma = max_curr_avail_ma / 2;
-
-			if (max_curr_avail_ma < flash_node->prgm_current) {
-				dev_err(&led->spmi_dev->dev,
-					"battery only supports %d mA.\n",
-					max_curr_avail_ma);
-				flash_node->prgm_current = max_curr_avail_ma;
+			} else {
+				if (max_curr_avail_ma <
+					flash_node->prgm_current) {
+					dev_err(&led->spmi_dev->dev,
+						"battery only supports %d mA.\n",
+						max_curr_avail_ma);
+					flash_node->prgm_current =
+						(u16) max_curr_avail_ma;
+				}
 			}
 		}
 
@@ -1046,6 +1208,9 @@ static void qpnp_flash_led_work(struct work_struct *work)
 					"Module enable reg write failed\n");
 				goto exit_flash_led_work;
 			}
+
+			if( gpio_is_valid(this_led->flash_strobe) )
+				gpio_set_value(this_led->flash_strobe, 1);
 
 			usleep(FLASH_RAMP_UP_DELAY_US);
 
@@ -1210,6 +1375,9 @@ turn_off:
 		}
 	}
 
+	if( gpio_is_valid(this_led->flash_strobe) )
+		gpio_set_value(this_led->flash_strobe, 0);
+
 	usleep(FLASH_RAMP_DN_DELAY_US);
 
 	rc = qpnp_flash_led_module_disable(led, flash_node);
@@ -1339,6 +1507,14 @@ static int qpnp_flash_led_init_settings(struct qpnp_flash_led *led)
 	if (rc) {
 		dev_err(&led->spmi_dev->dev,
 					"Fault detect reg write failed\n");
+		return rc;
+	}
+
+	rc = qpnp_led_masked_write(led->spmi_dev, FLASH_MASK_ENABLE(led->base),
+				FLASH_MASK_MODULE_CONTRL_MASK,
+				FLASH_LED_MASK_MODULE_MASK2_ENABLE);
+	if (rc) {
+		dev_err(&led->spmi_dev->dev, "Mask module enable failed\n");
 		return rc;
 	}
 
@@ -1716,6 +1892,14 @@ static int qpnp_flash_led_parse_common_dt(
 	led->pdata->power_detect_en = of_property_read_bool(node,
 						"qcom,power-detect-enabled");
 
+	led->flash_strobe = -1;
+	if ( of_find_property(node, "qcom,gpio-flash-strobe", NULL) ) {
+		led->flash_strobe = of_get_named_gpio(node, "qcom,gpio-flash-strobe", 0);
+		FLT_INFO_LOG("flash_strobe = %d\n", led->flash_strobe );
+	}
+	else
+		FLT_INFO_LOG("Unable to read FLASH-STROBE gpio pin\n");
+
 	return 0;
 }
 
@@ -1727,7 +1911,7 @@ static int qpnp_flash_led_probe(struct spmi_device *spmi)
 	int rc, i = 0, j = 0, num_leds = 0;
 	u32 val;
 
-	FLT_INFO_LOG("pmic_version=%d\n",htc_print_pmic_version());
+	FLT_INFO_LOG("%s, pmic_version=%d\n", __func__, htc_print_pmic_version());
 	if(htc_print_pmic_version() == 1)
 		return -ENODEV;
 	htc_print_cpu_version();
@@ -1796,6 +1980,23 @@ static int qpnp_flash_led_probe(struct spmi_device *spmi)
 	if (!led->flash_node) {
 		dev_err(&spmi->dev, "Unable to allocate memory\n");
 		return -ENOMEM;
+	}
+
+	if( gpio_is_valid(led->flash_strobe) )
+	{
+		rc = gpio_request(led->flash_strobe, "flash_strobe_gpio");
+		if (rc) {
+			FLT_ERR_LOG("%s: gpio_request failed for flash_strobe(%d).\n", __func__, rc);
+			return rc;
+		}
+
+		rc = gpio_direction_output( led->flash_strobe, 0 );
+		if (rc)
+		{
+			FLT_ERR_LOG("%s: gpio_direction_output failed for flash_strobe(%d).\n", __func__, rc);
+			gpio_free(led->flash_strobe);
+			return rc;
+		}
 	}
 
 	INIT_DELAYED_WORK(&pmi8994_delayed_work, flashlight_turn_off_work);
@@ -1877,6 +2078,7 @@ static int qpnp_flash_led_probe(struct spmi_device *spmi)
 
 	dev_set_drvdata(&spmi->dev, led);
 
+	FLT_INFO_LOG("%s: --\n", __func__);
 	return 0;
 
 error_led_register:
@@ -1888,6 +2090,8 @@ error_led_register:
 		led_classdev_unregister(&led->flash_node[i].cdev);
 	}
 err_create_pmi8994_work_queue:
+	if(gpio_is_valid(led->flash_strobe))
+		gpio_free(led->flash_strobe);
 	kfree(led);
 
 	mutex_destroy(&led->flash_led_lock);
@@ -1907,6 +2111,9 @@ static int qpnp_flash_led_remove(struct spmi_device *spmi)
 						&qpnp_flash_led_attrs[j].attr);
 		led_classdev_unregister(&led->flash_node[i].cdev);
 	}
+
+	if(gpio_is_valid(this_led->flash_strobe))
+		gpio_free(this_led->flash_strobe);
 
 	mutex_destroy(&led->flash_led_lock);
 

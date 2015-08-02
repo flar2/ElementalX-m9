@@ -2292,8 +2292,9 @@ static struct synaptics_rmi4_exp_fn fwu_module = {
 
 static int __init rmi4_fw_update_module_init(void)
 {
-	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0) {
-		pr_info("%s: offmode charging\n", __func__);
+	if ((strcmp(htc_get_bootmode(), "offmode_charging") == 0)
+		|| (strcmp(htc_get_bootmode(), "recovery") == 0)) {
+		pr_info("%s: %s mode\n", __func__, htc_get_bootmode());
 		return 0;
 	}
 
@@ -2305,7 +2306,8 @@ static int __init rmi4_fw_update_module_init(void)
 
 static void __exit rmi4_fw_update_module_exit(void)
 {
-	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0) {
+	if ((strcmp(htc_get_bootmode(), "offmode_charging") == 0)
+		|| (strcmp(htc_get_bootmode(), "recovery") == 0)) {
 		return;
 	}
 

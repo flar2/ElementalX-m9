@@ -25,19 +25,11 @@ DEFINE_MSM_MUTEX(msm_eeprom_mutex);
 #ifdef CONFIG_COMPAT
 static struct v4l2_file_operations msm_eeprom_v4l2_subdev_fops;
 #endif
-/**
-  * msm_eeprom_verify_sum - verify crc32 checksum
-  * @mem:	data buffer
-  * @size:	size of data buffer
-  * @sum:	expected checksum
-  *
-  * Returns 0 if checksum match, -EINVAL otherwise.
-  */
 static int msm_eeprom_verify_sum(const char *mem, uint32_t size, uint32_t sum)
 {
 	uint32_t crc = ~0;
 
-	/* check overflow */
+	
 	if (size > crc - sizeof(uint32_t))
 		return -EINVAL;
 
@@ -50,16 +42,6 @@ static int msm_eeprom_verify_sum(const char *mem, uint32_t size, uint32_t sum)
 	return 0;
 }
 
-/**
-  * msm_eeprom_match_crc - verify multiple regions using crc
-  * @data:	data block to be verified
-  *
-  * Iterates through all regions stored in @data.  Regions with odd index
-  * are treated as data, and its next region is treated as checksum.  Thus
-  * regions of even index must have valid_size of 4 or 0 (skip verification).
-  * Returns a bitmask of verified regions, starting from LSB.  1 indicates
-  * a checksum match, while 0 indicates checksum mismatch or not verified.
-  */
 static uint32_t msm_eeprom_match_crc(struct msm_eeprom_memory_block_t *data)
 {
 	int j, rc;
@@ -76,7 +58,7 @@ static uint32_t msm_eeprom_match_crc(struct msm_eeprom_memory_block_t *data)
 	memptr = data->mapdata;
 
 	for (j = 0; j + 1 < data->num_map; j += 2) {
-		/* empty table or no checksum */
+		
 		if (!map[j].mem.valid_size || !map[j+1].mem.valid_size) {
 			memptr += map[j].mem.valid_size
 				+ map[j+1].mem.valid_size;
@@ -112,7 +94,7 @@ static int eeprom_config_read_cal_data(struct msm_eeprom_ctrl_t *e_ctrl,
 {
 	int rc;
 
-	/* check range */
+	
 	if (cdata->cfg.read_data.num_bytes >
 		e_ctrl->cal_data.num_data) {
 		CDBG("%s: Invalid size. exp %u, req %u\n", __func__,
@@ -259,14 +241,6 @@ static const struct v4l2_subdev_internal_ops msm_eeprom_internal_ops = {
 	.open = msm_eeprom_open,
 	.close = msm_eeprom_close,
 };
-/**
-  * read_eeprom_memory() - read map data into buffer
-  * @e_ctrl:	eeprom control struct
-  * @block:	block to be read
-  *
-  * This function iterates through blocks stored in block->map, reads each
-  * region and concatenate them into the pre-allocated block->mapdata
-  */
 static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 			      struct msm_eeprom_memory_block_t *block)
 {
@@ -350,15 +324,6 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 	}
 	return rc;
 }
-/**
-  * msm_eeprom_parse_memory_map() - parse memory map in device node
-  * @of:	device node
-  * @data:	memory block for output
-  *
-  * This functions parses @of to fill @data.  It allocates map itself, parses
-  * the @of node, calculate total data length, and allocates required buffer.
-  * It only fills the map, but does not perform actual reading.
-  */
 static int msm_eeprom_parse_memory_map(struct device_node *of,
 				       struct msm_eeprom_memory_block_t *data)
 {
@@ -485,7 +450,7 @@ static int msm_eeprom_i2c_probe(struct i2c_client *client,
 	power_info = &e_ctrl->eboard_info->power_info;
 	e_ctrl->i2c_client.client = client;
 
-	/* Set device type as I2C */
+	
 	e_ctrl->eeprom_device_type = MSM_CAMERA_I2C_DEVICE;
 	e_ctrl->i2c_client.i2c_func_tbl = &msm_eeprom_qup_func_tbl;
 
@@ -496,8 +461,8 @@ static int msm_eeprom_i2c_probe(struct i2c_client *client,
 	power_info->clk_info_size = ARRAY_SIZE(cam_8960_clk_info);
 	power_info->dev = &client->dev;
 
-	/*IMPLEMENT READING PART*/
-	/* Initialize sub device */
+	
+	
 	v4l2_i2c_subdev_init(&e_ctrl->msm_sd.sd,
 		e_ctrl->i2c_client.client,
 		e_ctrl->eeprom_v4l2_subdev_ops);
@@ -779,7 +744,7 @@ static int msm_eeprom_spi_setup(struct spi_device *spi)
 	if (rc < 0)
 		goto board_free;
 
-	/* set spi instruction info */
+	
 	spi_client->retry_delay = 1;
 	spi_client->retries = 0;
 
@@ -790,13 +755,13 @@ static int msm_eeprom_spi_setup(struct spi_device *spi)
 		goto board_free;
 	}
 
-	/* prepare memory buffer */
+	
 	rc = msm_eeprom_parse_memory_map(spi->dev.of_node,
 					 &e_ctrl->cal_data);
 	if (rc < 0)
 		CDBG("%s: no cal memory map\n", __func__);
 
-	/* power up eeprom for reading */
+	
 	rc = msm_camera_power_up(power_info, e_ctrl->eeprom_device_type,
 		&e_ctrl->i2c_client);
 	if (rc < 0) {
@@ -804,13 +769,13 @@ static int msm_eeprom_spi_setup(struct spi_device *spi)
 		goto caldata_free;
 	}
 
-	/* check eeprom id */
+	
 	rc = msm_eeprom_match_id(e_ctrl);
 	if (rc < 0) {
 		CDBG("%s: eeprom not matching %d\n", __func__, rc);
 		goto power_down;
 	}
-	/* read eeprom */
+	
 	if (e_ctrl->cal_data.map) {
 		rc = read_eeprom_memory(e_ctrl, &e_ctrl->cal_data);
 		if (rc < 0) {
@@ -828,7 +793,7 @@ static int msm_eeprom_spi_setup(struct spi_device *spi)
 		goto caldata_free;
 	}
 
-	/* initiazlie subdev */
+	
 	v4l2_spi_subdev_init(&e_ctrl->msm_sd.sd,
 		e_ctrl->i2c_client.spi_client->spi_master,
 		e_ctrl->eeprom_v4l2_subdev_ops);
@@ -919,7 +884,7 @@ static int eeprom_config_read_cal_data32(struct msm_eeprom_ctrl_t *e_ctrl,
 	cdata.cfgtype = cdata32->cfgtype;
 	cdata.is_supported = cdata32->is_supported;
 	cdata.cfg.read_data.num_bytes = cdata32->cfg.read_data.num_bytes;
-	/* check range */
+	
 	if (cdata.cfg.read_data.num_bytes >
 	    e_ctrl->cal_data.num_data) {
 		CDBG("%s: Invalid size. exp %u, req %u\n", __func__,
@@ -935,7 +900,7 @@ static int eeprom_config_read_cal_data32(struct msm_eeprom_ctrl_t *e_ctrl,
 	rc = copy_to_user(ptr_dest, e_ctrl->cal_data.mapdata,
 		cdata.cfg.read_data.num_bytes);
 
-	/* should only be called once.  free kernel resource */
+	
 	if (!rc) {
 		kfree(e_ctrl->cal_data.mapdata);
 		kfree(e_ctrl->cal_data.map);
@@ -1064,9 +1029,9 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 		return rc;
 	}
 
-	/* Set platform device handle */
+	
 	e_ctrl->pdev = pdev;
-	/* Set device type as platform device */
+	
 	e_ctrl->eeprom_device_type = MSM_CAMERA_PLATFORM_DEVICE;
 	e_ctrl->i2c_client.i2c_func_tbl = &msm_eeprom_cci_func_tbl;
 	e_ctrl->i2c_client.cci_client = kzalloc(sizeof(

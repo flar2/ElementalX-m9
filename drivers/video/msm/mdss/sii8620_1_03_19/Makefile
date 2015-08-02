@@ -83,7 +83,7 @@ ccflags-y += -DDEBUG
 #ccflags-$(CONFIG_DEBUG_DRIVER) += -DMHL3_DVI_SUPPORT_FORCE_HDMI
 #
 # the next lines are optional - they enable greater verbosity in debug output
-#ccflags-$(CONFIG_DEBUG_DRIVER) += -DENABLE_EDID_DEBUG_PRINT
+ccflags-$(CONFIG_MHL_DEBUG_DRIVER) += -DENABLE_EDID_DEBUG_PRINT
 #ccflags-$(CONFIG_DEBUG_DRIVER) += -DENABLE_DUMP_INFOFRAME
 #
 # uncomment next line to prevent EDID parsing. Useful for debugging.

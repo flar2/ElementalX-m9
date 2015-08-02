@@ -11,7 +11,6 @@
 #include <linux/types.h>
 #include <media/msmb_generic_buf_mgr.h>
 
-/* Should be same as VIDEO_MAX_PLANES in videodev2.h */
 #define MAX_PLANES VIDEO_MAX_PLANES
 
 #define MAX_NUM_CPP_STRIPS 8
@@ -53,12 +52,6 @@ struct msm_cpp_frame_strip_info {
 	int32_t temporal_src_start_y;
 	uint32_t temporal_src_end_y;
 
-	/* Padding is required for upscaler because it does not
-	 * pad internally like other blocks, also needed for rotation
-	 * rotation expects all the blocks in the stripe to be the same size
-	 * Padding is done such that all the extra padded pixels
-	 * are on the right and bottom
-	 */
 	uint32_t pad_bottom;
 	uint32_t pad_top;
 	uint32_t pad_right;
@@ -110,13 +103,7 @@ struct msm_cpp_frame_strip_info {
 
 	uint32_t source_address[2];
 	uint32_t destination_address[2];
-	/* source_address[1] is used for CbCR planar
-	 * to CbCr interleaved conversion
-	 */
 	uint32_t temporal_source_address[2];
-	/* destination_address[1] is used for CbCr interleved
-	 * to CbCr planar conversion
-	 */
 	uint32_t temporal_destination_address[2];
 	uint32_t src_stride;
 	uint32_t dst_stride;
@@ -439,4 +426,4 @@ struct msm_camera_v4l2_ioctl32_t {
 };
 #endif
 
-#endif /* __MSMB_PPROC_H */
+#endif 

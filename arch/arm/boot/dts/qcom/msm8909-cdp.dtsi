@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,6 +37,125 @@
 				synaptics,display-coords = <0 0 719 1279>;
 				synaptics,panel-coords = <0 0 719 1405>;
 				synaptics,key-codes = <158 139 172 217>;
+			};
+		};
+
+		atmel_mxt_ts@4a {
+			compatible = "atmel,mxt-ts";
+			reg = <0x4a>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <13 0x2>;
+			vdd_ana-supply = <&pm8909_l17>;
+			vcc_i2c-supply = <&pm8909_l6>;
+			/* pins used by touchscreen */
+			pinctrl-names = "pmx_ts_active","pmx_ts_suspend","pmx_ts_release";
+			pinctrl-0 = <&ts_int_active &ts_reset_active>;
+			pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;
+			pinctrl-2 = <&ts_release>;
+			atmel,reset-gpio = <&msm_gpio 12 0x00>;
+			atmel,irq-gpio = <&msm_gpio 13 0x00>;
+			atmel,i2c-pull-up;
+			atmel,no-force-update;
+			atmel,no-lpm-support;
+			atmel,create-vkeys;
+			atmel,cfg_1 {
+				atmel,family-id = <0x81>;
+				atmel,variant-id = <0x01>;
+				atmel,version = <0x20>;
+				atmel,build = <0xab>;
+				atmel,bootldr-id = <0x06>;
+				atmel,check-panel-coordinates;
+				atmel,panel-coords = <0 0 566 1067>;
+				/* qHD resolution */
+				atmel,display-coords = <0 0 540 960>;
+				atmel,vkey-codes = <158 139 172 217>;
+				atmel,config = [
+					/* Object 6, Instance = 0 */
+					00 00 00 00 00 00
+					/* Object 38, Instance = 0 */
+					0F 04 02 1B 0B 0E 00 00
+					/* Object 7, Instance = 0 */
+					20 10 32
+					/* Object 8, Instance = 0 */
+					1E 00 05 0A 00 00 0A 0A 00 00
+					/* Object 9, Instance = 0 */
+					83 00 00 13 0B 00 10 32 01 03
+					0C 07 02 00 04 05 02 0A 2B 04
+					36 02 E7 1D 26 12 8F 28 CF 50
+					11 05 32 32 00
+					/* Object 18, Instance = 0 */
+					00 00
+					/* Object 19, Instance = 0 */
+					00 00 00 00 00 00
+					/* Object 25, Instance = 0 */
+					00 00 00 00 00 00
+					/* Object 42, Instance = 0 */
+					03 3C 14 14 96 00 00 00
+					/* Object 46, Instance = 0 */
+					00 03 1C 1C 00 00 01 00 00
+					/* Object 47, Instance = 0 */
+					00 00 00 00 00 00 00 00 00 00
+					/* Object 48, Instance = 0 */
+					01 03 52 00 00 00 00 00 00 00
+					10 1E 00 06 06 00 00 7C 04 64
+					00 00 00 05 00 2A 00 01 00 28
+					34 14 00 00 00 32 01 05 02 01
+					04 05 03 E7 1D 26 12 8F 28 CF
+					50 0A 05 02
+					/* Object 55, Instance = 0 */
+					00 00 00 00
+					];
+			};
+			atmel,cfg_2 {
+				atmel,family-id = <0x81>;
+				atmel,variant-id = <0x15>;
+				atmel,version = <0x11>;
+				atmel,build = <0xaa>;
+				atmel,bootldr-id = <0x06>;
+				atmel,check-panel-coordinates;
+				atmel,panel-coords = <0 0 508 880>;
+				/* wvga resolution */
+				atmel,display-coords = <0 0 480 800>;
+				atmel,vkey-codes = <158 172 139>;
+				atmel,config = [
+					/* Object 6, Instance = 0 */
+					00 00 00 00 00 00
+					/* Object 38, Instance = 0 */
+					00 00 01 1B 0B 0E 00 00
+					/* Object 7, Instance = 0 */
+					20 08 32
+					/* Object 8, Instance = 0 */
+					19 00 14 14 00 00 FF 00 00 00
+					/* Object 9, Instance = 0 */
+					83 00 00 13 0B 00 20 32 01 03
+					00 32 05 30 0A 05 0A 00 70 03
+					FC 01 04 2F F8 DC 00 00 40 00
+					00 0A 00 00 02
+					/* Object 18, Instance = 0 */
+					00 00
+					/* Object 19, Instance = 0 */
+					00 00 00 00 00 00
+					/* Object 25, Instance = 0 */
+					03 00 18 79 A8 61
+					/* Object 58, Instance = 0 */
+					00 00 00 00 00 00 00 00 00 00
+					00
+					/* Object 42, Instance = 0 */
+					00 00 00 00 00 00 00 00
+					/* Object 46, Instance = 0 */
+					04 03 08 10 00 00 00 00 00
+					/* Object 47, Instance = 0 */
+					00 00 00 00 00 00 00 00 00 00
+					/* Object 48, Instance = 0 */
+					00 00 00 00 00 00 00 00 00 00
+					00 00 00 00 00 00 00 00 00 00
+					00 00 00 00 00 00 00 00 00 00
+					00 00 00 00 00 00 00 00 00 00
+					00 00 00 00 00 00 00 00 00 00
+					00 00 00 00
+					/* Object 55, Instance = 0 */
+					00 00 00 00
+					];
 			};
 		};
 	};
@@ -95,7 +214,7 @@
 		};
 	};
 
-	sound {
+	audio_codec: sound {
 		compatible = "qcom,msm8x16-audio-codec";
 		qcom,model = "msm8909-snd-card";
 		qcom,msm-snd-card-id = <0>;
@@ -106,7 +225,6 @@
 		qcom,msm-mbhc-gnd-swh = <0>;
 		qcom,msm-hs-micbias-type = "internal";
 		qcom,msm-micbias1-ext-cap;
-		qcom,msm-micbias2-ext-cap;
 		qcom,audio-routing =
 			"RX_BIAS", "MCLK",
 			"SPK_RX_BIAS", "MCLK",
@@ -120,11 +238,25 @@
 		pinctrl-names = "cdc_lines_act",
 				"cdc_lines_sus",
 				"cross_conn_det_act",
-				"cross_conn_det_sus";
+				"cross_conn_det_sus",
+				"cdc_lines_sec_ext_act",
+				"cdc_lines_sec_ext_sus",
+				"cdc_lines_quat_ext_act",
+				"cdc_lines_quat_ext_sus";
 		pinctrl-0 = <&cdc_pdm_lines_act>;
 		pinctrl-1 = <&cdc_pdm_lines_sus>;
 		pinctrl-2 = <&cross_conn_det_act>;
 		pinctrl-3 = <&cross_conn_det_sus>;
+		pinctrl-4 = <&cdc_pdm_lines_act &cdc_ext_pa_act
+				&cdc_ext_pa_d0_act &cdc_ext_mclk_act
+				&cross_conn_det_act>;
+		pinctrl-5 = <&cdc_pdm_lines_sus &cdc_ext_pa_sus
+				&cdc_ext_pa_d0_sus &cdc_ext_mclk_sus
+				&cross_conn_det_sus>;
+		pinctrl-6 = <&cdc_pdm_lines_act &cdc_ext_tlmm_act
+				&cdc_ext_mclk_act &cross_conn_det_act>;
+		pinctrl-7 = <&cdc_pdm_lines_sus &cdc_ext_tlmm_sus
+				&cdc_ext_mclk_sus &cross_conn_det_sus>;
 		qcom,cdc-us-euro-gpios = <&msm_gpio 97 0>;
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,
@@ -167,66 +299,10 @@
 	pinctrl-0 = <&uart_console_sleep>;
 };
 
-&pm8909_chg {
-	status = "ok";
-	qcom,charging-disabled;
-};
-
-&spmi_bus {
-	qcom,pm8909@0 {
-		qcom,leds@a300 {
-			status = "okay";
-			qcom,led_mpp_4 {
-				label = "mpp";
-				linux,name = "button-backlight";
-				linux,default-trigger = "none";
-				qcom,default-state = "off";
-				qcom,max-current = <40>;
-				qcom,current-setting = <5>;
-				qcom,id = <6>;
-				qcom,mode = "manual";
-				qcom,source-sel = <1>;
-				qcom,mode-ctrl = <0x60>;
-			};
-		};
-	};
-
-	qcom,pm8909@1 {
-		qcom,vibrator@c000 {
-			status = "okay";
-			qcom,vib-timeout-ms = <15000>;
-			qcom,vib-vtg-level-mV = <3100>;
-		};
-	};
-};
-
-&pm8909_mpps {
-	mpp@a000 { /* MPP 1 */
-		/* VDD_PX */
-		status = "disabled";
-	};
-
-	mpp@a100 { /* MPP 2 */
-		/* Backlight PWM */
-		qcom,mode = <1>;		/* Digital output */
-		qcom,invert = <0>;		/* Disable invert */
-		qcom,src-sel = <4>;		/* DTEST1 */
-		qcom,vin-sel = <0>;		/* VPH_PWR */
-		qcom,master-en = <1>;		/* Enable MPP */
-	};
-
-	mpp@a200 { /* MPP 3 */
-		/* VREF DAC */
-		status = "disabled";
-	};
-
-	mpp@a300 { /* MPP 4 */
-		/* HR LED */
-		status = "disabled";
-	};
-};
-
 #include "dsi-panel-hx8394d-720p-video.dtsi"
+#include "dsi-panel-sharp-qhd-video.dtsi"
+#include "dsi-panel-truly-wvga-cmd.dtsi"
+#include "dsi-panel-hx8394d-qhd-video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
@@ -240,9 +316,34 @@
 	qcom,cont-splash-enabled;
 };
 
+
+&dsi_sharp_qhd_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
+	qcom,mdss-dsi-bl-pmic-bank-select = <0>;
+	qcom,mdss-dsi-pwm-gpio = <&pm8909_mpps 2 0>;
+	qcom,cont-splash-enabled;
+};
+
+&dsi_truly_wvga_cmd {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
+	qcom,mdss-dsi-bl-pmic-bank-select = <0>;
+	qcom,mdss-dsi-pwm-gpio = <&pm8909_mpps 2 0>;
+	qcom,cont-splash-enabled;
+};
+
+&dsi_hx8394d_qhd_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
+	qcom,mdss-dsi-bl-pmic-bank-select = <0>;
+	qcom,mdss-dsi-pwm-gpio = <&pm8909_mpps 2 0>;
+	qcom,cont-splash-enabled;
+};
+
 &pmx_mdss {
-	qcom,num-grp-pins = <3>;
-	qcom,pins = <&gp 97>, <&gp 25>, <&gp 37>;
+	qcom,num-grp-pins = <2>;
+	qcom,pins = <&gp 25>, <&gp 37>;
 };
 
 &pmx_mdss_te {
@@ -256,7 +357,6 @@
 	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
 
-	qcom,platform-enable-gpio = <&msm_gpio 97 0>;
 	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
 	qcom,platform-bklight-en-gpio = <&msm_gpio 37 0>;
 };
@@ -330,32 +430,6 @@
 	status = "ok";
 };
 
-&pm8909_gpios {
-	gpio@c000 { /* GPIO 1 */
-		/* Battery UICC Alarm */
-		status = "disabled";
-	};
-
-	gpio@c100 { /* GPIO 2 */
-		/* NFC_CLK_REQ */
-		qcom,mode = <0>; /* QPNP_PIN_MODE_DIG_IN */
-		qcom,pull = <5>; /* QPNP_PIN_PULL_NO */
-		qcom,vin-sel = <2>; /* QPNP_PIN_VIN2 */
-		qcom,src-sel = <2>; /* QPNP_PIN_SEL_FUNC_1 */
-		qcom,master-en = <1>;
-	};
-
-	gpio@c200 { /* GPIO 3 */
-		/* External regulator control for WTR */
-		status = "disabled";
-	};
-
-	gpio@c300 { /* GPIO 4 */
-		/* External regulator control for APC */
-		status = "disabled";
-	};
-};
-
 /* CoreSight */
 &tpiu {
 	pinctrl-names = "seta-pctrl", "setb-pctrl", "sdcard", "trace",
@@ -386,3 +460,105 @@
 	pinctrl-7 = <&qdsd_clk_spmi &qdsd_cmd_spmi
 		    &qdsd_data0_spmi &qdsd_data3_spmi>;
 };
+
+&tlmm_pinmux {
+	mpu6050_int_pin {
+		qcom,pins = <&gp 96>;
+		qcom,pin-func = <0>;
+		qcom,num-grp-pins = <1>;
+		label = "mpu6050-irq";
+		mpu6050_default: mpu6050_default {
+			drive-strength = <6>;
+			bias-pull-down;
+		};
+
+		mpu6050_sleep: mpu6050_sleep {
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+
+	apds99xx_int_pin {
+		qcom,pins = <&gp 94>;
+		qcom,pin-func = <0>;
+		qcom,num-grp-pins = <1>;
+		label = "apds99xx-irq";
+		apds99xx_default: apds99xx_default {
+			drive-strength = <6>;
+			bias-pull-up;
+		};
+
+		apds99xx_sleep: apds99xx_sleep {
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+
+	ak8963_int_pin {
+		qcom,pins = <&gp 65>;
+		qcom,pin-func = <0>;
+		qcom,num-grp-pins = <1>;
+		label = "ak8963-irq";
+		ak8963_default: ak8963_default {
+			drive-strength = <6>;
+			bias-pull-up;
+		};
+
+		ak8963_sleep: ak8963_sleep {
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+};
+
+&i2c_1 { /* BLSP1 QUP1 */
+	mpu6050@68 { /* Gyroscope and accelerometer sensor combo */
+		compatible = "invn,mpu6050";
+		reg = <0x68>;
+		pinctrl-names = "mpu_default","mpu_sleep";
+		pinctrl-0 = <&mpu6050_default>;
+		pinctrl-1 = <&mpu6050_sleep>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <96 0x1>;
+		vdd-supply = <&pm8909_l17>;
+		vlogic-supply = <&pm8909_l6>;
+		invn,gpio-int = <&msm_gpio 96 0x1>;
+		invn,place = "Portrait Down Back Side";
+	};
+
+	avago@39 { /* Ambient light and proximity sensor */
+		compatible = "avago,apds9900";
+		reg = <0x39>;
+		pinctrl-names = "default","sleep";
+		pinctrl-0 = <&apds99xx_default>;
+		pinctrl-1 = <&apds99xx_sleep>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <94 0x2002>;
+		vdd-supply = <&pm8909_l17>;
+		vio-supply = <&pm8909_l6>;
+		avago,irq-gpio = <&msm_gpio 94 0x2002>;
+		avago,ps-threshold = <600>;
+		avago,ps-hysteresis-threshold = <500>;
+		avago,ps-pulse = <8>;
+		avago,ps-pgain = <0>;
+		avago,als-B = <186>;
+		avago,als-C = <75>;
+		avago,als-D = <129>;
+		avago,ga-value = <256>;
+	};
+
+	akm@c { /* Magnetic field sensor */
+		compatible = "ak,ak8963";
+		reg = <0x0c>;
+		pinctrl-names = "ak8963_default", "ak8963_sleep";
+		pinctrl-0 = <&ak8963_default>;
+		pinctrl-1 = <&ak8963_sleep>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <65 0x2>;
+		vdd-supply = <&pm8909_l17>;
+		vio-supply = <&pm8909_l6>;
+		ak,layout = <0x6>;
+		ak,auto-report;
+	};
+};
+

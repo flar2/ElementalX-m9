@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -713,7 +713,7 @@ static struct rcg_clk mdp_clk_src = {
 	.c = {
 		.dbg_name = "mdp_clk_src",
 		.ops = &clk_ops_rcg,
-		VDD_DIG_FMAX_MAP4(LOWER, 85710000, LOW, 120000000,
+		VDD_DIG_FMAX_MAP4(LOWER, 85710000, LOW, 171430000,
 				  NOMINAL, 320000000, HIGH, 400000000),
 		CLK_INIT(mdp_clk_src.c),
 	},
@@ -737,6 +737,7 @@ static struct rcg_clk pclk0_clk_src = {
 		.dbg_name = "pclk0_clk_src",
 		.parent = &ext_pclk0_clk_src.c,
 		.ops = &clk_ops_pixel,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 75000000, LOW, 150000000,
 				  NOMINAL, 250000000),
 		CLK_INIT(pclk0_clk_src.c),
@@ -761,6 +762,7 @@ static struct rcg_clk pclk1_clk_src = {
 		.dbg_name = "pclk1_clk_src",
 		.parent = &ext_pclk1_clk_src.c,
 		.ops = &clk_ops_pixel,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 75000000, LOW, 150000000,
 				  NOMINAL, 250000000),
 		CLK_INIT(pclk1_clk_src.c),
@@ -942,6 +944,7 @@ static struct clk_freq_tbl ftbl_mclk0_clk_src[] = {
 	F_MM(   6000000,     mmsscc_gpll0,   10,    1,    10),
 	F_MM(   8000000,     mmsscc_gpll0,   15,    1,     5),
 	F_MM(   9600000,        mmsscc_xo,    2,    0,     0),
+	F_MM(  12000000,     mmsscc_gpll0,   10,    1,     5),
 	F_MM(  16000000,  mmpll0_out_main,   10,    1,     5),
 	F_MM(  19200000,        mmsscc_xo,    1,    0,     0),
 	F_MM(  24000000,     mmsscc_gpll0,    5,    1,     5),
@@ -970,6 +973,7 @@ static struct clk_freq_tbl ftbl_mclk1_clk_src[] = {
 	F_MM(   6000000,     mmsscc_gpll0,   10,    1,    10),
 	F_MM(   8000000,     mmsscc_gpll0,   15,    1,     5),
 	F_MM(   9600000,        mmsscc_xo,    2,    0,     0),
+	F_MM(  12000000,     mmsscc_gpll0,   10,    1,     5),
 	F_MM(  16000000,  mmpll0_out_main,   10,    1,     5),
 	F_MM(  19200000,        mmsscc_xo,    1,    0,     0),
 	F_MM(  24000000,     mmsscc_gpll0,    5,    1,     5),
@@ -998,6 +1002,7 @@ static struct clk_freq_tbl ftbl_mclk2_clk_src[] = {
 	F_MM(   6000000,     mmsscc_gpll0,   10,    1,    10),
 	F_MM(   8000000,     mmsscc_gpll0,   15,    1,     5),
 	F_MM(   9600000,        mmsscc_xo,    2,    0,     0),
+	F_MM(  12000000,     mmsscc_gpll0,   10,    1,     5),
 	F_MM(  16000000,  mmpll0_out_main,   10,    1,     5),
 	F_MM(  19200000,        mmsscc_xo,    1,    0,     0),
 	F_MM(  24000000,     mmsscc_gpll0,    5,    1,     5),
@@ -1026,6 +1031,7 @@ static struct clk_freq_tbl ftbl_mclk3_clk_src[] = {
 	F_MM(   6000000,     mmsscc_gpll0,   10,    1,    10),
 	F_MM(   8000000,     mmsscc_gpll0,   15,    1,     5),
 	F_MM(   9600000,        mmsscc_xo,    2,    0,     0),
+	F_MM(  12000000,     mmsscc_gpll0,   10,    1,     5),
 	F_MM(  16000000,  mmpll0_out_main,   10,    1,     5),
 	F_MM(  19200000,        mmsscc_xo,    1,    0,     0),
 	F_MM(  24000000,     mmsscc_gpll0,    5,    1,     5),
@@ -1110,6 +1116,7 @@ static struct rcg_clk byte0_clk_src = {
 		.dbg_name = "byte0_clk_src",
 		.parent = &ext_byte0_clk_src.c,
 		.ops = &clk_ops_byte,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 60000000, LOW, 112500000,
 				  NOMINAL, 187500000),
 		CLK_INIT(byte0_clk_src.c),
@@ -1133,6 +1140,7 @@ static struct rcg_clk byte1_clk_src = {
 		.dbg_name = "byte1_clk_src",
 		.parent = &ext_byte1_clk_src.c,
 		.ops = &clk_ops_byte,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		VDD_DIG_FMAX_MAP3(LOWER, 60000000, LOW, 112500000,
 				  NOMINAL, 187500000),
 		CLK_INIT(byte1_clk_src.c),
@@ -1926,6 +1934,7 @@ static struct branch_clk mdss_byte0_clk = {
 		.dbg_name = "mdss_byte0_clk",
 		.parent = &byte0_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_byte0_clk.c),
 	},
 };
@@ -1938,6 +1947,7 @@ static struct branch_clk mdss_byte1_clk = {
 		.dbg_name = "mdss_byte1_clk",
 		.parent = &byte1_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_byte1_clk.c),
 	},
 };
@@ -2021,6 +2031,7 @@ static struct branch_clk mdss_pclk0_clk = {
 		.dbg_name = "mdss_pclk0_clk",
 		.parent = &pclk0_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_pclk0_clk.c),
 	},
 };
@@ -2033,6 +2044,7 @@ static struct branch_clk mdss_pclk1_clk = {
 		.dbg_name = "mdss_pclk1_clk",
 		.parent = &pclk1_clk_src.c,
 		.ops = &clk_ops_branch,
+		.flags = CLKFLAG_NO_RATE_CACHE,
 		CLK_INIT(mdss_pclk1_clk.c),
 	},
 };
@@ -2614,12 +2626,20 @@ int msm_mmsscc_8994_probe(struct platform_device *pdev)
 
 	ext_pclk0_clk_src.dev = &pdev->dev;
 	ext_pclk0_clk_src.clk_id = "pclk0_src";
+	ext_pclk0_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
+
 	ext_pclk1_clk_src.dev = &pdev->dev;
 	ext_pclk1_clk_src.clk_id = "pclk1_src";
+	ext_pclk1_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
+
 	ext_byte0_clk_src.dev = &pdev->dev;
 	ext_byte0_clk_src.clk_id = "byte0_src";
+	ext_byte0_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
+
 	ext_byte1_clk_src.dev = &pdev->dev;
 	ext_byte1_clk_src.clk_id = "byte1_src";
+	ext_byte1_clk_src.c.flags = CLKFLAG_NO_RATE_CACHE;
+
 	ext_extpclk_clk_src.dev = &pdev->dev;
 	ext_extpclk_clk_src.clk_id = "extpclk_src";
 

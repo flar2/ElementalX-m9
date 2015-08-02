@@ -52,6 +52,7 @@
 #ifdef TUNER_CONFIG_IRQ_PC_LINUX
 #include "../../../i2c-parport-x/i2c-parport.h"
 #endif  
+static bool irq_interrupt_register_flg = false;
 
 int tuner_drv_ctl_power( int data );
 int tuner_drv_set_interrupt( void );
@@ -77,6 +78,12 @@ int tuner_drv_set_interrupt( void )
 #ifndef TUNER_CONFIG_IRQ_PC_LINUX
     int ret;                                     
 
+    if ( irq_interrupt_register_flg == true )    
+    {
+        pr_err("irq interrupt is already set.\n");
+        return -EBUSY;
+    }
+
     
     ret = request_irq( gpio_to_irq(fullseg_gpios.interrupt),         
                        tuner_interrupt,          
@@ -94,18 +101,33 @@ int tuner_drv_set_interrupt( void )
 #else  
     i2c_set_interrupt( tuner_interrupt );
 #endif 
+
+	
+	irq_interrupt_register_flg = true;
+	
     return 0;
 }
 
 void tuner_drv_release_interrupt( void )
 {
+    if ( irq_interrupt_register_flg == false )  
+    {
+        pr_err("irq interrupt is not set.\n");
+        return;
+    }
+
 #ifndef TUNER_CONFIG_IRQ_PC_LINUX
     
-    free_irq( TUNER_CONFIG_INT, NULL );
+    
+    free_irq( gpio_to_irq(fullseg_gpios.interrupt), NULL );
 
 #else  
     i2c_release_interrupt( NULL );
 #endif 
+
+	
+	irq_interrupt_register_flg = false;
+
 }
 
 #ifdef TUNER_CONFIG_IRQ_LEVELTRIGGER

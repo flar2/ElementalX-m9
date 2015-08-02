@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,8 +26,9 @@ struct panel_id {
 
 #define DEFAULT_FRAME_RATE	60
 #define DEFAULT_ROTATOR_FRAME_RATE 120
+#define ROTATOR_LOW_FRAME_RATE 30
 #define MDSS_DSI_RST_SEQ_LEN	10
-#define MDSS_MDP_MAX_FETCH 12
+#define MDSS_MDP_MAX_PREFILL_FETCH 25
 
 #define NO_PANEL		0xffff	
 #define MDDI_PANEL		1	
@@ -151,8 +152,11 @@ enum mdss_intf_events {
 	MDSS_EVENT_DSI_CMDLIST_KOFF,
 	MDSS_EVENT_ENABLE_PARTIAL_ROI,
 	MDSS_EVENT_DSI_STREAM_SIZE,
-	MDSS_EVENT_DSI_DYNAMIC_SWITCH,
+	MDSS_EVENT_DSI_UPDATE_PANEL_DATA,
 	MDSS_EVENT_REGISTER_RECOVERY_HANDLER,
+	MDSS_EVENT_DSI_PANEL_STATUS,
+	MDSS_EVENT_DSI_DYNAMIC_SWITCH,
+	MDSS_EVENT_DSI_RECONFIG_CMD,
 };
 
 struct lcd_panel_info {
@@ -187,7 +191,14 @@ struct mdss_dsi_phy_ctrl {
 	bool reg_ldo_mode;
 };
 
+enum dynamic_mode_switch {
+	DYNAMIC_MODE_SWITCH_DISABLED = 0,
+	DYNAMIC_MODE_SWITCH_SUSPEND_RESUME,
+	DYNAMIC_MODE_SWITCH_IMMEDIATE,
+};
+
 struct mipi_panel_info {
+	char boot_mode;	
 	char mode;		
 	char interleave_mode;
 	char crc_check;
@@ -228,13 +239,14 @@ struct mipi_panel_info {
 	char mdp_trigger;
 	char dma_trigger;
 	
-	bool dynamic_switch_enabled;
+	enum dynamic_mode_switch dms_mode;
+
 	u32 pixel_packing;
 	u32 dsi_pclk_rate;
 	
 	char no_max_pkt_size;
 	
-	char force_clk_lane_hs;
+	bool force_clk_lane_hs;
 
 	char vsync_enable;
 	char hw_vsync_mode;
@@ -252,6 +264,7 @@ enum dynamic_fps_update {
 	DFPS_IMMEDIATE_CLK_UPDATE_MODE,
 	DFPS_IMMEDIATE_PORCH_UPDATE_MODE_VFP,
 	DFPS_IMMEDIATE_PORCH_UPDATE_MODE_HFP,
+	DFPS_MODE_MAX
 };
 
 enum lvds_mode {
@@ -347,7 +360,9 @@ struct mdss_panel_info {
 	u32 max_fps;
 
 	u32 cont_splash_enabled;
-	u32 partial_update_enabled;
+	bool esd_rdy;
+	bool partial_update_supported; 
+	bool partial_update_enabled; 
 	u32 dcs_cmd_by_left;
 	u32 partial_update_roi_merge;
 	struct ion_handle *splash_ihdl;
@@ -355,6 +370,7 @@ struct mdss_panel_info {
 	int blank_state;
 
 	uint32_t panel_dead;
+	u32 panel_force_dead;
 	u32 panel_orientation;
 	bool dynamic_switch_pending;
 	bool is_lpm_mode;
@@ -451,12 +467,6 @@ static inline u32 mdss_panel_get_framerate(struct mdss_panel_info *panel_info)
 	return frame_rate;
 }
 
-static inline int mdss_rect_cmp(struct mdss_rect *rect1,
-		struct mdss_rect *rect2) {
-	return (rect1->x == rect2->x && rect1->y == rect2->y &&
-		rect1->w == rect2->w && rect1->h == rect2->h);
-}
-
 static inline int mdss_panel_get_vtotal(struct mdss_panel_info *pinfo)
 {
 	return pinfo->yres + pinfo->lcdc.v_back_porch +
@@ -479,23 +489,6 @@ static inline int mdss_panel_get_htotal(struct mdss_panel_info *pinfo, bool
 	return adj_xres + pinfo->lcdc.h_back_porch +
 		pinfo->lcdc.h_front_porch +
 		pinfo->lcdc.h_pulse_width;
-}
-
-static inline int mdss_mdp_max_fetch_lines(struct mdss_panel_info *pinfo)
-{
-	int fetch_lines;
-	int v_total, vfp_start;
-
-	v_total = mdss_panel_get_vtotal(pinfo);
-	vfp_start = (pinfo->lcdc.v_back_porch + pinfo->lcdc.v_pulse_width +
-			pinfo->yres);
-
-	fetch_lines = v_total - vfp_start;
-
-	if (fetch_lines > MDSS_MDP_MAX_FETCH)
-		fetch_lines = MDSS_MDP_MAX_FETCH;
-
-	return fetch_lines;
 }
 
 int mdss_register_panel(struct platform_device *pdev,
@@ -532,6 +525,7 @@ struct mdss_panel_cfg *mdss_panel_intf_type(int intf_val);
 int mdss_panel_get_boot_cfg(void);
 
 bool mdss_is_ready(void);
+int mdss_rect_cmp(struct mdss_rect *rect1, struct mdss_rect *rect2);
 #ifdef CONFIG_FB_MSM_MDSS
 int mdss_panel_debugfs_init(struct mdss_panel_info *panel_info);
 void mdss_panel_debugfs_cleanup(struct mdss_panel_info *panel_info);

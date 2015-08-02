@@ -53,7 +53,6 @@
 
                 htc_smlog_mem: htc_smlog_region@0 {
                         linux,reserve-contiguous-region;
-                        linux,reserve-region;
                         reg = <0 0x04400000 0 0x01400000>; /* 20 MB */
                         label = "htc_smlog_mem";
                 };
@@ -85,4 +84,9 @@
                 linux,contiguous-region = <&htc_smlog_mem>;
                 reg-names = "smem-start-addr";
         };
+
+	htc_mnemosyne@0 {
+		compatible = "htc,mnemosyne";
+		linux,contiguous-region = <&htc_mnemosyne_mem>;
+	};
 };

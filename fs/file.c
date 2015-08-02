@@ -23,6 +23,7 @@
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
 #include <linux/crc32c.h>
+#include <linux/htc_debug_tools.h>
 
 int sysctl_nr_open __read_mostly = 1024*1024;
 int sysctl_nr_open_min = BITS_PER_LONG;
@@ -411,6 +412,7 @@ static void fdtable_usage_dump(struct fdtable *fdt)
 	int this_crc, pid;
 	char* path;
 	char* spath;
+	unsigned long timestamp;
 
 	buf = (char*) kmalloc(PATH_MAX, GFP_ATOMIC);
 	if (!buf) {
@@ -426,6 +428,7 @@ static void fdtable_usage_dump(struct fdtable *fdt)
 			continue;
 
 		pid = fdt->user[i].installer;
+		timestamp = fdt->user[i].install_ts;
 
 		user = find_task_by_vpid(pid);
 		if (user)
@@ -444,8 +447,8 @@ static void fdtable_usage_dump(struct fdtable *fdt)
 		if (this_crc != last_crc || i == fdt->max_fds - 1) {
 			if (repeats)
 				pr_warn(" < ... repeats %d time%s ... >\n", repeats, repeats > 1 ? "s" : "");
-				pr_warn("%d->fd[%d] file: %s, user: %d (%s %d:%d)\n", current->tgid, i, path, pid,
-				user ? user->comm : "<unknown>", user ? user->tgid : -1, user ? user->pid : -1);
+				pr_warn("%d->fd[%d] file: %s, user: %d (%s %d:%d), opened at %lu ms\n", current->tgid, i, path, pid,
+				user ? user->comm : "<unknown>", user ? user->tgid : -1, user ? user->pid : -1, timestamp);
 
 				last_crc = this_crc;
 				repeats = 0;
@@ -509,7 +512,6 @@ repeat:
 #endif
 
 out:
-	spin_unlock(&files->file_lock);
 	if (unlikely(error == -EMFILE)) {
 		if (jiffies > debugging_ratelimit) {
 			debugging_ratelimit = jiffies + msecs_to_jiffies(debugging_delay_ms);
@@ -521,6 +523,7 @@ out:
 			pr_warn("[%s] end of dump\n", __func__);
 		}
 	}
+	spin_unlock(&files->file_lock);
 	return error;
 }
 
@@ -564,6 +567,7 @@ void __fd_install(struct files_struct *files, unsigned int fd,
 	BUG_ON(fdt->fd[fd] != NULL);
 	rcu_assign_pointer(fdt->fd[fd], file);
 	fdt->user[fd].installer = current->pid;
+	fdt->user[fd].install_ts = htc_debug_get_sched_clock_ms();
 	spin_unlock(&files->file_lock);
 }
 
@@ -594,14 +598,15 @@ int __close_fd(struct files_struct *files, unsigned fd)
 		user = &fdt->user[fd];
 		if (unlikely(user->remover && user->remover != current->pid)) {
 			task = find_task_by_vpid(user->remover);
-			pr_warn("[%s] fd %u of %s %d:%d is already closed by thread %d (%s %d:%d)\n",
+			pr_warn("[%s] fd %u of %s %d:%d is already closed by thread %d (%s %d:%d) at %lu ms, opened at %lu ms\n",
 			__func__, fd, current->comm, current->tgid, current->pid, user->remover,
-			task ? task->comm : "<unknown>", task ? task->tgid : -1, task ? task->pid : -1);
+			task ? task->comm : "<unknown>", task ? task->tgid : -1, task ? task->pid : -1, user->remove_ts, user->install_ts);
 		}
 		goto out_unlock;
 	}
 	rcu_assign_pointer(fdt->fd[fd], NULL);
 	fdt->user[fd].remover = current->pid;
+	fdt->user[fd].remove_ts = htc_debug_get_sched_clock_ms();
 	__clear_close_on_exec(fd, fdt);
 	__put_unused_fd(files, fd);
 	spin_unlock(&files->file_lock);

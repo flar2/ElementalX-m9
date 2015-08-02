@@ -19,6 +19,7 @@
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
 #include <linux/of_fdt.h>
+#include <linux/htc_debug_tools.h>
 
 
 #define RAMLOG_COMPATIBLE_NAME "htc,bldr_log"
@@ -82,6 +83,30 @@ static void bldr_log_parser(const char *bldr_log, char *bldr_log_buf, unsigned l
 	}
 
 	pr_info("bldr_log_parser: size %ld\n", *bldr_log_buf_size);
+}
+
+ssize_t bldr_last_log_read_once(char __user *userbuf, ssize_t klog_size)
+{
+	ssize_t len = 0;
+
+	len = (klog_size - bl_last_log_buf_size > 0)? (ssize_t)bl_last_log_buf_size : 0;
+
+	if (0 < len) {
+		memcpy(userbuf, bl_last_log_buf, len);
+	}
+	return len;
+}
+
+ssize_t bldr_log_read_once(char __user *userbuf, ssize_t klog_size)
+{
+	ssize_t len = 0;
+
+	len = (klog_size - bl_cur_log_buf_size > 0)? (ssize_t)bl_cur_log_buf_size : 0;
+
+	if (0 < len) {
+		memcpy(userbuf, bl_cur_log_buf, len);
+	}
+	return len;
 }
 
 ssize_t bldr_log_read(const void *lastk_buf, ssize_t	lastk_size, char __user *userbuf,

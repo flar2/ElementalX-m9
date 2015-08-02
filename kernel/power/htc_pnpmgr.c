@@ -114,10 +114,13 @@ extern void set_bcl_freq_limit(uint32_t freq_limit);
 static char activity_buf[MAX_BUF];
 static char non_activity_buf[MAX_BUF];
 static char media_mode_buf[MAX_BUF];
+static char virtual_display_buf[MAX_BUF];
+static char call_sync_buf[MAX_BUF];
 static int app_timeout_expired;
 static int is_touch_boosted;
 static int touch_boost_duration_value = 0;
-static int single_layer_value = 0;
+static int single_layer_yuv_value = 0;
+static int single_layer_rgb_value = 0;
 static int is_long_duration_touch_boosted;
 static int long_duration_touch_boost_duration_value = 1000;
 
@@ -137,9 +140,31 @@ define_string_show(media_mode, media_mode_buf);
 define_string_store(media_mode, media_mode_buf, null_cb);
 power_attr(media_mode);
 
-define_int_show(single_layer,single_layer_value);
-define_int_store(single_layer,single_layer_value, null_cb);
-power_attr(single_layer);
+define_int_show(single_layer_yuv,single_layer_yuv_value);
+define_int_store(single_layer_yuv,single_layer_yuv_value, null_cb);
+power_attr(single_layer_yuv);
+
+define_int_show(single_layer_rgb,single_layer_rgb_value);
+define_int_store(single_layer_rgb,single_layer_rgb_value, null_cb);
+power_attr(single_layer_rgb);
+
+define_string_show(virtual_display, virtual_display_buf);
+define_string_store(virtual_display, virtual_display_buf, null_cb);
+power_attr(virtual_display);
+
+define_string_show(call_sync,call_sync_buf);
+define_string_store(call_sync, call_sync_buf, null_cb);
+power_attr(call_sync);
+
+
+void set_call_sync(const char *buf)
+{
+	strcpy(call_sync_buf, buf);
+	call_sync_buf[strlen(buf)] = '\0';
+
+	sysfs_notify(apps_kobj, NULL, "call_sync");
+}
+EXPORT_SYMBOL(set_call_sync);
 
 static int thermal_g0_value = MAX_VALUE;
 static int thermal_final_bcpu_value = MAX_VALUE;
@@ -1113,11 +1138,14 @@ static struct attribute *apps_g[] = {
 	&non_activity_trigger_attr.attr,
 	&media_mode_attr.attr,
 	&app_timeout_attr.attr,
+	&call_sync_attr.attr,
 	NULL,
 };
 
 static struct attribute *display_g[] = {
-	&single_layer_attr.attr,
+	&virtual_display_attr.attr,
+	&single_layer_yuv_attr.attr,
+	&single_layer_rgb_attr.attr,
 	NULL,
 };
 

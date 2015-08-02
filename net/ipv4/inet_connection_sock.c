@@ -596,6 +596,7 @@ struct sock *inet_csk_clone_lock(const struct sock *sk,
 
 		newsk->sk_state = TCP_SYN_RECV;
 		newicsk->icsk_bind_hash = NULL;
+		pr_info("[NET]%s: sk(0x%p)->icsk_bind_hash=NULL[0x%p], sk_state:%d, pid:%d, process:%s.\n",__func__, sk, current_thread_info()->task, sk->sk_state, current->pid, current->comm);
 
 		inet_sk(newsk)->inet_dport = inet_rsk(req)->rmt_port;
 		inet_sk(newsk)->inet_num = ntohs(inet_rsk(req)->loc_port);

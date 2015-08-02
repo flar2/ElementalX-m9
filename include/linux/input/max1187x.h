@@ -110,6 +110,7 @@ struct max1187x_board_config {
 	u8                          minor_ver;
 	u8                          protocol_ver;
 	u16                         vendor_pin;
+	char                        disp_panel[8];
 	u32                         eng_id;
 	u8                          support_glove;
 	u8                          support_cover;
@@ -181,7 +182,10 @@ struct max1187x_pdata {
 	u8			report_mode;
 	u32			eng_id_mask;
 	u32			eng_id;
+	bool			disp_panel_check;
+	char                    disp_panel[36];
 	u32			hall_block_touch_time;
+	u32			retry_config_update_delay;
 	struct max1187x_virtual_key *button_data;
 	struct kobject *vk_obj;
 	struct kobj_attribute *vk2Use;

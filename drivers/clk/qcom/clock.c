@@ -43,6 +43,7 @@ static LIST_HEAD(handoff_vdd_list);
 
 static DEFINE_MUTEX(msm_clock_init_lock);
 LIST_HEAD(orphan_clk_list);
+static LIST_HEAD(clk_notifier_list);
 
 int find_vdd_level(struct clk *clk, unsigned long rate)
 {
@@ -258,12 +259,14 @@ int clk_prepare(struct clk *clk)
 	if (clk->prepare_count == 0) {
 		parent = clk->parent;
 
-		ret = clk_prepare(parent);
-		if (ret)
-			goto out;
-		ret = clk_prepare(clk->depends);
-		if (ret)
-			goto err_prepare_depends;
+		if (!(clk->flags&CLKFLAG_IGNORE)) {
+			ret = clk_prepare(parent);
+			if (ret)
+				goto out;
+			ret = clk_prepare(clk->depends);
+			if (ret)
+				goto err_prepare_depends;
+		}
 
 		ret = vote_rate_vdd(clk, clk->rate);
 		if (ret)
@@ -306,12 +309,14 @@ int clk_enable(struct clk *clk)
 	if (clk->count == 0) {
 		parent = clk->parent;
 
-		ret = clk_enable(parent);
-		if (ret)
-			goto err_enable_parent;
-		ret = clk_enable(clk->depends);
-		if (ret)
-			goto err_enable_depends;
+		if (!(clk->flags&CLKFLAG_IGNORE)) {
+			ret = clk_enable(parent);
+			if (ret)
+				goto err_enable_parent;
+			ret = clk_enable(clk->depends);
+			if (ret)
+				goto err_enable_depends;
+		}
 
 		trace_clock_enable(name, 1, smp_processor_id());
 		if (clk->ops->enable)
@@ -406,6 +411,101 @@ int clk_reset(struct clk *clk, enum clk_reset_action action)
 }
 EXPORT_SYMBOL(clk_reset);
 
+static int __clk_notify(struct clk *clk, unsigned long msg,
+		unsigned long old_rate, unsigned long new_rate)
+{
+	struct msm_clk_notifier *cn;
+	struct msm_clk_notifier_data cnd;
+	int ret = NOTIFY_DONE;
+
+	cnd.clk = clk;
+	cnd.old_rate = old_rate;
+	cnd.new_rate = new_rate;
+
+	list_for_each_entry(cn, &clk_notifier_list, node) {
+		if (cn->clk == clk) {
+			ret = srcu_notifier_call_chain(&cn->notifier_head, msg,
+					&cnd);
+			break;
+		}
+	}
+
+	return ret;
+}
+
+
+int msm_clk_notif_register(struct clk *clk, struct notifier_block *nb)
+{
+	struct msm_clk_notifier *cn;
+	int ret = -ENOMEM;
+
+	if (!clk || !nb)
+		return -EINVAL;
+
+	mutex_lock(&clk->prepare_lock);
+
+	
+	list_for_each_entry(cn, &clk_notifier_list, node)
+		if (cn->clk == clk)
+			break;
+
+	
+	if (cn->clk != clk) {
+		cn = kzalloc(sizeof(struct msm_clk_notifier), GFP_KERNEL);
+		if (!cn)
+			goto out;
+
+		cn->clk = clk;
+		srcu_init_notifier_head(&cn->notifier_head);
+
+		list_add(&cn->node, &clk_notifier_list);
+	}
+
+	ret = srcu_notifier_chain_register(&cn->notifier_head, nb);
+
+	clk->notifier_count++;
+
+out:
+	mutex_unlock(&clk->prepare_lock);
+
+	return ret;
+}
+
+int msm_clk_notif_unregister(struct clk *clk, struct notifier_block *nb)
+{
+	struct msm_clk_notifier *cn = NULL;
+	int ret = -EINVAL;
+
+	if (!clk || !nb)
+		return -EINVAL;
+
+	mutex_lock(&clk->prepare_lock);
+
+	list_for_each_entry(cn, &clk_notifier_list, node)
+		if (cn->clk == clk)
+			break;
+
+	if (cn->clk == clk) {
+		ret = srcu_notifier_chain_unregister(&cn->notifier_head, nb);
+
+		clk->notifier_count--;
+
+		
+		if (!cn->notifier_head.head) {
+			srcu_cleanup_notifier_head(&cn->notifier_head);
+			list_del(&cn->node);
+			kfree(cn);
+		}
+
+	} else {
+		ret = -ENOENT;
+	}
+
+	mutex_unlock(&clk->prepare_lock);
+
+	return ret;
+}
+
 unsigned long clk_get_rate(struct clk *clk)
 {
 	if (IS_ERR_OR_NULL(clk))
@@ -446,10 +546,14 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 
 	start_rate = clk->rate;
 
-	if (clk->ops->pre_set_rate)
+	if (clk->notifier_count)
+		__clk_notify(clk, PRE_RATE_CHANGE, clk->rate, rate);
+
+	if (clk->ops->pre_set_rate) {
 		rc = clk->ops->pre_set_rate(clk, rate);
-	if (rc)
-		goto out;
+		if (rc)
+			goto abort_set_rate;
+	}
 
 	
 	if (clk->prepare_count) {
@@ -470,10 +574,15 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 	if (clk->ops->post_set_rate)
 		clk->ops->post_set_rate(clk, start_rate);
 
+	if (clk->notifier_count)
+		__clk_notify(clk, POST_RATE_CHANGE, start_rate, clk->rate);
+
 out:
 	mutex_unlock(&clk->prepare_lock);
 	return rc;
 
+abort_set_rate:
+	__clk_notify(clk, ABORT_RATE_CHANGE, clk->rate, rate);
 err_set_rate:
 	if (clk->prepare_count)
 		unvote_rate_vdd(clk, rate);
@@ -648,26 +757,29 @@ static int __handoff_clk(struct clk *clk)
 		return -EPROBE_DEFER;
 
 	
-	rc = __handoff_clk(clk->depends);
-	if (rc)
-		goto err;
-
-	if (clk->ops->get_parent)
-		clk->parent = clk->ops->get_parent(clk);
-
-	if (IS_ERR(clk->parent)) {
-		rc = PTR_ERR(clk->parent);
-		goto err;
-	}
-
-	rc = __handoff_clk(clk->parent);
-	if (rc)
-		goto err;
-
-	for (i = 0; i < clk->num_parents; i++) {
-		rc = __handoff_clk(clk->parents[i].src);
+	if (!(clk->flags&CLKFLAG_IGNORE)) {
+		rc = __handoff_clk(clk->depends);
 		if (rc)
 			goto err;
+
+
+		if (clk->ops->get_parent)
+		clk->parent = clk->ops->get_parent(clk);
+
+		if (IS_ERR(clk->parent)) {
+			rc = PTR_ERR(clk->parent);
+			goto err;
+		}
+
+		rc = __handoff_clk(clk->parent);
+		if (rc)
+			goto err;
+
+		for (i = 0; i < clk->num_parents; i++) {
+			rc = __handoff_clk(clk->parents[i].src);
+			if (rc)
+				goto err;
+		}
 	}
 
 	if (clk->ops->handoff)
@@ -681,13 +793,15 @@ static int __handoff_clk(struct clk *clk)
 			goto err;
 		}
 
-		rc = clk_prepare_enable(clk->parent);
-		if (rc)
-			goto err;
+		if (!(clk->flags&CLKFLAG_IGNORE)) {
+			rc = clk_prepare_enable(clk->parent);
+			if (rc)
+				goto err;
 
-		rc = clk_prepare_enable(clk->depends);
-		if (rc)
-			goto err_depends;
+			rc = clk_prepare_enable(clk->depends);
+			if (rc)
+				goto err_depends;
+		}
 
 		rc = vote_rate_vdd(clk, clk->rate);
 		WARN(rc, "%s unable to vote for voltage!\n", clk->dbg_name);
@@ -703,7 +817,7 @@ static int __handoff_clk(struct clk *clk)
 	if (clk->init_rate && clk_set_rate(clk, clk->init_rate))
 		pr_err("failed to set an init rate of %lu on %s\n",
 			clk->init_rate, clk->dbg_name);
-	if (clk->always_on && clk->init_rate && clk_prepare_enable(clk))
+	if (clk->always_on && clk_prepare_enable(clk))
 		pr_err("failed to enable always-on clock %s\n",
 			clk->dbg_name);
 

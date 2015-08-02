@@ -465,17 +465,12 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 		}
 
 		
-		if (phy->lpm_flags & PHY_RETENTIONED && !phy->cable_connected
-				&& phy->ext_vbus_id) {
-			msm_hsusb_ldo_enable(phy, 0);
-			phy->lpm_flags |= PHY_PWR_COLLAPSED;
-		}
-
-		
-		if ((phy->lpm_flags & PHY_RETENTIONED && !phy->cable_connected)
-				|| chg_connected) {
+		if (phy->lpm_flags & PHY_RETENTIONED && !phy->cable_connected) {
+			if (phy->ext_vbus_id) {
+				msm_hsusb_ldo_enable(phy, 0);
+				phy->lpm_flags |= PHY_PWR_COLLAPSED;
+			}
 			msm_hsusb_config_vdd(phy, 0);
-			phy->lpm_flags |= PHY_VDD_MINIMIZED;
 		}
 
 		count = atomic_dec_return(&hsphy_active_count);
@@ -486,17 +481,13 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 		}
 	} else {
 		atomic_inc(&hsphy_active_count);
-		if (phy->lpm_flags & PHY_VDD_MINIMIZED) {
+		if (phy->lpm_flags & PHY_RETENTIONED && !phy->cable_connected) {
 			msm_hsusb_config_vdd(phy, 1);
-			phy->lpm_flags &= ~PHY_VDD_MINIMIZED;
-		}
+			if (phy->ext_vbus_id) {
+				msm_hsusb_ldo_enable(phy, 1);
+				phy->lpm_flags &= ~PHY_PWR_COLLAPSED;
+			}
 
-		if (phy->lpm_flags & PHY_PWR_COLLAPSED) {
-			msm_hsusb_ldo_enable(phy, 1);
-			phy->lpm_flags &= ~PHY_PWR_COLLAPSED;
-		}
-
-		if (phy->lpm_flags & PHY_RETENTIONED) {
 			if (phy->csr) {
 				
 				msm_usb_write_readback(phy->csr,

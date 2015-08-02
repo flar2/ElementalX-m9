@@ -430,13 +430,9 @@ static long msm_core_ioctl(struct file *file, unsigned int cmd,
 			pr_err("Userspace power update failed with %ld\n", ret);
 		break;
 	case EA_VOLT:
-		for (i = 0; i < MAX_CORES_PER_CLUSTER; i++, cpumask >>= 1) {
-			if (!(cpumask & 0x01))
-				continue;
-
-			mpidr |= i;
+		for (i = 0; cpumask > 0; i++, cpumask >>= 1) {
 			for_each_possible_cpu(cpu) {
-				if (cpu_logical_map(cpu) == mpidr)
+				if (cpu_logical_map(cpu) == (mpidr | i))
 					break;
 			}
 		}
@@ -919,7 +915,6 @@ static int uio_init(struct platform_device *pdev)
 		return ret;
 	}
 	dev_set_drvdata(&pdev->dev, info);
-	pr_info("Device created for client '%s'\n", clnt_res->name);
 
 	return 0;
 }
@@ -953,6 +948,7 @@ static int msm_core_dev_probe(struct platform_device *pdev)
 	ret = of_property_read_u32(node, key, &poll_ms);
 	if (ret)
 		pr_info("msm-core initialized without polling period\n");
+
 
 	ret = uio_init(pdev);
 	if (ret)

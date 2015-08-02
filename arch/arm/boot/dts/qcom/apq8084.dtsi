@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -4214,6 +4214,7 @@
 		compatible = "qcom,kraitbw-l2pm";
 		interrupts = <0 1 1>;
 		qcom,bytes-per-beat = <16>;
+		qcom,target-dev = <&cache>;
 	};
 
 	devfreq-cpufreq {
@@ -4376,7 +4377,6 @@
 		USB3_GDSC-supply = <&gdsc_usb30>;
 		qcom,dwc-usb3-msm-tx-fifo-size = <29696>;
 		qcom,dwc-usb3-msm-qdss-tx-fifo-size = <8192>;
-		qcom,otg-capability;
 		qcom,misc-ref = <&pma8084_misc>;
 		qcom,restore-sec-cfg-for-scm-dev-id = <9>;
 		qcom,usb-dbm = <&dbm0_1p4>;
@@ -4394,8 +4394,7 @@
 			compatible = "synopsys,dwc3";
 			reg = <0xf9200000 0xfc000>;
 			interrupt-parent = <&intc>;
-			interrupts = <0 131 0>, <0 179 0>;
-			interrupt-names = "irq", "otg_irq";
+			interrupts = <0 131 0>;
 			tx-fifo-resize;
 			usb-phy = <&hsphy0>, <&ssphy0>;
 		};
@@ -4428,8 +4427,7 @@
 			compatible = "synopsys,dwc3";
 			reg = <0xf9400000 0xfc000>;
 			interrupt-parent = <&intc>;
-			interrupts = <0 258 4>, <0 262 4>;
-			interrupt-names = "irq", "otg_irq";
+			interrupts = <0 258 4>;
 			usb-phy = <&hsphy1>, <&ssphy0>;
 			snps,host-only-mode;
 		};
@@ -4911,7 +4909,7 @@
 		venus-supply = <&gdsc_venus>;
 		venus-core0-supply = <&gdsc_venus_core0>;
 		venus-core1-supply = <&gdsc_venus_core1>;
-		qcom,clock-names= "core_clk", "core0_clk", "core1_clk", "iface_clk", "bus_clk", "mem_clk";
+		clock-names= "core_clk", "core0_clk", "core1_clk", "iface_clk", "bus_clk", "mem_clk";
 		qcom,clock-configs = <0x3 0x0 0x0 0x0 0x0 0x0>;
 		qcom,sw-power-collapse;
 		qcom,load-freq-tbl = <979200 465000000 0xffffffff>,
@@ -4937,6 +4935,14 @@
 			<0xe0020 0x5555556>,
 			<0xe0024 0x5555556>,
 			<0x80124 0x3>;
+		qcom,qdss-presets = <0xfc325000 0x1000>,
+			<0xfc326000 0x1000>,
+			<0xfc321000 0x1000>,
+			<0xfc322000 0x1000>,
+			<0xfc323000 0x1000>,
+			<0xfc302000 0x1000>,
+			<0xfa180000 0x1000>,
+			<0xfa181000 0x1000>;
 		qcom,vidc-iommu-domains {
 			qcom,domain-ns {
 				qcom,vidc-domain-phandle = <&venus_domain_ns>;

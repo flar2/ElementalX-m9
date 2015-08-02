@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,17 +30,17 @@
 #define BIO_U32_SIZE 1024
 #define TEST_BIO_SIZE		PAGE_SIZE	/* use one page bios */
 
-struct test_data;
+struct test_iosched;
 
-typedef int (prepare_test_fn) (struct test_data *);
-typedef int (run_test_fn) (struct test_data *);
-typedef int (check_test_result_fn) (struct test_data *);
-typedef int (post_test_fn) (struct test_data *);
-typedef char* (get_test_case_str_fn) (struct test_data *);
-typedef void (blk_dev_test_init_fn) (void);
-typedef void (blk_dev_test_exit_fn) (void);
-typedef struct gendisk* (get_rq_disk_fn) (void);
-typedef bool (check_test_completion_fn) (void);
+typedef int (prepare_test_fn) (struct test_iosched *);
+typedef int (run_test_fn) (struct test_iosched *);
+typedef int (check_test_result_fn) (struct test_iosched *);
+typedef int (post_test_fn) (struct test_iosched *);
+typedef char* (get_test_case_str_fn) (int);
+typedef int (blk_dev_test_init_fn) (struct test_iosched *);
+typedef void (blk_dev_test_exit_fn) (struct test_iosched *);
+typedef struct gendisk* (get_rq_disk_fn) (struct test_iosched *);
+typedef bool (check_test_completion_fn) (struct test_iosched *);
 
 /**
  * enum test_state - defines the state of the test
@@ -80,6 +80,8 @@ enum req_unique_type {
  * @debug_test_result:	Exposes the test result to the user
  *			space
  * @start_sector:	The start sector for read/write requests
+ * @sector_range:	Range of the test, starting from start_sector
+ *			(in sectors)
  */
 struct test_debug {
 	struct dentry *debug_root;
@@ -87,12 +89,13 @@ struct test_debug {
 	struct dentry *debug_tests_root;
 	struct dentry *debug_test_result;
 	struct dentry *start_sector;
+	struct dentry *sector_range;
 };
 
 /**
  * struct test_request - defines a test request
  * @queuelist:		The test requests list
- * @bios_buffer:	Write/read requests data buffer
+ * @bios_buffer:	Write/read requests data buffer, one page per bio
  * @buf_size:		Write/read requests data buffer size (in
  *			bytes)
  * @rq:			A block request, to be dispatched
@@ -110,7 +113,7 @@ struct test_debug {
  */
 struct test_request {
 	struct list_head queuelist;
-	unsigned int *bios_buffer;
+	void *bios_buffer[BLK_MAX_SEGMENTS];
 	int buf_size;
 	struct request *rq;
 	bool req_completed;
@@ -154,12 +157,14 @@ struct test_info {
 
 /**
  * struct blk_dev_test_type - identifies block device test
- * @list:	list head pointer
- * @init_fn:	block device test init callback
- * @exit_fn:	block device test exit callback
+ * @list:		list head pointer
+ * @type_prefix:	prefix of device class name, i.e. "mmc"/ "sd"
+ * @init_fn:		block device test init callback
+ * @exit_fn:		block device test exit callback
  */
 struct blk_dev_test_type {
 	struct list_head list;
+	const char *type_prefix;
 	blk_dev_test_init_fn *init_fn;
 	blk_dev_test_exit_fn *exit_fn;
 };
@@ -191,6 +196,8 @@ struct blk_dev_test_type {
  *			new BIOs.
  * @start_sector:	The address of the first sector that can
  *			be accessed by the test
+ * @sector_range:	Range of the test, starting from start_sector
+ *			(in sectors)
  * @wr_rd_next_req_id:	A unique ID to identify WRITE/READ
  *			request to ease the debugging of the
  *			test cases
@@ -205,8 +212,9 @@ struct blk_dev_test_type {
  *			test round was disturbed by an external
  *			flush request, therefore disqualifying
  *			the results
+ * @blk_dev_test_data:	associated specific block device test utility
  */
-struct test_data {
+struct test_iosched {
 	struct list_head queue;
 	struct list_head test_queue;
 	struct list_head dispatched_queue;
@@ -223,48 +231,47 @@ struct test_data {
 	struct request_queue *req_q;
 	int num_of_write_bios;
 	u32 start_sector;
+	u32 sector_range;
 	int wr_rd_next_req_id;
 	int unique_next_req_id;
 	spinlock_t lock;
 	struct test_info test_info;
 	bool fs_wr_reqs_during_test;
 	bool ignore_round;
+
+	void *blk_dev_test_data;
 };
 
-extern int test_iosched_start_test(struct test_info *t_info);
-extern void test_iosched_mark_test_completion(void);
-extern void check_test_completion(void);
-extern int test_iosched_add_unique_test_req(int is_err_expcted,
-		enum req_unique_type req_unique,
-		int start_sec, int nr_sects, rq_end_io_fn *end_req_io);
-extern int test_iosched_add_wr_rd_test_req(int is_err_expcted,
-	      int direction, int start_sec,
-	      int num_bios, int pattern, rq_end_io_fn *end_req_io);
-extern struct test_request *test_iosched_create_test_req(int is_err_expcted,
-	      int direction, int start_sec,
-	      int num_bios, int pattern, rq_end_io_fn *end_req_io);
+extern int test_iosched_start_test(struct test_iosched *,
+	struct test_info *t_info);
+extern void test_iosched_mark_test_completion(struct test_iosched *);
+extern void check_test_completion(struct test_iosched *);
+extern int test_iosched_add_unique_test_req(struct test_iosched *,
+	int is_err_expcted, enum req_unique_type req_unique,
+	int start_sec, int nr_sects, rq_end_io_fn *end_req_io);
+extern int test_iosched_add_wr_rd_test_req(struct test_iosched *,
+	int is_err_expcted, int direction, int start_sec, int num_bios,
+	int pattern, rq_end_io_fn *end_req_io);
+extern struct test_request *test_iosched_create_test_req(struct test_iosched *,
+	int is_err_expcted, int direction, int start_sec, int num_bios,
+	int pattern, rq_end_io_fn *end_req_io);
 
-extern struct dentry *test_iosched_get_debugfs_tests_root(void);
-extern struct dentry *test_iosched_get_debugfs_utils_root(void);
+extern void test_iosched_free_test_req_data_buffer(struct test_request *);
 
-extern struct request_queue *test_iosched_get_req_queue(void);
+extern void test_iosched_set_test_result(struct test_iosched*, int test_result);
 
-extern void test_iosched_set_test_result(int);
+extern void test_iosched_set_ignore_round(struct test_iosched *,
+	bool ignore_round);
 
-void test_iosched_set_ignore_round(bool ignore_round);
+extern void test_iosched_register(struct blk_dev_test_type *bdt);
 
-void test_iosched_register(struct blk_dev_test_type *bdt);
+extern void test_iosched_unregister(struct blk_dev_test_type *bdt);
 
-void test_iosched_unregister(struct blk_dev_test_type *bdt);
+extern void test_iosched_add_urgent_req(struct test_iosched *,
+	struct test_request *);
 
-extern struct test_data *test_get_test_data(void);
+extern void check_test_completion(struct test_iosched *);
 
-void test_iosched_add_urgent_req(struct test_request *test_rq);
-
-int test_is_req_urgent(struct request *rq);
-
-void check_test_completion(void);
-
-int compare_buffer_to_pattern(struct test_request *test_rq);
+extern int compare_buffer_to_pattern(struct test_request *test_rq);
 
 #endif /* _LINUX_TEST_IOSCHED_H */

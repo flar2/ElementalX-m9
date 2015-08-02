@@ -31,7 +31,8 @@
 
 		/* Fudge factors */
 		qcom,mdss-ab-factor = <1 1>;		/* 1 times    */
-		qcom,mdss-ib-factor = <2 1>;		/* 2 times  */
+		qcom,mdss-ib-factor = <2 1>;		/* 2 times    */
+		qcom,mdss-ib-factor-cmd = <10 6>;	/* 1.6 times */
 		qcom,mdss-clk-factor = <105 100>;	/* 1.05 times */
 		qcom,max-bandwidth-low-kbps = <2000000>;
 		qcom,max-bandwidth-high-kbps = <2000000>;
@@ -82,6 +83,8 @@
 		qcom,mdss-has-dst-split;
 		qcom,mdss-no-hist-vote;
 		qcom,mdss-ad-off = <0x0079000>;
+		qcom,mdss-ppb-off = <0x0000420>;
+		qcom,mdss-slave-pingpong-off = <0x00071800>;
 
 		vdd-cx-supply = <&pm8916_s2_corner>;
 		clocks = <&clock_gcc clk_gcc_mdss_ahb_clk>,

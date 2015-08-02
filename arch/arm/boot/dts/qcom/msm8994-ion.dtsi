@@ -59,16 +59,5 @@
 			linux,contiguous-region = <&peripheral_mem>;
 			qcom,ion-heap-type = "DMA";
 		};
-
-		qcom,ion-heap@13 { /* FBMEM 1st HEAP */
-			reg = <13>;
-			linux,contiguous-region = <&fb_mem_1>;
-			qcom,ion-heap-type = "DMA";
-		};
-                qcom,ion-heap@14 { /* FBMEM 2nd HEAP */
-                        reg = <14>;
-                        linux,contiguous-region = <&fb_mem_2>;
-                        qcom,ion-heap-type = "DMA";
-                };
 	};
 };

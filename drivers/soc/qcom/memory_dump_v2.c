@@ -37,6 +37,11 @@ struct msm_memory_dump {
 
 static struct msm_memory_dump memdump;
 
+#if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
+static uint64_t mem_dump_table_phys;
+static struct msm_dump_table *dump_table_apps_addr;
+#endif
+
 uint32_t msm_dump_table_version(void)
 {
 	return MSM_DUMP_TABLE_VERSION;
@@ -80,8 +85,15 @@ static struct msm_dump_table *msm_dump_get_table(enum msm_dump_table_ids id)
 		return ERR_PTR(-EINVAL);
 	}
 
-	/* Get the apps table pointer */
+	
+#if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
+	if(id == MSM_DUMP_TABLE_APPS)
+		table = dump_table_apps_addr;
+	else
+		table = phys_to_virt(table->entries[i].addr);
+#else
 	table = phys_to_virt(table->entries[i].addr);
+#endif
 
 	return table;
 }
@@ -125,33 +137,69 @@ static int __init init_memory_dump(void)
 		return -ENODEV;
 	}
 
+#if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
+	ret = of_property_read_u32(np,"htc,mem-dump-table-phys", (u32 *)&mem_dump_table_phys);
+	if(ret) {
+		pr_err("reading 'htc,mem-dump-table-phys' failed\n");
+		return -ENXIO;
+	}
+#endif
+
 	imem_base = of_iomap(np, 0);
 	if (!imem_base) {
 		pr_err("mem dump base table imem offset mapping failed\n");
 		return -ENOMEM;
 	}
 
+#if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
+	if (mem_dump_table_phys) {
+		memdump.table = ioremap(mem_dump_table_phys, sizeof(struct msm_dump_table));
+		if (!memdump.table) {
+			pr_err("mem dump base table ioreamp failed\n");
+			ret = -ENOMEM;
+			goto err0;
+		}
+	}
+#else
 	memdump.table = kzalloc(sizeof(struct msm_dump_table), GFP_KERNEL);
 	if (!memdump.table) {
 		pr_err("mem dump base table allocation failed\n");
 		ret = -ENOMEM;
 		goto err0;
 	}
+#endif
 	memdump.table->version = MSM_DUMP_TABLE_VERSION;
+#if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
+	memdump.table_phys = mem_dump_table_phys;
+#else
 	memdump.table_phys = virt_to_phys(memdump.table);
+#endif
 	writel_relaxed(memdump.table_phys, imem_base);
-	/* Ensure write to imem_base is complete before unmapping */
+	
 	mb();
 	pr_info("MSM Memory Dump base table set up\n");
 
 	iounmap(imem_base);
 
+#if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
+	table = ioremap(mem_dump_table_phys + sizeof(struct msm_dump_table), sizeof(struct msm_dump_table));
+	if (!table) {
+		pr_err("mem dump apps data table ioremap failed\n");
+		ret = -ENOMEM;
+		goto err1;
+	}
+	dump_table_apps_addr = table;
+	
+	pr_info("MSM Memory Dump apps data table already set up in LK\n");
+	return 0;
+#else
 	table = kzalloc(sizeof(struct msm_dump_table), GFP_KERNEL);
 	if (!table) {
 		pr_err("mem dump apps data table allocation failed\n");
 		ret = -ENOMEM;
 		goto err1;
 	}
+#endif
 	table->version = MSM_DUMP_TABLE_VERSION;
 
 	entry.id = MSM_DUMP_TABLE_APPS;
@@ -167,7 +215,11 @@ static int __init init_memory_dump(void)
 err2:
 	kfree(table);
 err1:
+#if defined(CONFIG_HTC_DEBUG_MEM_DUMP_TABLE)
+	iounmap(memdump.table);
+#else
 	kfree(memdump.table);
+#endif
 	return ret;
 err0:
 	iounmap(imem_base);

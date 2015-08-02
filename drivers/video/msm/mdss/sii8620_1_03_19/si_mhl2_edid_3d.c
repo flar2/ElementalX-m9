@@ -1964,10 +1964,11 @@ static void si_mhl_tx_prune_edid(struct edid_3d_data_t *mhl_edid_3d_data)
 		    HDMI_3D_len -= num_3D_structure_bytes_pruned;
 		p_CEA_extension->byte_offset_to_18_byte_descriptors -=
 		    num_3D_structure_bytes_pruned;
-		if (mhl_edid_3d_data->parse_data.p_HDMI_vsdb->header.fields.
-			length_following_header)
-			mhl_edid_3d_data->parse_data.p_HDMI_vsdb->header.fields.
-			    length_following_header -= num_3D_structure_bytes_pruned;
+		if (mhl_edid_3d_data->parse_data.p_HDMI_vsdb)
+			if (mhl_edid_3d_data->parse_data.p_HDMI_vsdb->header.fields.
+				length_following_header)
+				mhl_edid_3d_data->parse_data.p_HDMI_vsdb->header.fields.
+				    length_following_header -= num_3D_structure_bytes_pruned;
 
 		MHL_TX_EDID_INFO("num_3D_structure_bytes_pruned:0x%x "
 				 "byte14: 0x%02x "
