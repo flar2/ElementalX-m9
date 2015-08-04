@@ -1626,6 +1626,12 @@ dhdpcie_bus_membytes(dhd_bus_t *bus, bool write, ulong address, uint8 *data, uin
 	little_endian = *(char *)&detect_endian_flag;
 
 #ifdef CONFIG_ARCH_MSM8994
+	if ((address > DONGLE_TCM_MAP_SIZE) ||
+		(address + size > DONGLE_TCM_MAP_SIZE)) {
+		DHD_ERROR(("%s: invalid addr %lx size %d",
+				__FUNCTION__, address, size));
+		return BCME_BADADDR;
+	}
 	
 	is_64bit_unaligned = (address & 0x7);
 #endif

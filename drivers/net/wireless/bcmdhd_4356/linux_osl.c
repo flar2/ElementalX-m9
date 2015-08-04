@@ -1165,6 +1165,16 @@ osl_pktfree_static(osl_t *osh, void *p, bool send)
 
 	spin_unlock_irqrestore(&bcm_static_skb->osl_pkt_lock, flags);
 	printk("[WLAN] %s: packet %p does not exist in the pool\n", __FUNCTION__, p);
+
+	
+	
+	
+	
+	
+	printk("[WLAN] %s: try osl_pktfree instead\n", __FUNCTION__);
+	osl_pktfree(osh, p, send);
+	
+
 #else
 	down(&bcm_static_skb->osl_pkt_sem);
 

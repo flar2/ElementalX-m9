@@ -308,6 +308,7 @@ struct kgsl_device {
 
 	
 	int gpu_fault_no_panic;
+	int ctxt_cnt;
 };
 
 

@@ -78,6 +78,7 @@ static int touch_init_p2 = 0;
 
 static DEFINE_MUTEX(hsml_header_lock);
 
+static void setup_usb_mirrorlink(int mirrorlink);
 enum {
 	PRJ2_OFFLINE,
 	PRJ2_ONLINE,
@@ -639,8 +640,8 @@ static void projector2_enable_fb_work(struct projector2_dev *dev, int enabled)
 		queue_work(dev->wq_display, &dev->notifier_display_work);
 		queue_work(dev->wq_display, &dev->send_fb_work);
 	} else {
-		if (atomic_read(&dev->prj2_status) != PRJ2_ONLINE)
-			atomic_set(&dev->prj2_status, PRJ2_ONLINE);
+		if (atomic_read(&dev->prj2_status) != PRJ2_OFFLINE)
+			atomic_set(&dev->prj2_status, PRJ2_OFFLINE);
 
 		queue_work(dev->wq_display, &dev->notifier_display_work);
 	}
@@ -859,6 +860,7 @@ static int projector2_function_set_alt(struct usb_function *f,
 #endif
         projector2_queue_out(dev);
 
+	setup_usb_mirrorlink(1);
 	return 0;
 }
 
@@ -945,6 +947,8 @@ static void projector2_function_disable(struct usb_function *f)
 		printk(KERN_INFO "[MIRROR_LINK]%s, set state: 0\n",__func__);
 		schedule_work(&dev->notifier_setting_work);
 	}
+
+	setup_usb_mirrorlink(0);
 
 	VDBG(dev->cdev, "%s disabled\n", dev->function.name);
 }
@@ -1110,6 +1114,7 @@ static int projector2_ctrlrequest(struct usb_composite_dev *cdev,
                     printk(KERN_INFO "[MIRROR_LINK]%s, set state: 1\n",__func__);
 #endif
                     atomic_set(&prj2_dev->prj2_enable_HSML, 1);
+                    setup_usb_mirrorlink(1);
                     schedule_work(&prj2_dev->notifier_setting_work);
                 }
                 value = w_length;

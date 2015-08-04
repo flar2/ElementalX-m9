@@ -239,6 +239,7 @@ struct cwmcu_data {
 	bool iio_work_done;
 	atomic_t suspended;
 	atomic_t enter_suspend;
+	atomic_t critical_sect;
 	bool is_block_i2c;
 
 	u32 gpio_wake_mcu;
@@ -3064,9 +3065,12 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 	bool wake_bit;
 	u32 write_list;
 
+	atomic_set(&mcu_data->critical_sect, 1);
+
 	str_buf = kstrndup(buf, count, GFP_KERNEL);
 	if (str_buf == NULL) {
 		E("%s: cannot allocate buffer\n", __func__);
+		atomic_set(&mcu_data->critical_sect, 0);
 		return -ENOMEM;
 	}
 	running = str_buf;
@@ -3090,6 +3094,7 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 			E("%s: kstrtol fails, error = %d, i = %d\n",
 				__func__, error, i);
 			kfree(str_buf);
+			atomic_set(&mcu_data->critical_sect, 0);
 			return error;
 		}
 	}
@@ -3097,21 +3102,25 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 
 	if (!s_mcu_data) {
 		W("%s: probe not completed\n", __func__);
+		atomic_set(&mcu_data->critical_sect, 0);
 		return -EBUSY;
 	}
 
 	if ((!mcu_data->touch_enable) && sensors_id == HTC_GESTURE_MOTION){
+		atomic_set(&mcu_data->critical_sect, 0);
 		return 0;
 	}
 
 	if ((sensors_id >= CW_SENSORS_ID_TOTAL) ||
 	    (sensors_id < 0)
 	   ) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		E("%s: Invalid sensors_id = %ld\n", __func__, sensors_id);
 		return -EINVAL;
 	}
 
 	if ((sensors_id == HTC_ANY_MOTION) && mcu_data->power_key_pressed) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		I("%s: Any_Motion && power_key_pressed\n", __func__);
 		return count;
 	}
@@ -3160,6 +3169,7 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 		rc = CWMCU_i2c_write_power(mcu_data, CWSTM32_ENABLE_REG+i,
 					   &data, 1);
 		if (rc) {
+			atomic_set(&mcu_data->critical_sect, 0);
 			E("%s: CWMCU_i2c_write fails, rc = %d\n",
 			  __func__, rc);
 			return -EIO;
@@ -3236,10 +3246,13 @@ static ssize_t active_set(struct device *dev, struct device_attribute *attr,
 
 	rc = handle_batch_list(mcu_data, sensors_id, is_wake);
 	if (rc) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		E("%s: handle_batch_list fails, rc = %d\n", __func__,
 		  rc);
 		return rc;
 	}
+
+	atomic_set(&mcu_data->critical_sect, 0);
 
 	I("%s: sensors_id = %ld, enable = %ld, enable_list = 0x%llx\n",
 		__func__, sensors_id, enabled, mcu_data->enabled_list);
@@ -3356,7 +3369,10 @@ static ssize_t batch_set(struct device *dev,
 	s32 period;
 	bool is_wake;
 
+	atomic_set(&mcu_data->critical_sect, 1);
+
 	if (!s_mcu_data) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		W("%s: probe not completed\n", __func__);
 		return -1;
 	}
@@ -3370,6 +3386,7 @@ static ssize_t batch_set(struct device *dev,
 			break;
 	}
 	if (retry >= ACTIVE_RETRY_TIMES) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		D("%s: resume not completed, retry = %d, retry fails!\n",
 			__func__, retry);
 		return -ETIMEDOUT;
@@ -3377,6 +3394,7 @@ static ssize_t batch_set(struct device *dev,
 
 	str_buf = kstrndup(buf, count, GFP_KERNEL);
 	if (str_buf == NULL) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		E("%s: cannot allocate buffer\n", __func__);
 		return -1;
 	}
@@ -3412,6 +3430,7 @@ static ssize_t batch_set(struct device *dev,
 		}
 
 		if (rc) {
+			atomic_set(&mcu_data->critical_sect, 0);
 			E("%s: kstrtol fails, rc = %d, i = %d\n",
 			  __func__, rc, i);
 			kfree(str_buf);
@@ -3471,6 +3490,7 @@ static ssize_t batch_set(struct device *dev,
 	case CW_LIGHT:
 	case CW_SIGNIFICANT_MOTION:
 	default:
+		atomic_set(&mcu_data->critical_sect, 0);
 		D("%s: Batch not supported for this sensor_id = 0x%x\n",
 		  __func__, sensors_id);
 		return count;
@@ -3482,6 +3502,7 @@ static ssize_t batch_set(struct device *dev,
 
 	rc = setup_batch_timeout(mcu_data, is_wake);
 	if (rc) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		E("%s: setup_batch_timeout fails, rc = %d\n", __func__, rc);
 		return rc;
 	}
@@ -3499,6 +3520,8 @@ static ssize_t batch_set(struct device *dev,
 			E("%s: firmware_odr fails, rc = %d\n", __func__, rc);
 		}
 	}
+
+	atomic_set(&mcu_data->critical_sect, 0);
 
 	I(
 	  "%s: sensors_id = %d, timeout = %lld, batched_list = 0x%llx,"
@@ -3576,8 +3599,11 @@ static ssize_t flush_set(struct device *dev, struct device_attribute *attr,
 	unsigned long handle;
 	int rc;
 
+	atomic_set(&mcu_data->critical_sect, 1);
+
 	rc = kstrtoul(buf, 10, &handle);
 	if (rc) {
+		atomic_set(&mcu_data->critical_sect, 0);
 		E("%s: kstrtoul fails, rc = %d\n", __func__, rc);
 		return rc;
 	}
@@ -3610,6 +3636,8 @@ static ssize_t flush_set(struct device *dev, struct device_attribute *attr,
 	mcu_data->w_flush_fifo = true;
 	queue_work(mcu_data->mcu_wq, &mcu_data->one_shot_work);
 
+	atomic_set(&mcu_data->critical_sect, 0);
+
 	I("%s--: mcu_data->pending_flush = 0x%llx\n", __func__,
 	  mcu_data->pending_flush);
 
@@ -3638,7 +3666,7 @@ static bool report_iio(struct cwmcu_data *mcu_data, int *i, u8 *data,
 		data_event[0] = le16_to_cpup(data16 + 1);
 		cw_send_event(mcu_data, data[0], data_event, 0);
 		mcu_data->pending_flush &= ~(1LL << data_event[0]);
-		D(
+		I(
 		  "total count = %u, current_count = %d, META from firmware,"
 		  " event_id = %d, pending_flush = 0x%llx\n", *event_count, *i,
 		  data_event[0], mcu_data->pending_flush);
@@ -3851,13 +3879,22 @@ static bool cwmcu_batch_fifo_read(struct cwmcu_data *mcu_data, int queue_id)
 
 	reg_addr = (queue_id) ? CWSTM32_WAKE_UP_BATCH_MODE_DATA_QUEUE :
 		 CWSTM32_BATCH_MODE_DATA_QUEUE;
+
+	if (*event_count > 500) I("%s:++ event_count = %d, queue_id = %d\n", __func__, *event_count, queue_id);
+
 	for (i = 0; i < *event_count; i++) {
 		__le64 data64[2];
 		u8 *data = (u8 *)data64;
-                if (atomic_read(&mcu_data->enter_suspend)){
-                        I("Drop batch event because system suspend\n");
-                        break;
-                }
+
+		if (atomic_read(&mcu_data->enter_suspend)) {
+			I("Drop batch event because system suspend\n");
+			break;
+		} else if (atomic_read(&mcu_data->critical_sect)) {
+			I("%s: Stop reading batch events because "
+			  "cri = %d, sleep 50ms\n", __func__,
+			  atomic_read(&mcu_data->critical_sect));
+			msleep(50);
+		}
 
 		data = data + 7;
 
@@ -3875,6 +3912,8 @@ static bool cwmcu_batch_fifo_read(struct cwmcu_data *mcu_data, int queue_id)
 			  ret, queue_id);
 		}
 	}
+
+	if (*event_count > 500) I("%s:-- event_count = %d, queue_id = %d\n", __func__, *event_count, queue_id);
 
 	mutex_unlock(&mcu_data->lock);
 	mcu_data->batch_event_count_ptr = NULL;
@@ -8069,6 +8108,7 @@ static int CWMCU_i2c_probe(struct i2c_client *client,
 		E("[CWMCU] could not enable irq as wakeup source %d\n", error);
 
 	atomic_set(&mcu_data->suspended, 0);
+	atomic_set(&mcu_data->critical_sect, 0);
 
 	vib_trigger_register_simple("vibrator", &vib_trigger);
 

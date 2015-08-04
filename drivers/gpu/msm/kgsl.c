@@ -444,6 +444,8 @@ int _kgsl_get_context_id(struct kgsl_device *device,
 	write_lock(&device->context_lock);
 	id = idr_alloc(&device->context_idr, context, 1,
 		KGSL_MEMSTORE_MAX, GFP_NOWAIT);
+	if (id > 0)
+		device->ctxt_cnt++;
 	write_unlock(&device->context_lock);
 	idr_preload_end();
 
@@ -459,6 +461,7 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 	struct kgsl_device *device = dev_priv->device;
 	char name[64];
 	int ret = 0, id;
+	int t_ctxt_cnt;
 
 	id = _kgsl_get_context_id(device, context);
 	if (id == -ENOSPC) {
@@ -479,6 +482,14 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 			write_unlock(&device->context_lock);
 		}
 		return id;
+	}
+
+	t_ctxt_cnt = device->ctxt_cnt;
+
+	if (unlikely(t_ctxt_cnt > KGSL_CONTEXT_CHECK_THRESHOLD)) {
+		write_lock(&device->context_lock);
+		kgsl_check_context_id_locked(&dev_priv->device->context_idr, t_ctxt_cnt);
+		write_unlock(&device->context_lock);
 	}
 
 	kref_init(&context->refcount);
@@ -503,6 +514,7 @@ out:
 	if (ret) {
 		write_lock(&device->context_lock);
 		idr_remove(&dev_priv->device->context_idr, id);
+		device->ctxt_cnt--;
 		kgsl_dump_contextpid_locked(&dev_priv->device->context_idr);
 		write_unlock(&device->context_lock);
 	}
@@ -571,6 +583,7 @@ kgsl_context_destroy(struct kref *kref)
 		}
 
 		idr_remove(&device->context_idr, context->id);
+		device->ctxt_cnt--;
 		context->id = KGSL_CONTEXT_INVALID;
 	}
 	write_unlock(&device->context_lock);
@@ -4036,6 +4049,8 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 		device->reg_virt);
 
 	rwlock_init(&device->context_lock);
+
+	device->ctxt_cnt = 0;
 
 	result = kgsl_drm_init(device->pdev);
 	if (result)

@@ -503,6 +503,10 @@ config INPUT_DUMMY_KEYPAD
        help
          Say Y here if you want to support dummy keypad driver, wheels etc...
 
+config POWER_KEY_EID
+	tristate "system-core power-key interrupt detection"
+	help
+	Say Y here if you want to support power-key early interrupt detection
 
 config HP_SDC_RTC
 	tristate "HP SDC Real Time Clock"

@@ -1742,6 +1742,7 @@ static int __devinit si_8620_mhl_tx_i2c_probe(struct i2c_client *client,
 	if (ret) {
 		pr_err("%s(): mhl_tx_init failed, error code %d\n",
 			__func__, ret);
+		goto done;
 	}
 
 	if (use_spi)

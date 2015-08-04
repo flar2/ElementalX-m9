@@ -142,6 +142,19 @@ static void restart_modem(struct modem_data *drv)
 #endif
 }
 
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0002_DUMP_STACK)
+static void dump_dbg_info(void)
+{
+
+	printk(KERN_INFO "=== Show rmt_storage ===");
+	show_thread_group_state_filter("rmt_storage", 0);
+	printk(KERN_INFO "\n");
+
+	pr_info("### Show Blocked State in ###\n");
+	show_state_filter(TASK_UNINTERRUPTIBLE);
+}
+#endif
+
 static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 {
 	struct modem_data *drv = subsys_to_drv(dev_id);
@@ -151,6 +164,10 @@ static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 		return IRQ_HANDLED;
 
 	pr_err("Fatal error on the modem.\n");
+
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0002_DUMP_STACK)
+	dump_dbg_info();
+#endif
 
 	queue_work(dump_snoc_wq, &dump_snoc_work);
 

@@ -4129,6 +4129,7 @@ static void mhl_cable_detect(void)
 {
 	mutex_lock(&hpd_disconnect_mutex);
 	DEV_INFO("%s: mhl remove",__func__ );
+	hdmi_tx_set_audio_switch_node(hdmi_ctrl_mhl, 0);
 	hdmi_tx_send_cable_notification(hdmi_ctrl_mhl, false);
 	mutex_unlock(&hpd_disconnect_mutex);
 }

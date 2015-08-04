@@ -78,7 +78,6 @@ static void __inet_put_port(struct sock *sk)
 	spin_lock(&head->lock);
 	tb = inet_csk(sk)->icsk_bind_hash;
 	__sk_del_bind_node(sk);
-	pr_info("[NET]%s: sk(0x%p)->icsk_bind_hash=NULL[0x%p], sk_state=%d, pid:%d, process:%s.\n",__func__, sk, current_thread_info()->task, sk->sk_state, current->pid, current->comm);
 	tb->num_owners--;
 	inet_csk(sk)->icsk_bind_hash = NULL;
 

@@ -21,6 +21,7 @@
 #include <asm/unaligned.h>
 
 static int usb_autobot_mode(void);
+static int usb_mirrorlink_mode(void);
 #define REQUEST_RESET_DELAYED (HZ / 10) 
 static void fsg_update_mode(int _linux_fsg_mode);
 void usb_android_force_reset(struct usb_composite_dev *cdev);
@@ -33,9 +34,13 @@ static void composite_request_reset(struct work_struct *w)
 	if (cdev) {
 		if (usb_autobot_mode())
 			return;
+		if (usb_mirrorlink_mode())
+			return;
 		printk(KERN_WARNING "%s(%d):os_type=%d, mtp=%d\n",
 				__func__, __LINE__, os_type, is_mtp_enable);
 		if (os_type == OS_LINUX && is_mtp_enable) {
+			if (linux_mtp_mode == 1)
+				return;
 			fsg_update_mode(1);
 			fsg_mode = 1;
 			linux_mtp_mode = 1;
@@ -835,6 +840,7 @@ void usb_remove_config(struct usb_composite_dev *cdev,
 		os_type = OS_NOT_YET;
 		fsg_update_mode(0);
 		fsg_mode = 0;
+		linux_mtp_mode = 0;
 	}
 #ifdef CONFIG_HTC_USB_DEBUG_FLAG
 	printk("[USB]%s unbind+\n",__func__);

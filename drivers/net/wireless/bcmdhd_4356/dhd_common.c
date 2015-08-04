@@ -1688,7 +1688,11 @@ wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 
 	if (bcmp(BRCM_OUI, &pvt_data->bcm_hdr.oui[0], DOT11_OUI_LEN)) {
 		DHD_ERROR(("%s: mismatched OUI, bailing\n", __FUNCTION__));
-		dhd_os_send_hang_message(dhd_pub);
+		
+		
+		
+		
+		
 		return (BCME_ERROR);
 	}
 

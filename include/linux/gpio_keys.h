@@ -7,6 +7,10 @@
 
 struct device;
 
+#ifdef CONFIG_POWER_KEY_EID
+extern void power_key_resume_handler(int);
+#endif
+
 struct gpio_keys_button {
 	
 	unsigned int code;	

@@ -4,6 +4,19 @@
 #include "kgsl_htc.h"
 #include "adreno.h"
 
+struct context_node {
+	int pid;
+	int count;
+	struct list_head list;
+};
+
+static char *protected_process_list[] =
+{
+	"surfaceflinger",
+	"system_server",
+	"ndroid.systemui",
+};
+
 static int gpu_fault_no_panic_set(void *data, u64 val)
 {
 	struct kgsl_device *device = data;
@@ -134,6 +147,103 @@ void kgsl_dump_contextpid_locked(struct idr *context_idr)
 
 			printk("context id=%d\t\t pid=%d\t\t %s\t\t %s\n", context->id, ppid, task_name, task_parent_name);
 		}
+	}
+}
+
+static void kgsl_kill_process(char *task_name, struct task_struct *task)
+{
+	pr_warn("<<<-------------------------------------------------------------\n");
+	pr_warn("[KGSL] Kill process \"%s\" due to context exhaustion!\n", task_name);
+	pr_warn(">>>-------------------------------------------------------------\n");
+	do_send_sig_info(SIGKILL, SEND_SIG_FORCED, task, true);
+}
+
+static bool kgsl_filter_process(char *task_name)
+{
+	int i;
+	for(i=0; i<sizeof(protected_process_list)/sizeof(char *); i++) {
+		if (!strcmp(protected_process_list[i], task_name)) {
+			pr_info("%s: process %s is in filter list\n",
+				__func__, task_name);
+			return true;
+		}
+	}
+	return false;
+}
+
+void kgsl_check_context_id_locked(struct idr *context_idr, int total)
+{
+	int i = 0;
+	struct kgsl_context *context;
+	struct task_struct *task;
+	struct task_struct *parent_task;
+	char task_name[TASK_COMM_LEN+1];
+	char task_parent_name[TASK_COMM_LEN+1];
+	pid_t ppid;
+	struct list_head head;
+	struct context_node *node, *temp;
+	bool found;
+
+	INIT_LIST_HEAD(&head);
+
+	for (i = 0; i <KGSL_MEMSTORE_MAX; i++) {
+
+		context = idr_find(context_idr, i);
+
+		if (context && context->dev_priv && context->dev_priv->process_priv) {
+			task = find_task_by_pid_ns(context->dev_priv->process_priv->pid, &init_pid_ns);
+			if (!task) {
+				printk("can't find context's task: context id %d\n", context->id);
+				continue;
+			}
+
+			parent_task = task->group_leader;
+			get_task_comm(task_name, task);
+
+			if (parent_task) {
+				get_task_comm(task_parent_name, parent_task);
+				ppid = context->dev_priv->process_priv->pid;
+
+				found = false;
+				list_for_each_entry(node, &head, list)
+					if (node->pid == ppid) {
+						found = true;
+						break;
+					}
+				if (!found) {
+					node = (struct context_node *) kmalloc(sizeof(*node), GFP_ATOMIC);
+					node->pid = ppid;
+					node->count = 1;
+
+					list_add_tail(&node->list, &head);
+
+#if 0
+					pr_err("debug context: ============\n");
+					list_for_each_entry(node, &head, list)
+						pr_err("debug context: pid=%d, count=%d\n", node->pid, node->count);
+					pr_err("debug context: ============\n");
+#endif
+
+				} else {
+					if (++node->count > KGSL_CONTEXT_KILL_THRESHOLD(total)) {
+						pr_warn("[KGSL] process %s occupied %d/%d contexts\n",
+							task_name, node->count, total);
+						if (!kgsl_filter_process(task_name) &&
+							!kgsl_filter_process(task_parent_name))
+							kgsl_kill_process(task_parent_name, parent_task);
+						break;
+					}
+				}
+			} else {
+				task_parent_name[0] = '\0';
+				ppid = 0;
+			}
+		}
+	}
+
+	list_for_each_entry_safe(node, temp, &head, list) {
+		list_del(&node->list);
+		kfree(node);
 	}
 }
 

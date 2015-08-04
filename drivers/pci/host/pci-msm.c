@@ -3796,7 +3796,7 @@ static irqreturn_t handle_aer_irq(int irq, void *data)
 				PCIE20_CAP_DEVCTRLSTATUS);
 
 	if (uncorr_val)
-		PCIE_DBG(dev, "RC's PCIE20_AER_UNCORR_ERR_STATUS_REG:0x%x\n",
+		PCIE_ERR(dev, "RC's PCIE20_AER_UNCORR_ERR_STATUS_REG:0x%x\n",
 				uncorr_val);
 	if (corr_val && (dev->rc_corr_counter < corr_counter_limit))
 		PCIE_DBG(dev, "RC's PCIE20_AER_CORR_ERR_STATUS_REG:0x%x\n",
@@ -3858,7 +3858,7 @@ static irqreturn_t handle_aer_irq(int irq, void *data)
 					ep_dev_ctrlstts_offset);
 
 		if (ep_uncorr_val)
-			PCIE_DBG(dev,
+			PCIE_ERR(dev,
 				"EP's PCIE20_AER_UNCORR_ERR_STATUS_REG:0x%x\n",
 				ep_uncorr_val);
 		if (ep_corr_val && (dev->ep_corr_counter < corr_counter_limit))
@@ -5047,7 +5047,9 @@ int msm_pcie_pm_control(enum msm_pcie_pm_opt pm_opt, u32 busnr, void *user,
 
 			if (pcie_dev) {
 				rc_idx = pcie_dev->rc_idx;
-				PCIE_DBG(pcie_dev,
+                                
+				PCIE_ERR(pcie_dev,
+                                
 					"PCIe: RC%d: pm_opt:%d;busnr:%d;options:%d\n",
 					rc_idx, pm_opt, busnr, options);
 			} else {

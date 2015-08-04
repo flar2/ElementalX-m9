@@ -131,8 +131,8 @@ static enum power_supply_property htc_battery_properties[] = {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_CAPACITY,
-#if 0
 	POWER_SUPPLY_PROP_OVERLOAD,
+#if 0
 	POWER_SUPPLY_PROP_USB_OVERHEAT,
 #endif
 };
@@ -950,11 +950,9 @@ static int htc_battery_get_property(struct power_supply *psy,
 		val->intval = battery_core_info.rep.level;
 		mutex_unlock(&battery_core_info.info_lock);
 		break;
-#if 0
 	case POWER_SUPPLY_PROP_OVERLOAD:
 		val->intval = battery_core_info.rep.overload;
 		break;
-#endif
 	case POWER_SUPPLY_PROP_FLASH_CURRENT_MAX :
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		if (battery_core_info.func.func_get_chg_status) {

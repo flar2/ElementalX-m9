@@ -860,6 +860,10 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->islinkdown) {
 		options = MSM_PCIE_CONFIG_NO_CFG_RESTORE;
+                
+                
+                DHD_ERROR(("%s: do link recovery\n", __FUNCTION__));
+                
 	}
 	ret = msm_pcie_pm_control(MSM_PCIE_RESUME, bus->dev->bus->number,
 		bus->dev, NULL, options);
@@ -874,7 +878,10 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 		bus->dev, NULL, 0);
 #endif 
 	if (ret) {
-		DHD_ERROR(("%s Failed to bring up PCIe link\n", __FUNCTION__));
+                
+                
+		DHD_ERROR(("%s Failed to bring up PCIe link. ret=%d\n", __FUNCTION__, ret));
+                
 		goto done;
 	}
 

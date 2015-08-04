@@ -124,7 +124,7 @@ enum dhd_op_flags {
 
 #ifdef BCMPCIE
 #ifndef MAX_CNTL_D3ACK_TIMEOUT
-#define MAX_CNTL_D3ACK_TIMEOUT 2
+#define MAX_CNTL_D3ACK_TIMEOUT 1
 #endif 
 #endif 
 

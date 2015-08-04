@@ -41,12 +41,22 @@
 
 #include <asm/current.h>
 
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+#include <linux/sched/rt.h>
+#include <linux/htc_flags.h>
+#endif
+
 #define DISABLE_SSR 0x9889deed
 static uint disable_restart_work;
 module_param(disable_restart_work, uint, S_IRUGO | S_IWUSR);
 
 static int enable_debug;
 module_param(enable_debug, int, S_IRUGO | S_IWUSR);
+
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+static uint disable_ssr_check_work = 0;
+module_param(disable_ssr_check_work, uint, S_IRUGO | S_IWUSR);
+#endif
 
 enum p_subsys_state {
 	SUBSYS_NORMAL,
@@ -147,6 +157,13 @@ static struct attribute_group attr_group = {
 
 #endif
 
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+#define SSR_CHECK_TIMEOUT 5000
+#define SSR_CHECK_COUNT 20
+static void subsystem_restart_check_func(struct work_struct *work);
+static inline void dump_busy_task(void);
+static inline void dump_disk_sleep_task(void);
+#endif
 
 struct subsys_tracking {
 	enum p_subsys_state p_state;
@@ -174,6 +191,9 @@ struct subsys_device {
 	struct subsys_desc *desc;
 	struct work_struct work;
 	struct wakeup_source ssr_wlock;
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+	struct delayed_work ssr_check_wq;
+#endif
 	char wlname[64];
 	struct work_struct device_restart_work;
 	struct subsys_tracking track;
@@ -204,6 +224,99 @@ struct subsys_device {
 	int notif_state;
 	struct list_head list;
 };
+
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+static inline void dump_busy_task(void)
+{
+	struct task_struct *g, *p;
+	struct timespec ts;
+	
+	ts = ktime_to_timespec(ktime_get());
+	printk("Scan busy tasks =======START ========== ktime_get = %d.%d \n", (int)ts.tv_sec, (int)ts.tv_nsec);
+	do_each_thread(g, p) {
+		if(p->state == TASK_RUNNING)
+		{
+			if(rt_task(p))
+				printk("RT task: %-15.15s ", p->comm);
+			else
+				printk("%-15.15s ", p->comm);
+			printk("%5d %6d 0x%08lx \n", task_pid_nr(p), task_pid_nr(rcu_dereference(p->real_parent)), (unsigned long)task_thread_info(p)->flags);
+			show_stack(p, NULL);
+		}
+	} while_each_thread(g, p);
+	printk("Scan busy tasks ======END=========== \n");
+	printk(" Current task is %-15.15s \n", current->comm);
+	show_stack(current, NULL);
+}
+
+static inline void dump_disk_sleep_task(void)
+{
+	struct task_struct *g, *p;
+	struct timespec ts;
+	
+	ts = ktime_to_timespec(ktime_get());
+	printk("Scan disk sleep tasks =======START ========== ktime_get = %d.%d \n", (int)ts.tv_sec, (int)ts.tv_nsec);
+	do_each_thread(g, p) {
+		if(p->state == TASK_UNINTERRUPTIBLE)
+		{
+			if(rt_task(p))
+				printk("RT task: %-15.15s ", p->comm);
+			else
+				printk("%-15.15s ", p->comm);
+			printk("%5d %6d 0x%08lx \n", task_pid_nr(p), task_pid_nr(rcu_dereference(p->real_parent)), (unsigned long)task_thread_info(p)->flags);
+			show_stack(p, NULL);
+		}
+	} while_each_thread(g, p);
+	printk("Scan disk sleep tasks ======END=========== \n");
+	printk(" Current task is %-15.15s \n", current->comm);
+	show_stack(current, NULL);
+}
+
+static void subsystem_restart_check_func(struct work_struct *work)
+{
+	struct delayed_work* ssr_check_wq = to_delayed_work(work);
+
+	struct subsys_device* dev = container_of(ssr_check_wq,
+						struct subsys_device, ssr_check_wq);
+
+	struct subsys_soc_restart_order *order = dev->restart_order;
+	struct subsys_desc *desc = dev->desc;
+	struct subsys_tracking *track;
+	int dump_busy_task_count = 0;
+
+	if (strcmp(desc->name, "modem")) {
+		printk("[<%p>][%s]: Not modem SSR, ssr device name[%s]\n", current, __func__, desc->name);
+	}
+
+	printk("[<%p>][%s]: Check Busy task start.\n", current, __func__);
+
+	if (order) {
+		track = &order->track;
+	} else {
+		track = &dev->track;
+	}
+
+	for (dump_busy_task_count = 0; dump_busy_task_count < SSR_CHECK_COUNT; dump_busy_task_count++) {
+		printk("[<%p>][%s]: dump_busy_task_count=[%d], track->p_state=[%d]\n", current, __func__, dump_busy_task_count, track->p_state);
+		if ( track->p_state == SUBSYS_NORMAL ) {
+			break;
+		}
+		dump_busy_task();
+		dump_disk_sleep_task();
+		msleep(1000);
+	}
+
+	if ( track->p_state != SUBSYS_NORMAL ) {
+		printk("[<%p>][%s]: %s SSR timeout over 25 secs, track->p_state=[%d].", current, __func__, desc->name, track->p_state);
+		if ( get_radio_flag() & BIT(3) ) {
+			panic("[<%p>][%s]: %s SSR timeout over 25 secs.", current, __func__, desc->name);
+		}
+	}
+
+	printk("[<%p>][%s]: Check Busy task end.\n", current, __func__);
+
+}
+#endif
 
 static struct subsys_device *to_subsys(struct device *d)
 {
@@ -921,6 +1034,15 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 
 	pr_debug("[%p]: Starting restart sequence for %s\n", current,
 			desc->name);
+
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+	if ( disable_ssr_check_work == 0 &&
+		!strcmp(desc->name, "modem")) {
+		printk("[<%p>][%s]: schedule ssr check work.\n", current, __func__);
+		schedule_delayed_work(&dev->ssr_check_wq, msecs_to_jiffies(SSR_CHECK_TIMEOUT));
+	}
+#endif
+
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_SHUTDOWN, NULL);
 	for_each_subsys_device(list, count, NULL, subsystem_shutdown);
 	notify_each_subsys_device(list, count, SUBSYS_AFTER_SHUTDOWN, NULL);
@@ -944,6 +1066,14 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_POWERUP, NULL);
 	for_each_subsys_device(list, count, NULL, subsystem_powerup);
 	notify_each_subsys_device(list, count, SUBSYS_AFTER_POWERUP, NULL);
+
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+	if ( disable_ssr_check_work == 0 &&
+		!strcmp(desc->name, "modem")) {
+		printk("[<%p>][%s]: cancel ssr check work.\n", current, __func__);
+		cancel_delayed_work(&dev->ssr_check_wq);
+	}
+#endif
 
 	pr_info("[%p]: Restart sequence for %s completed.\n",
 			current, desc->name);
@@ -1616,6 +1746,9 @@ struct subsys_device *subsys_register(struct subsys_desc *desc)
 	wakeup_source_init(&subsys->ssr_wlock, subsys->wlname);
 	INIT_WORK(&subsys->work, subsystem_restart_wq_func);
 	INIT_WORK(&subsys->device_restart_work, device_restart_work_hdlr);
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
+	INIT_DELAYED_WORK(&subsys->ssr_check_wq, subsystem_restart_check_func);
+#endif
 	spin_lock_init(&subsys->track.s_lock);
 
 	subsys->id = ida_simple_get(&subsys_ida, 0, 0, GFP_KERNEL);

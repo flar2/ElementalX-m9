@@ -527,7 +527,7 @@ static int wait_for_sess_signal_receipt(struct msm_vidc_inst *inst,
 		&inst->completions[SESSION_MSG_INDEX(cmd)],
 		msecs_to_jiffies(msm_vidc_hw_rsp_timeout));
 	if (!rc) {
-		dprintk(VIDC_ERR, "Wait interrupted or timedout: %d\n", rc);
+		dprintk(VIDC_ERR, "Wait interrupted or timedout: %d, cmd: %d\n", rc, cmd);
 		msm_comm_kill_session(inst);
 		rc = -EIO;
 	} else {
@@ -1625,8 +1625,6 @@ void handle_cmd_response(enum command_response cmd, void *data)
 		handle_seq_hdr_done(cmd, data);
 		break;
 	case SYS_WATCHDOG_TIMEOUT:
-		handle_sys_error(cmd, data);
-		break;
 	case SYS_ERROR:
 		handle_sys_error(cmd, data);
 		break;

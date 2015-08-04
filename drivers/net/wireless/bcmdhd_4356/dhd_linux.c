@@ -3367,7 +3367,14 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 		
 		memset(&event, 0, sizeof(event));
 		if (ntoh16(skb->protocol) == ETHER_TYPE_BRCM) {
-			dhd_wl_host_event(dhd, &ifidx,
+			
+			
+			
+			
+			
+			int evt_ret;
+			evt_ret = dhd_wl_host_event(dhd, &ifidx,
+			
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
 			skb_mac_header(skb),
 #else
@@ -3375,6 +3382,13 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 #endif 
 			&event,
 			&data);
+
+			
+			
+			
+			
+			if (!evt_ret) {
+			
 
 			wl_event_to_host_order(&event);
 			if (!tout_ctrl)
@@ -3404,6 +3418,15 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			}
 #endif 
 
+			
+			
+			
+			} else {
+				
+				bcm_print_bytes("dump pkt", (uchar *)skb->data,
+					(skb->len>64)?64:skb->len);
+			}
+			
 #ifdef DHD_DONOT_FORWARD_BCMEVENT_AS_NETWORK_PKT
 #if defined(CONFIG_DHD_USE_STATIC_BUF) && defined(DHD_USE_STATIC_IOCTLBUF)
 			PKTFREE_STATIC(dhdp->osh, pktbuf, FALSE);
@@ -9094,7 +9117,13 @@ static void dhd_hang_process(void *dhd_info, void *event_info, u8 event)
 #if defined(PCIE_FULL_DONGLE)
 		dhdp = &dhd->pub;
 		if (dhdp) {
-			if (!dhdp->bus->islinkdown) {
+			
+			
+			if (!dhdp->dongle_trap_occured &&
+			   (dhdp->rxcnt_timeout < MAX_CNTL_RX_TIMEOUT) &&
+			   (dhdp->txcnt_timeout < MAX_CNTL_TX_TIMEOUT) &&
+			   (dhdp->d3ackcnt_timeout < MAX_CNTL_D3ACK_TIMEOUT)) {
+			
 				DHD_ERROR(("%s: suspend PCIE bus\n", __FUNCTION__));
 				dhd_bus_suspend(dhdp);
 			} else {

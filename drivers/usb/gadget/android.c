@@ -189,6 +189,7 @@ struct android_dev {
 	
 	int autobot_mode;
 	
+	int mirrorlink_mode;
 
 	
 	struct list_head list_item;
@@ -491,7 +492,8 @@ static int android_enable(struct android_dev *dev)
 			if (err < 0) {
 				pr_err("%s: usb_add_config failed : err: %d\n",
 						__func__, err);
-				dev->disable_depth++;
+				
+				
 				return err;
 			}
 		}

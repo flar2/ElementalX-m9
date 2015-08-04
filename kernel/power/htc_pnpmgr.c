@@ -1078,6 +1078,7 @@ user_perf_lvl_store(struct kobject *kobj, struct kobj_attribute *attr,
 		}
 
 		info[type].user_lvl_to_min_freq = min_freq;
+		sysfs_notify(kobj, NULL, "user_perf_lvl");
 		sysfs_notify(kobj, NULL, "user_lvl_to_min_freq");
 		return n;
 	}

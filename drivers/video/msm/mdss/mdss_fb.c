@@ -261,11 +261,11 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (strcmp(led_cdev->name, "lcd-backlight-nits") == 0) {
 		mfd->panel_info->max_brt = mfd->panel_info->act_max_brt;
 		mfd->panel_info->act_brt = true;
-		pr_info("[DISP] actual brightness mode %d \n", mfd->panel_info->max_brt);
+		pr_debug("[DISP] actual brightness mode %d \n", mfd->panel_info->max_brt);
 	} else {
 		mfd->panel_info->max_brt = MDSS_MAX_BL_BRIGHTNESS;
 		mfd->panel_info->act_brt = false;
-		pr_info("[DISP] orig brightness mode %d \n", mfd->panel_info->max_brt);
+		pr_debug("[DISP] orig brightness mode %d \n", mfd->panel_info->max_brt);
 	}
 
 	if (mfd->boot_notification_led) {
