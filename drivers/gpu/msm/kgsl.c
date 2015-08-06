@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -444,6 +444,8 @@ int _kgsl_get_context_id(struct kgsl_device *device,
 	write_lock(&device->context_lock);
 	id = idr_alloc(&device->context_idr, context, 1,
 		KGSL_MEMSTORE_MAX, GFP_NOWAIT);
+	if (id > 0)
+		device->ctxt_cnt++;
 	write_unlock(&device->context_lock);
 	idr_preload_end();
 
@@ -459,6 +461,7 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 	struct kgsl_device *device = dev_priv->device;
 	char name[64];
 	int ret = 0, id;
+	int t_ctxt_cnt;
 
 	id = _kgsl_get_context_id(device, context);
 	if (id == -ENOSPC) {
@@ -470,12 +473,23 @@ int kgsl_context_init(struct kgsl_device_private *dev_priv,
 	}
 
 	if (id < 0) {
-		if (id == -ENOSPC)
+		if (id == -ENOSPC) {
 			KGSL_DRV_INFO(device,
 				"cannot have more than %zu contexts due to memstore limitation\n",
 				KGSL_MEMSTORE_MAX);
-
+			write_lock(&device->context_lock);
+			kgsl_dump_contextpid_locked(&dev_priv->device->context_idr);
+			write_unlock(&device->context_lock);
+		}
 		return id;
+	}
+
+	t_ctxt_cnt = device->ctxt_cnt;
+
+	if (unlikely(t_ctxt_cnt > KGSL_CONTEXT_CHECK_THRESHOLD)) {
+		write_lock(&device->context_lock);
+		kgsl_check_context_id_locked(&dev_priv->device->context_idr, t_ctxt_cnt);
+		write_unlock(&device->context_lock);
 	}
 
 	kref_init(&context->refcount);
@@ -500,6 +514,7 @@ out:
 	if (ret) {
 		write_lock(&device->context_lock);
 		idr_remove(&dev_priv->device->context_idr, id);
+		device->ctxt_cnt--;
 		kgsl_dump_contextpid_locked(&dev_priv->device->context_idr);
 		write_unlock(&device->context_lock);
 	}
@@ -568,6 +583,7 @@ kgsl_context_destroy(struct kref *kref)
 		}
 
 		idr_remove(&device->context_idr, context->id);
+		device->ctxt_cnt--;
 		context->id = KGSL_CONTEXT_INVALID;
 	}
 	write_unlock(&device->context_lock);
@@ -849,6 +865,8 @@ static void kgsl_process_private_close(struct kgsl_device_private *dev_priv,
 
 	process_release_sync_sources(private);
 
+	kgsl_mmu_detach_pagetable(private->pagetable);
+
 	
 	list_del(&private->list);
 
@@ -910,8 +928,7 @@ static int kgsl_close_device(struct kgsl_device *device)
 		
 		BUG_ON(atomic_read(&device->active_cnt) > 0);
 
-		result = device->ftbl->stop(device);
-		kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
+		result = kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 	}
 	mutex_unlock(&device->mutex);
 	return result;
@@ -989,8 +1006,10 @@ static int kgsl_open_device(struct kgsl_device *device)
 	}
 	device->open_count++;
 err:
-	if (result)
+	if (result) {
+		kgsl_pwrctrl_change_state(device, KGSL_STATE_INIT);
 		atomic_dec(&device->active_cnt);
+	}
 
 	mutex_unlock(&device->mutex);
 	return result;
@@ -1349,49 +1368,26 @@ static void _kgsl_cmdbatch_timer(unsigned long data)
 	if (cmdbatch == NULL || cmdbatch->context == NULL)
 		return;
 
-	spin_lock(&cmdbatch->lock);
-	if (list_empty(&cmdbatch->synclist))
-		goto done;
-
 	device = cmdbatch->context->device;
 
 	dev_err(device->dev,
 		"kgsl: possible gpu syncpoint deadlock for context %d timestamp %d\n",
 		cmdbatch->context->id, cmdbatch->timestamp);
-	dev_err(device->dev, " Active sync points:\n");
 
+	set_bit(CMDBATCH_FLAG_FENCE_LOG, &cmdbatch->priv);
+	kgsl_context_dump(cmdbatch->context);
+	clear_bit(CMDBATCH_FLAG_FENCE_LOG, &cmdbatch->priv);
+
+	spin_lock(&cmdbatch->lock);
 	
 	list_for_each_entry(event, &cmdbatch->synclist, node) {
-		switch (event->type) {
-		case KGSL_CMD_SYNCPOINT_TYPE_TIMESTAMP: {
-			unsigned int retired;
-
-			kgsl_readtimestamp(event->device,
-				event->context, KGSL_TIMESTAMP_RETIRED,
-					&retired);
-
-			dev_err(device->dev,
-				"  [timestamp] context %d timestamp %d (retired %d)\n",
-				event->context->id, event->timestamp, retired);
-			break;
-		}
-		case KGSL_CMD_SYNCPOINT_TYPE_FENCE:
-			if (event->handle && event->handle->fence) {
-				set_bit(CMDBATCH_FLAG_FENCE_LOG,
-					&cmdbatch->priv);
-				kgsl_sync_fence_log(event->handle->fence);
-				clear_bit(CMDBATCH_FLAG_FENCE_LOG,
-					&cmdbatch->priv);
-			} else
-				dev_err(device->dev, "  fence: invalid\n");
-			break;
-		}
+		if (KGSL_CMD_SYNCPOINT_TYPE_FENCE == event->type &&
+			event->handle && event->handle->fence)
+			kgsl_sync_fence_log(event->handle->fence);
 	}
-
-done:
 	spin_unlock(&cmdbatch->lock);
+	dev_err(device->dev, "--gpu syncpoint deadlock print end--\n");
 }
-
 static void kgsl_cmdbatch_sync_event_destroy(struct kref *kref)
 {
 	struct kgsl_cmdbatch_sync_event *event = container_of(kref,
@@ -1424,9 +1420,8 @@ static void kgsl_cmdbatch_sync_expire(struct kgsl_device *device,
 	struct kgsl_cmdbatch_sync_event *e, *tmp;
 	int sched = 0;
 	int removed = 0;
-	unsigned long flags;
 
-	spin_lock_irqsave(&event->cmdbatch->lock, flags);
+	spin_lock_bh(&event->cmdbatch->lock);
 
 
 	list_for_each_entry_safe(e, tmp, &event->cmdbatch->synclist, node) {
@@ -1438,7 +1433,7 @@ static void kgsl_cmdbatch_sync_expire(struct kgsl_device *device,
 	}
 
 	sched = list_empty(&event->cmdbatch->synclist) ? 1 : 0;
-	spin_unlock_irqrestore(&event->cmdbatch->lock, flags);
+	spin_unlock_bh(&event->cmdbatch->lock);
 
 	
 	if (sched)
@@ -1488,6 +1483,7 @@ void kgsl_cmdbatch_destroy(struct kgsl_cmdbatch *cmdbatch)
 	
 	del_timer_sync(&cmdbatch->timer);
 
+	
 	spin_lock(&cmdbatch->lock);
 
 	
@@ -1546,7 +1542,6 @@ static int kgsl_cmdbatch_add_sync_fence(struct kgsl_device *device,
 {
 	struct kgsl_cmd_syncpoint_fence *sync = priv;
 	struct kgsl_cmdbatch_sync_event *event;
-	unsigned long flags;
 
 	event = kzalloc(sizeof(*event), GFP_KERNEL);
 
@@ -1564,9 +1559,11 @@ static int kgsl_cmdbatch_add_sync_fence(struct kgsl_device *device,
 
 
 	kref_get(&event->refcount);
-	spin_lock_irqsave(&cmdbatch->lock, flags);
+
+	
+	spin_lock(&cmdbatch->lock);
 	list_add(&event->node, &cmdbatch->synclist);
-	spin_unlock_irqrestore(&cmdbatch->lock, flags);
+	spin_unlock(&cmdbatch->lock);
 
 
 	kref_get(&event->refcount);
@@ -1582,9 +1579,9 @@ static int kgsl_cmdbatch_add_sync_fence(struct kgsl_device *device,
 		kgsl_cmdbatch_sync_event_put(event);
 
 		
-		spin_lock_irqsave(&cmdbatch->lock, flags);
+		spin_lock(&cmdbatch->lock);
 		list_del(&event->node);
-		spin_unlock_irqrestore(&cmdbatch->lock, flags);
+		spin_unlock(&cmdbatch->lock);
 		kgsl_cmdbatch_sync_event_put(event);
 
 		
@@ -1646,6 +1643,7 @@ static int kgsl_cmdbatch_add_sync_timestamp(struct kgsl_device *device,
 	kref_init(&event->refcount);
 	kref_get(&event->refcount);
 
+	
 	spin_lock(&cmdbatch->lock);
 	list_add(&event->node, &cmdbatch->synclist);
 	spin_unlock(&cmdbatch->lock);
@@ -2635,7 +2633,7 @@ long kgsl_ioctl_map_user_mem(struct kgsl_device_private *dev_priv,
 		if (!kgsl_mmu_is_secured(&dev_priv->device->mmu)) {
 			dev_WARN_ONCE(dev_priv->device->dev, 1,
 				"Secure buffer not supported");
-			return -EINVAL;
+			return -EOPNOTSUPP;
 		}
 
 		
@@ -3023,7 +3021,7 @@ _gpumem_alloc(struct kgsl_device_private *dev_priv,
 			(flags & KGSL_MEMFLAGS_SECURE)) {
 		dev_WARN_ONCE(dev_priv->device->dev, 1,
 				"Secure memory not supported");
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 
 	
@@ -4051,6 +4049,8 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 		device->reg_virt);
 
 	rwlock_init(&device->context_lock);
+
+	device->ctxt_cnt = 0;
 
 	result = kgsl_drm_init(device->pdev);
 	if (result)

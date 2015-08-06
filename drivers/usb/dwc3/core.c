@@ -133,11 +133,9 @@ static void dwc3_core_and_phy_soft_reset(struct dwc3 *dwc)
 	reg &= ~DWC3_GUSB3PIPECTL_PHYSOFTRST;
 	dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
 
-	if (dwc->revision >= DWC3_REVISION_270A) {
-		reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
-		reg |= DWC3_GUSB3PIPECTL_DELAYP1TRANS;
-		dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
-	}
+	reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
+	reg &= ~DWC3_GUSB3PIPECTL_DELAYP1TRANS;
+	dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
 
 	
 	reg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));
@@ -557,6 +555,7 @@ static int dwc3_probe(struct platform_device *pdev)
 	usb_phy_set_suspend(dwc->usb3_phy, 0);
 
 	spin_lock_init(&dwc->lock);
+	init_waitqueue_head(&dwc->wait_linkstate);
 	platform_set_drvdata(pdev, dwc);
 
 	dwc->regs	= regs;

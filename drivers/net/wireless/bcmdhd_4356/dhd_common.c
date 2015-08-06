@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_common.c 533926 2015-02-12 03:55:12Z $
+ * $Id: dhd_common.c 542237 2015-03-19 06:49:27Z $
  */
 #include <typedefs.h>
 #include <osl.h>
@@ -722,7 +722,7 @@ dhd_doiovar(dhd_pub_t *dhd_pub, const bcm_iovar_t *vi, uint32 actionid, const ch
 
 	case IOV_SVAL(IOV_WLPKTDLYSTAT_SZ):
 		dhd_pub->htsfdlystat_sz = int_val & 0xff;
-		printf("Setting tsfdlystat_sz:%d\n", dhd_pub->htsfdlystat_sz);
+		DHD_ERROR(("Setting tsfdlystat_sz:%d\n", dhd_pub->htsfdlystat_sz));
 		break;
 #endif
 	case IOV_SVAL(IOV_CHANGEMTU):
@@ -1688,6 +1688,11 @@ wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 
 	if (bcmp(BRCM_OUI, &pvt_data->bcm_hdr.oui[0], DOT11_OUI_LEN)) {
 		DHD_ERROR(("%s: mismatched OUI, bailing\n", __FUNCTION__));
+		
+		
+		
+		
+		
 		return (BCME_ERROR);
 	}
 
@@ -1903,20 +1908,27 @@ dhd_print_buf(void *pbuf, int len, int bytes_per_line)
 #ifdef DHD_DEBUG
 	int i, j = 0;
 	unsigned char *buf = pbuf;
+	char line[80] = "";
 
 	if (bytes_per_line == 0) {
 		bytes_per_line = len;
 	}
 
 	for (i = 0; i < len; i++) {
-		printf("%2.2x", *buf++);
+		snprintf(line, sizeof(line), "%s%2.2x", line, *buf++);
 		j++;
 		if (j == bytes_per_line) {
-			printf("\n");
+			snprintf(line, sizeof(line), "%s\n", line);
+			printf("%s", line);
 			j = 0;
+			line[0] = '\0';
 		} else {
-			printf(":");
+			snprintf(line, sizeof(line), "%s:", line);
 		}
+	}
+	if (j) {
+		snprintf(line, sizeof(line), "%s\n", line);
+		printf("%s", line);
 	}
 	printf("\n");
 #endif 
@@ -2959,9 +2971,9 @@ wl_iw_parse_channel_list(char** list_str, uint16* channel_list, int channel_num)
 	while (strncmp(str, GET_NPROBE, strlen(GET_NPROBE))) {
 		val = (int)strtoul(str, &endptr, 0);
 		if (endptr == str) {
-			printf("could not parse channel number starting at"
+			DHD_ERROR(("could not parse channel number starting at"
 				" substring \"%s\" in list:\n%s\n",
-				str, *list_str);
+				str, *list_str));
 			return -1;
 		}
 		str = endptr + strspn(endptr, " ,");
@@ -2993,7 +3005,7 @@ int dhd_set_pktfilter(dhd_pub_t * dhd, int add, int id, int offset, char *mask, 
 	int pkt_id = id;
 	wl_pkt_filter_enable_t	enable_parm;
 
-	printf("Enter set packet filter\n");
+	DHD_ERROR(("Enter set packet filter\n"));
 
 	
 	enable_parm.id = htod32(pkt_id);
@@ -3010,7 +3022,7 @@ int dhd_set_pktfilter(dhd_pub_t * dhd, int add, int id, int offset, char *mask, 
 		return 0;
 	}
 
-	printf("start to add pkt filter %d\n", pkt_id);
+	DHD_ERROR(("start to add pkt filter %d\n", pkt_id));
 	memset(buf, 0, sizeof(buf));
 	
 	str = "pkt_filter_add";
@@ -3039,7 +3051,7 @@ int dhd_set_pktfilter(dhd_pub_t * dhd, int add, int id, int offset, char *mask, 
 
 	
 	if (add == 1 && id == 101) {
-		printf("Update dtim after connected AP, screen_off:%d\n", is_screen_off);
+		DHD_ERROR(("Update dtim after connected AP, screen_off:%d\n", is_screen_off));
 		dhdhtc_update_dtim_listen_interval(is_screen_off);
 	}
 
@@ -3048,7 +3060,7 @@ int dhd_set_pktfilter(dhd_pub_t * dhd, int add, int id, int offset, char *mask, 
 		(char *) &pkt_filterp->u.pattern.mask_and_pattern[mask_size]));
 
 	if (mask_size != pattern_size) {
-		printf("Mask and pattern not the same size\n");
+		DHD_ERROR(("Mask and pattern not the same size\n"));
 		return -EINVAL;
 	}
 

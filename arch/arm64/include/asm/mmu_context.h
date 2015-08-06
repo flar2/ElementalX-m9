@@ -123,6 +123,11 @@ switch_mm(struct mm_struct *prev, struct mm_struct *next,
 {
 	unsigned int cpu = smp_processor_id();
 
+	if (next == &init_mm) {
+		cpu_set_reserved_ttbr0();
+		return;
+	}
+
 	if (!cpumask_test_and_set_cpu(cpu, mm_cpumask(next)) || prev != next)
 		check_and_switch_context(next, tsk);
 }

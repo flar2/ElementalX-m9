@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_ip.c 502735 2014-09-16 00:53:02Z $
+ * $Id: dhd_ip.c 544869 2015-03-30 08:20:06Z $
  */
 #include <typedefs.h>
 #include <osl.h>
@@ -348,6 +348,7 @@ static void dhd_tcpack_send(ulong data)
 	dhd_pub_t *dhdp;
 	int ifidx;
 	void* pkt;
+	unsigned long flags;
 
 	if (!cur_tbl) {
 		return;
@@ -358,13 +359,13 @@ static void dhd_tcpack_send(ulong data)
 		return;
 	}
 
-	dhd_os_tcpacklock(dhdp);
+	flags = dhd_os_tcpacklock(dhdp);
 
 	tcpack_sup_mod = dhdp->tcpack_sup_module;
 	pkt = cur_tbl->pkt_in_q;
 	ifidx = cur_tbl->ifidx;
 	if (!pkt) {
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		return;
 	}
 	cur_tbl->pkt_in_q = NULL;
@@ -376,7 +377,7 @@ static void dhd_tcpack_send(ulong data)
 			__FUNCTION__, __LINE__, tcpack_sup_mod->tcpack_info_cnt));
 	}
 
-	dhd_os_tcpackunlock(dhdp);
+	dhd_os_tcpackunlock(dhdp, flags);
 
 	dhd_sendpkt(dhdp, ifidx, pkt);
 }
@@ -384,8 +385,9 @@ static void dhd_tcpack_send(ulong data)
 int dhd_tcpack_suppress_set(dhd_pub_t *dhdp, uint8 mode)
 {
 	int ret = BCME_OK;
+	unsigned long flags;
 
-	dhd_os_tcpacklock(dhdp);
+	flags = dhd_os_tcpacklock(dhdp);
 
 	if (dhdp->tcpack_sup_mode == mode) {
 		DHD_ERROR(("%s %d: already set to %d\n", __FUNCTION__, __LINE__, mode));
@@ -465,7 +467,7 @@ int dhd_tcpack_suppress_set(dhd_pub_t *dhdp, uint8 mode)
 	}
 
 exit:
-	dhd_os_tcpackunlock(dhdp);
+	dhd_os_tcpackunlock(dhdp, flags);
 	return ret;
 }
 
@@ -474,16 +476,17 @@ dhd_tcpack_info_tbl_clean(dhd_pub_t *dhdp)
 {
 	tcpack_sup_module_t *tcpack_sup_mod = dhdp->tcpack_sup_module;
 	int i;
+	unsigned long flags;
 
 	if (dhdp->tcpack_sup_mode == TCPACK_SUP_OFF)
 		goto exit;
 
-	dhd_os_tcpacklock(dhdp);
+	flags = dhd_os_tcpacklock(dhdp);
 
 	if (!tcpack_sup_mod) {
 		DHD_ERROR(("%s %d: tcpack suppress module NULL!!\n",
 			__FUNCTION__, __LINE__));
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		goto exit;
 	}
 
@@ -503,7 +506,7 @@ dhd_tcpack_info_tbl_clean(dhd_pub_t *dhdp)
 		bzero(tcpack_sup_mod->tcpack_info_tbl, sizeof(tcpack_info_t) * TCPACK_INFO_MAXNUM);
 	}
 
-	dhd_os_tcpackunlock(dhdp);
+	dhd_os_tcpackunlock(dhdp, flags);
 
 	if (dhdp->tcpack_sup_mode == TCPACK_SUP_HOLD) {
 		for (i = 0; i < TCPACK_INFO_MAXNUM; i++) {
@@ -524,6 +527,7 @@ inline int dhd_tcpack_check_xmit(dhd_pub_t *dhdp, void *pkt)
 	int ret = BCME_OK;
 	void *pdata;
 	uint32 pktlen;
+	unsigned long flags;
 
 	if (dhdp->tcpack_sup_mode == TCPACK_SUP_OFF)
 		goto exit;
@@ -537,13 +541,13 @@ inline int dhd_tcpack_check_xmit(dhd_pub_t *dhdp, void *pkt)
 		goto exit;
 	}
 
-	dhd_os_tcpacklock(dhdp);
+	flags = dhd_os_tcpacklock(dhdp);
 	tcpack_sup_mod = dhdp->tcpack_sup_module;
 
 	if (!tcpack_sup_mod) {
 		DHD_ERROR(("%s %d: tcpack suppress module NULL!!\n", __FUNCTION__, __LINE__));
 		ret = BCME_ERROR;
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		goto exit;
 	}
 	tbl_cnt = tcpack_sup_mod->tcpack_info_cnt;
@@ -569,7 +573,7 @@ inline int dhd_tcpack_check_xmit(dhd_pub_t *dhdp, void *pkt)
 			break;
 		}
 	}
-	dhd_os_tcpackunlock(dhdp);
+	dhd_os_tcpackunlock(dhdp, flags);
 
 exit:
 	return ret;
@@ -674,6 +678,8 @@ dhd_tcpack_suppress(dhd_pub_t *dhdp, void *pkt)
 	int i;
 	bool ret = FALSE;
 	bool set_dotxinrx = TRUE;
+	unsigned long flags;
+
 
 	if (dhdp->tcpack_sup_mode == TCPACK_SUP_OFF)
 		goto exit;
@@ -745,7 +751,7 @@ dhd_tcpack_suppress(dhd_pub_t *dhdp, void *pkt)
 		ntoh16_ua(&new_tcp_hdr[TCP_DEST_PORT_OFFSET])));
 
 	
-	dhd_os_tcpacklock(dhdp);
+	flags = dhd_os_tcpacklock(dhdp);
 #if defined(DEBUG_COUNTER) && defined(DHDTCPACK_SUP_DBG)
 	counter_printlog(&tack_tbl);
 	tack_tbl.cnt[0]++;
@@ -757,7 +763,7 @@ dhd_tcpack_suppress(dhd_pub_t *dhdp, void *pkt)
 	if (!tcpack_sup_mod) {
 		DHD_ERROR(("%s %d: tcpack suppress module NULL!!\n", __FUNCTION__, __LINE__));
 		ret = BCME_ERROR;
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		goto exit;
 	}
 
@@ -843,7 +849,7 @@ dhd_tcpack_suppress(dhd_pub_t *dhdp, void *pkt)
 				__FUNCTION__, __LINE__, old_tcpack_num, oldpkt,
 				new_tcp_ack_num, pkt));
 		}
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		goto exit;
 	}
 
@@ -863,7 +869,7 @@ dhd_tcpack_suppress(dhd_pub_t *dhdp, void *pkt)
 		DHD_TRACE(("%s %d: No empty tcp ack info tbl\n",
 			__FUNCTION__, __LINE__));
 	}
-	dhd_os_tcpackunlock(dhdp);
+	dhd_os_tcpackunlock(dhdp, flags);
 
 exit:
 	
@@ -893,6 +899,7 @@ dhd_tcpdata_info_get(dhd_pub_t *dhdp, void *pkt)
 
 	int i;
 	bool ret = FALSE;
+	unsigned long flags;
 
 	if (dhdp->tcpack_sup_mode != TCPACK_SUP_DELAYTX)
 		goto exit;
@@ -954,13 +961,13 @@ dhd_tcpdata_info_get(dhd_pub_t *dhdp, void *pkt)
 		ntoh16_ua(&tcp_hdr[TCP_DEST_PORT_OFFSET]),
 		tcp_hdr[TCP_FLAGS_OFFSET]));
 
-	dhd_os_tcpacklock(dhdp);
+	flags = dhd_os_tcpacklock(dhdp);
 	tcpack_sup_mod = dhdp->tcpack_sup_module;
 
 	if (!tcpack_sup_mod) {
 		DHD_ERROR(("%s %d: tcpack suppress module NULL!!\n", __FUNCTION__, __LINE__));
 		ret = BCME_ERROR;
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		goto exit;
 	}
 
@@ -1032,7 +1039,7 @@ dhd_tcpdata_info_get(dhd_pub_t *dhdp, void *pkt)
 				IPV4_ADDR_TO_STR(ntoh32_ua(&ip_hdr[IPV4_DEST_IP_OFFSET])),
 				ntoh16_ua(&tcp_hdr[TCP_SRC_PORT_OFFSET]),
 				ntoh16_ua(&tcp_hdr[TCP_DEST_PORT_OFFSET])));
-			dhd_os_tcpackunlock(dhdp);
+			dhd_os_tcpackunlock(dhdp, flags);
 			goto exit;
 		}
 		tcpdata_info = &tcpack_sup_mod->tcpdata_info_tbl[i];
@@ -1065,7 +1072,7 @@ dhd_tcpdata_info_get(dhd_pub_t *dhdp, void *pkt)
 	if (tdata_psh_info == NULL) {
 		DHD_ERROR(("%s %d: No more free tdata_psh_info!!\n", __FUNCTION__, __LINE__));
 		ret = BCME_ERROR;
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		goto exit;
 	}
 	tdata_psh_info->end_seq = end_tcp_seq_num;
@@ -1087,7 +1094,7 @@ dhd_tcpdata_info_get(dhd_pub_t *dhdp, void *pkt)
 	}
 	tcpdata_info->tdata_psh_info_tail = tdata_psh_info;
 
-	dhd_os_tcpackunlock(dhdp);
+	dhd_os_tcpackunlock(dhdp, flags);
 
 exit:
 	return ret;
@@ -1109,6 +1116,7 @@ dhd_tcpack_hold(dhd_pub_t *dhdp, void *pkt, int ifidx)
 	tcpack_info_t *tcpack_info_tbl;
 	int i, free_slot = TCPACK_INFO_MAXNUM;
 	bool hold = FALSE;
+	unsigned long flags;
 
 	if (dhdp->tcpack_sup_mode != TCPACK_SUP_HOLD) {
 		goto exit;
@@ -1185,14 +1193,14 @@ dhd_tcpack_hold(dhd_pub_t *dhdp, void *pkt, int ifidx)
 		ntoh16_ua(&new_tcp_hdr[TCP_DEST_PORT_OFFSET])));
 
 	
-	dhd_os_tcpacklock(dhdp);
+	flags = dhd_os_tcpacklock(dhdp);
 
 	tcpack_sup_mod = dhdp->tcpack_sup_module;
 	tcpack_info_tbl = tcpack_sup_mod->tcpack_info_tbl;
 
 	if (!tcpack_sup_mod) {
 		DHD_ERROR(("%s %d: tcpack suppress module NULL!!\n", __FUNCTION__, __LINE__));
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 		goto exit;
 	}
 
@@ -1215,7 +1223,7 @@ dhd_tcpack_hold(dhd_pub_t *dhdp, void *pkt, int ifidx)
 			DHD_ERROR(("%s %d: oldpkt data NULL!! cur idx %d\n",
 				__FUNCTION__, __LINE__, i));
 			hold = FALSE;
-			dhd_os_tcpackunlock(dhdp);
+			dhd_os_tcpackunlock(dhdp, flags);
 			goto exit;
 		}
 
@@ -1259,7 +1267,7 @@ dhd_tcpack_hold(dhd_pub_t *dhdp, void *pkt, int ifidx)
 		} else {
 			PKTFREE(dhdp->osh, pkt, TRUE);
 		}
-		dhd_os_tcpackunlock(dhdp);
+		dhd_os_tcpackunlock(dhdp, flags);
 
 		if (!hold) {
 			del_timer_sync(&tcpack_info_tbl[i].timer);
@@ -1283,7 +1291,7 @@ dhd_tcpack_hold(dhd_pub_t *dhdp, void *pkt, int ifidx)
 		DHD_TRACE(("%s %d: No empty tcp ack info tbl\n",
 			__FUNCTION__, __LINE__));
 	}
-	dhd_os_tcpackunlock(dhdp);
+	dhd_os_tcpackunlock(dhdp, flags);
 
 exit:
 	return hold;

@@ -55,7 +55,7 @@ struct f_rndis {
 static struct f_rndis *__rndis;
 
 int
-rndis_rx_trigger(void)
+rndis_rx_trigger(bool write)
 {
 	struct f_rndis *rndis = __rndis;
 
@@ -63,6 +63,8 @@ rndis_rx_trigger(void)
 		pr_err("can't set rx trigger\n");
 		return -EINVAL;
 	}
+	if (!write)
+		return rndis->port.rx_triggered;
 
 	if (rndis->port.rx_triggered)
 		return 0;
@@ -445,7 +447,6 @@ static void rndis_response_complete(struct usb_ep *ep, struct usb_request *req)
 	}
 }
 
-#define MAX_PKTS_PER_XFER	10
 static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct f_rndis			*rndis = req->context;
@@ -472,7 +473,7 @@ static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 			gether_update_dl_max_xfer_size(&rndis->port,
 					rndis->port.dl_max_xfer_size);
 
-			rndis->port.dl_max_pkts_per_xfer = 5;
+			rndis->port.dl_max_pkts_per_xfer = 3;
 
 			gether_update_dl_max_pkts_per_xfer(&rndis->port,
 					 rndis->port.dl_max_pkts_per_xfer);

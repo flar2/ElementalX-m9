@@ -464,7 +464,7 @@
 			filesize = <0xC000>;
 			file_codesize = <0xC000>;
 			defaults_allow = <1>;
-			default_config_id = <0x48D0>;
+			default_config_id = <0x68D0>;
 			default_chip_id = <0x78>;
 			i2c_words = <123>;
 			coordinate_settings = <0x4>;
@@ -490,7 +490,7 @@
 			pinctrl-1 = <&ts_suspend>;
 
 			config3 {
-				config_id = <0x48D0>;
+				config_id = <0x68D0>;
 				chip_id = <0x78>;
 				major_ver = <1>;
 				minor_ver = <31>;
@@ -500,7 +500,7 @@
 				support_cover = <1>;
 				filter_range = <0 30 75 75>;
 				config_touch = [
-					48D0 101C 007D 001E 0A02 0809 0704 0605
+					68D0 101C 007D 001E 0A02 0809 0704 0605
 					FF03 FF02 01FF 00FF FF0D 0B0A 0C0E 0FFF
 					11FF 1210 FFFF 1513 FF14 1716 1918 FFFF
 					1B1A 0100 0302 0504 0706 0908 0B0A 0D0C
@@ -508,7 +508,7 @@
 					FFFF 0B3F 8653 0513 0001 0502 079E 03E8
 					0A8C 05DC 00A0 0D00 0A05 FFFF FFFF FFFF
 					FFFF 03E8 FFFF FFFF FFFF FFFF FFFF FFFF
-					3687
+					5687
 				];
 				config_cal = [
 					FFF5 FFEA FFDF 001C 001C 001C 001C 001C
@@ -538,7 +538,7 @@
 			};
 
 			config2 {
-				config_id = <0x48D0>;
+				config_id = <0x68D0>;
 				chip_id = <0x78>;
 				major_ver = <1>;
 				minor_ver = <31>;
@@ -548,7 +548,7 @@
 				support_cover = <1>;
 				filter_range = <0 30 75 75>;
 				config_touch = [
-					48D0 101C 007D 001E 0A02 0809 0704 0605
+					68D0 101C 007D 001E 0A02 0809 0704 0605
 					FF03 FF02 01FF 00FF FF0D 0B0A 0C0E 0FFF
 					11FF 1210 FFFF 1513 FF14 1716 1918 FFFF
 					1B1A 0100 0302 0504 0706 0908 0B0A 0D0C
@@ -556,7 +556,7 @@
 					FFFF 0B3F 8653 0513 0001 0502 079E 03E8
 					0A8C 05DC 00A0 0D00 0A05 FFFF FFFF FFFF
 					FFFF 03E8 FFFF FFFF FFFF FFFF FFFF FFFF
-					3687
+					5687
 				];
 				config_cal = [
 					FFF5 FFEA FFDF 001C 001C 001C 001C 001C

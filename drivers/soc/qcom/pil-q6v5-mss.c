@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -35,6 +35,8 @@
 #include <soc/qcom/smem.h>
 #include <soc/qcom/smsm.h>
 
+#include <soc/qcom/scm.h>
+
 #include "peripheral-loader.h"
 #include "pil-q6v5.h"
 #include "pil-msa.h"
@@ -49,6 +51,38 @@
 #if defined(CONFIG_HTC_DEBUG_SSR)
 int skip_ssr_on_fatal = 0;
 #endif
+
+struct workqueue_struct *dump_snoc_wq;
+static void dump_snoc_process(struct work_struct *work);
+static DECLARE_WORK(dump_snoc_work, dump_snoc_process);
+
+static void dump_snoc_process(struct work_struct *work)
+{
+	int ret, response;
+	struct {
+		unsigned int config;
+		unsigned int spare;
+	} cmd;
+	struct scm_desc desc = {0};
+
+	desc.arginfo = SCM_ARGS(2);
+	desc.args[0] = cmd.config = 0xA;	 
+	desc.args[1] = cmd.spare = 0;
+
+	if (!is_scm_armv8())
+		ret = scm_call(SCM_SVC_MP, 0xe, &cmd, sizeof(cmd),
+				&response, sizeof(response));
+	else
+		ret = scm_call2(SCM_SIP_FNID(SCM_SVC_MP, 0xe), &desc);
+
+	if (ret != 0)
+		pr_warn("Failed to dump_snoc_syndrome_register: %d\n",
+			ret);
+	else
+		pr_info("dump_snoc_syndrome_register ...\n");
+
+	return ;
+}
 
 #if defined(CONFIG_HTC_DEBUG_SSR)
 static void log_modem_sfr(struct subsys_device *dev)
@@ -72,6 +106,14 @@ static void log_modem_sfr(void)
 
 	strlcpy(reason, smem_reason, min(size, MAX_SSR_REASON_LEN));
 	pr_err("modem subsystem failure reason: %s.\n", reason);
+
+	if(!strncmp(reason, "qmi_sap_xport_qmux.c:", 21))
+	{
+		pr_err("RIL debug: trigger kernel panic to get full ramdump.\n");
+		panic("Panic triggered by RIL debugging");
+		skip_ssr_on_fatal =1;
+	}
+
 #if defined(CONFIG_HTC_DEBUG_SSR)
        if (strstr(reason, "oem-98") || strstr(reason, "oem-96") || strstr(reason, "oem-95")) {
            skip_ssr_on_fatal = 1;
@@ -100,6 +142,19 @@ static void restart_modem(struct modem_data *drv)
 #endif
 }
 
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0002_DUMP_STACK)
+static void dump_dbg_info(void)
+{
+
+	printk(KERN_INFO "=== Show rmt_storage ===");
+	show_thread_group_state_filter("rmt_storage", 0);
+	printk(KERN_INFO "\n");
+
+	pr_info("### Show Blocked State in ###\n");
+	show_state_filter(TASK_UNINTERRUPTIBLE);
+}
+#endif
+
 static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 {
 	struct modem_data *drv = subsys_to_drv(dev_id);
@@ -109,6 +164,13 @@ static irqreturn_t modem_err_fatal_intr_handler(int irq, void *dev_id)
 		return IRQ_HANDLED;
 
 	pr_err("Fatal error on the modem.\n");
+
+#if defined(CONFIG_HTC_DEBUG_RIL_PCN0002_DUMP_STACK)
+	dump_dbg_info();
+#endif
+
+	queue_work(dump_snoc_wq, &dump_snoc_work);
+
 	subsys_set_crash_status(drv->subsys, true);
 	restart_modem(drv);
 	return IRQ_HANDLED;
@@ -161,6 +223,7 @@ static int modem_powerup(const struct subsys_desc *subsys)
 	INIT_COMPLETION(drv->stop_ack);
 	drv->subsys_desc.ramdump_disable = 0;
 	drv->ignore_errors = false;
+	drv->q6->desc.fw_name = subsys->fw_name;
 	return pil_boot(&drv->q6->desc);
 }
 
@@ -173,6 +236,13 @@ static void modem_crash_shutdown(const struct subsys_desc *subsys)
 		gpio_set_value(subsys->force_stop_gpio, 1);
 		mdelay(STOP_ACK_TIMEOUT_MS);
 	}
+}
+
+static void modem_free_memory(const struct subsys_desc *subsys)
+{
+	struct modem_data *drv = subsys_to_drv(subsys);
+
+	pil_free_memory(&drv->q6->desc);
 }
 
 static int modem_ramdump(int enable, const struct subsys_desc *subsys)
@@ -208,10 +278,15 @@ static irqreturn_t modem_wdog_bite_intr_handler(int irq, void *dev_id)
 	struct modem_data *drv = subsys_to_drv(dev_id);
 	if (drv->ignore_errors)
 		return IRQ_HANDLED;
+
 	pr_err("Watchdog bite received from modem software!\n");
 #if defined(CONFIG_HTC_DEBUG_SSR)
 	subsys_set_restart_reason(drv->subsys, "Watchdog bite received from modem software!");
 #endif
+	if (drv->subsys_desc.system_debug &&
+			!gpio_get_value(drv->subsys_desc.err_fatal_gpio))
+		panic("%s: System ramdump requested. Triggering device restart!\n",
+							__func__);
 	subsys_set_crash_status(drv->subsys, true);
 	restart_modem(drv);
 	return IRQ_HANDLED;
@@ -228,6 +303,7 @@ static int pil_subsys_init(struct modem_data *drv,
 	drv->subsys_desc.shutdown = modem_shutdown;
 	drv->subsys_desc.powerup = modem_powerup;
 	drv->subsys_desc.ramdump = modem_ramdump;
+	drv->subsys_desc.free_memory = modem_free_memory;
 	drv->subsys_desc.crash_shutdown = modem_crash_shutdown;
 	drv->subsys_desc.err_fatal_handler = modem_err_fatal_intr_handler;
 	drv->subsys_desc.stop_ack_handler = modem_stop_ack_intr_handler;
@@ -410,6 +486,10 @@ static int pil_mss_driver_probe(struct platform_device *pdev)
 		if (ret)
 			return ret;
 	}
+
+	
+	dump_snoc_wq = create_singlethread_workqueue("dump_snoc_work");
+
 	init_completion(&drv->stop_ack);
 
 	return pil_subsys_init(drv, pdev);
@@ -422,6 +502,9 @@ static int pil_mss_driver_exit(struct platform_device *pdev)
 	subsys_unregister(drv->subsys);
 	destroy_ramdump_device(drv->ramdump_dev);
 	pil_desc_release(&drv->q6->desc);
+
+	destroy_workqueue(dump_snoc_wq);
+
 	return 0;
 }
 

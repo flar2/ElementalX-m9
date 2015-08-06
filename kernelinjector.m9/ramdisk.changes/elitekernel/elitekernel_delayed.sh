@@ -10,14 +10,14 @@ echo "sio" > /sys/block/mmcblk0/queue/scheduler
 echo "elementalx" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 
 # set default speeds 0=LP cluster; 4=HP cluster
-echo "960000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+echo "1248000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
 echo "300000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
 echo "1248000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
 echo "384000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq
 
 # force hard freq limits
-echo 960000 > /sys/power/pnpmgr/cluster/little/cpu0/thermal_freq
-echo 960000 > /sys/power/pnpmgr/thermal/thermal_final_lcpu
+echo 1248000 > /sys/power/pnpmgr/cluster/little/cpu0/thermal_freq
+echo 1248000 > /sys/power/pnpmgr/thermal/thermal_final_lcpu
 echo 1248000 > /sys/power/pnpmgr/cluster/big/cpu0/thermal_freq
 echo 1248000 > /sys/power/pnpmgr/thermal/thermal_final_bcpu
 echo 600000 > /sys/power/pnpmgr/thermal/thermal_final_gpu

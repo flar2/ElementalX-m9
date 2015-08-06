@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -87,6 +87,60 @@ static struct elem_info ipa_modem_mem_info_type_data_v01_ei[] = {
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
 		.offset		= offsetof(struct ipa_modem_mem_info_type_v01,
 					size),
+	},
+	{
+		.data_type	= QMI_EOTI,
+		.is_array	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static struct elem_info ipa_hdr_proc_ctx_tbl_info_type_data_v01_ei[] = {
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+		.offset		= offsetof(
+			struct ipa_hdr_proc_ctx_tbl_info_type_v01,
+			modem_offset_start),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+		.offset		= offsetof(
+			struct ipa_hdr_proc_ctx_tbl_info_type_v01,
+			modem_offset_end),
+	},
+	{
+		.data_type	= QMI_EOTI,
+		.is_array	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static struct elem_info ipa_zip_tbl_info_type_data_v01_ei[] = {
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+		.offset		= offsetof(struct ipa_zip_tbl_info_type_v01,
+					modem_offset_start),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= QMI_COMMON_TLV_TYPE,
+		.offset		= offsetof(struct ipa_zip_tbl_info_type_v01,
+					modem_offset_end),
 	},
 	{
 		.data_type	= QMI_EOTI,
@@ -823,6 +877,49 @@ struct elem_info ipa_init_modem_driver_req_msg_data_v01_ei[] = {
 			is_ssr_bootup),
 	},
 	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x19,
+		.offset		= offsetof(
+			struct ipa_init_modem_driver_req_msg_v01,
+			hdr_proc_ctx_tbl_info_valid),
+	},
+	{
+		.data_type	= QMI_STRUCT,
+		.elem_len	= 1,
+		.elem_size	= sizeof(
+			struct ipa_hdr_proc_ctx_tbl_info_type_v01),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x19,
+		.offset		= offsetof(
+			struct ipa_init_modem_driver_req_msg_v01,
+			hdr_proc_ctx_tbl_info),
+		.ei_array	= ipa_hdr_proc_ctx_tbl_info_type_data_v01_ei,
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x1A,
+		.offset		= offsetof(
+			struct ipa_init_modem_driver_req_msg_v01,
+			zip_tbl_info_valid),
+	},
+	{
+		.data_type	= QMI_STRUCT,
+		.elem_len	= 1,
+		.elem_size	= sizeof(struct ipa_zip_tbl_info_type_v01),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x1A,
+		.offset		= offsetof(
+			struct ipa_init_modem_driver_req_msg_v01,
+			zip_tbl_info),
+		.ei_array	= ipa_zip_tbl_info_type_data_v01_ei,
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.is_array	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -1007,6 +1104,76 @@ struct elem_info ipa_install_fltr_rule_req_msg_data_v01_ei[] = {
 			source_pipe_index),
 	},
 	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x12,
+		.offset		= offsetof(
+			struct ipa_install_fltr_rule_req_msg_v01,
+			num_ipv4_filters_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x12,
+		.offset		= offsetof(
+			struct ipa_install_fltr_rule_req_msg_v01,
+			num_ipv4_filters),
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x13,
+		.offset		= offsetof(
+			struct ipa_install_fltr_rule_req_msg_v01,
+			num_ipv6_filters_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x13,
+		.offset		= offsetof(
+			struct ipa_install_fltr_rule_req_msg_v01,
+			num_ipv6_filters),
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x14,
+		.offset		= offsetof(
+			struct ipa_install_fltr_rule_req_msg_v01,
+			xlat_filter_indices_list_valid),
+	},
+	{
+		.data_type	= QMI_DATA_LEN,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x14,
+		.offset		= offsetof(
+			struct ipa_install_fltr_rule_req_msg_v01,
+			xlat_filter_indices_list_len),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= QMI_IPA_MAX_FILTERS_V01,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= VAR_LEN_ARRAY,
+		.tlv_type	= 0x14,
+		.offset		= offsetof(
+			struct ipa_install_fltr_rule_req_msg_v01,
+			xlat_filter_indices_list),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.is_array	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -1167,6 +1334,86 @@ struct elem_info ipa_fltr_installed_notif_req_msg_data_v01_ei[] = {
 		.offset		= offsetof(
 			struct ipa_fltr_installed_notif_req_msg_v01,
 			embedded_call_mux_id),
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x13,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			num_ipv4_filters_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x13,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			num_ipv4_filters),
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x14,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			num_ipv6_filters_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x14,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			num_ipv6_filters),
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x15,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			start_ipv4_filter_idx_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x15,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			start_ipv4_filter_idx),
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint8_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x16,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			start_ipv6_filter_idx_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(uint32_t),
+		.is_array	= NO_ARRAY,
+		.tlv_type	= 0x16,
+		.offset		= offsetof(
+			struct ipa_fltr_installed_notif_req_msg_v01,
+			start_ipv6_filter_idx),
 	},
 	{
 		.data_type	= QMI_EOTI,

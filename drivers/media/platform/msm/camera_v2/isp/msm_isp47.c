@@ -55,27 +55,27 @@
 #define VFE47_NUM_STATS_COMP 2
 
 static uint32_t stats_base_addr[] = {
-	0x1E4, /* BF_SCALE */
-	0x19C, /* HDR_BE */
-	0x1F0, /* BG */
-	0x1CC, /* BF */
-	0x1B4, /* HDR_BHIST */
-	0x220, /* RS */
-	0x238, /* CS */
-	0x250, /* IHIST */
-	0x208, /* BHIST (SKIN_BHIST) */
+	0x1E4, 
+	0x19C, 
+	0x1F0, 
+	0x1CC, 
+	0x1B4, 
+	0x220, 
+	0x238, 
+	0x250, 
+	0x208, 
 };
 
 static uint8_t stats_pingpong_offset_map[] = {
-	11, /* BF_SCALE */
-	 8, /* HDR_BE */
-	12, /* BG */
-	10, /* BF */
-	 9, /* HDR_BHIST */
-	14, /* RS */
-	15, /* CS */
-	16, /* IHIST */
-	13, /* BHIST (SKIN_BHIST) */
+	11, 
+	 8, 
+	12, 
+	10, 
+	 9, 
+	14, 
+	15, 
+	16, 
+	13, 
 };
 
 #define VFE47_NUM_STATS_TYPE 9
@@ -94,34 +94,34 @@ static uint8_t stats_pingpong_offset_map[] = {
 static struct msm_cam_clk_info msm_vfe47_clk_info[VFE_CLK_INFO_MAX];
 
 static uint32_t vfe47_qos_settings_8996_v1[] = {
-	0xAAA9AAA9, /* QOS_CFG_0 */
-	0xAAA9AAA9, /* QOS_CFG_1 */
-	0xAAA9AAA9, /* QOS_CFG_2 */
-	0xAAA9AAA9, /* QOS_CFG_3 */
-	0xAAA9AAA9, /* QOS_CFG_4 */
-	0xAAA9AAA9, /* QOS_CFG_5 */
-	0xAAA9AAA9, /* QOS_CFG_6 */
-	0x0001AAA9, /* QOS_CFG_7 */
+	0xAAA9AAA9, 
+	0xAAA9AAA9, 
+	0xAAA9AAA9, 
+	0xAAA9AAA9, 
+	0xAAA9AAA9, 
+	0xAAA9AAA9, 
+	0xAAA9AAA9, 
+	0x0001AAA9, 
 };
 
 static uint32_t vfe47_ds_settings_8996_v1[] = {
-	0x44441111, /* DS_CFG_0 */
-	0x44441111, /* DS_CFG_1 */
-	0x44441111, /* DS_CFG_2 */
-	0x44441111, /* DS_CFG_3 */
-	0x44441111, /* DS_CFG_4 */
-	0x44441111, /* DS_CFG_5 */
-	0x44441111, /* DS_CFG_6 */
-	0x44441111, /* DS_CFG_7 */
-	0x44441111, /* DS_CFG_8 */
-	0x44441111, /* DS_CFG_9 */
-	0x44441111, /* DS_CFG_10 */
-	0x44441111, /* DS_CFG_11 */
-	0x44441111, /* DS_CFG_12 */
-	0x44441111, /* DS_CFG_13 */
-	0x44441111, /* DS_CFG_14 */
-	0x44441111, /* DS_CFG_15 */
-	0x00000103, /* DS_CFG_16 */
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x44441111, 
+	0x00000103, 
 };
 
 static void msm_vfe47_init_qos_parms(struct vfe_device *vfe_dev)
@@ -282,9 +282,9 @@ static void msm_vfe47_init_hardware_reg(struct vfe_device *vfe_dev)
 	msm_vfe47_init_vbif_parms(vfe_dev);
 	msm_vfe47_init_danger_safe_parms(vfe_dev);
 
-	/* BUS_CFG */
+	
 	msm_camera_io_w(0x00000001, vfe_dev->vfe_base + 0x84);
-	/* IRQ_MASK/CLEAR */
+	
 	msm_camera_io_w(0xE00000F1, vfe_dev->vfe_base + 0x5C);
 	msm_camera_io_w_mb(0xE1FFFFFF, vfe_dev->vfe_base + 0x60);
 	msm_camera_io_w(0xFFFFFFFF, vfe_dev->vfe_base + 0x64);
@@ -446,7 +446,7 @@ static void msm_vfe47_process_reg_update(struct vfe_device *vfe_dev,
 
 	if (!(irq_status0 & 0xF0))
 		return;
-	/* Shift status bits so that PIX SOF is 1st bit */
+	
 	shift_irq = ((irq_status0 & 0xF0) >> 4);
 
 	for (i = VFE_PIX_0; i <= VFE_RAW_2; i++) {
@@ -467,10 +467,6 @@ static void msm_vfe47_process_reg_update(struct vfe_device *vfe_dev,
 			case VFE_RAW_2:
 				msm_isp_notify(vfe_dev, ISP_EVENT_SOF, i, ts);
 				msm_isp_update_framedrop_reg(vfe_dev, i);
-				/*
-				 * Reg Update is pseudo SOF for RDI,
-				 * so request every frame
-				 */
 				vfe_dev->hw_info->vfe_ops.core_ops.
 					reg_update(vfe_dev, i);
 				break;
@@ -513,16 +509,12 @@ static void msm_vfe47_reg_update(struct vfe_device *vfe_dev,
 	enum msm_vfe_input_src frame_src)
 {
 	uint32_t update_mask = 0;
-	/* This HW supports upto VFE_RAW_2 */
+	
 	if (frame_src > VFE_RAW_2 && frame_src != VFE_SRC_MAX) {
 		pr_err("%s Error case\n", __func__);
 		return;
 	}
 
-	/*
-	 * If frame_src == VFE_SRC_MAX request reg_update on all
-	 * supported INTF
-	 */
 	if (frame_src == VFE_SRC_MAX)
 		update_mask = 0xF;
 	else
@@ -577,7 +569,7 @@ static void msm_vfe47_axi_update_cgc_override(struct vfe_device *vfe_dev,
 {
 	uint32_t val;
 
-	/* Change CGC override */
+	
 	val = msm_camera_io_r(vfe_dev->vfe_base + 0x3C);
 	if (enable)
 		val |= (1 << wm_idx);
@@ -741,11 +733,11 @@ static int32_t msm_vfe47_cfg_io_format(struct vfe_device *vfe_dev,
 	enum msm_isp_pack_fmt pack_fmt = 0, read_pack_fmt = 0;
 	uint32_t bpp_reg = 0, pack_reg = 0;
 	uint32_t read_bpp_reg = 0, read_pack_reg = 0;
-	uint32_t io_format_reg = 0; /*io format register bit*/
+	uint32_t io_format_reg = 0; 
 
 	io_format_reg = msm_camera_io_r(vfe_dev->vfe_base + 0x88);
 
-	/*input config*/
+	
 	if ((stream_src < RDI_INTF_0) &&
 		(vfe_dev->axi_data.src_info[VFE_PIX_0].input_mux ==
 		EXTERNAL_READ)) {
@@ -767,7 +759,7 @@ static int32_t msm_vfe47_cfg_io_format(struct vfe_device *vfe_dev,
 				__func__, rc);
 			return rc;
 		}
-		/*use input format(v4l2_pix_fmt) to get pack format*/
+		
 		io_format_reg &= 0xFFC8FFFF;
 		io_format_reg |= (read_bpp_reg << 20 | read_pack_reg << 16);
 	}
@@ -789,7 +781,7 @@ static int32_t msm_vfe47_cfg_io_format(struct vfe_device *vfe_dev,
 		io_format_reg |= bpp_reg << 12;
 		break;
 	case IDEAL_RAW:
-		/*use output format(v4l2_pix_fmt) to get pack format*/
+		
 		pack_fmt = msm_isp_get_pack_format(io_format);
 		rc = msm_vfe47_convert_io_fmt_to_reg(pack_fmt, &pack_reg);
 		if (rc < 0) {
@@ -824,8 +816,6 @@ static int msm_vfe47_start_fetch_engine(struct vfe_device *vfe_dev,
 		return -EINVAL;
 	}
 
-	/* There is other option of passing buffer address from user,
-		in such case, driver needs to map the buffer and use it*/
 	bufq_handle = vfe_dev->buf_mgr->ops->get_bufq_handle(
 		vfe_dev->buf_mgr, fe_cfg->session_id, fe_cfg->stream_id);
 	vfe_dev->fetch_engine_info.bufq_handle = bufq_handle;
@@ -892,7 +882,7 @@ static void msm_vfe47_cfg_fetch_engine(struct vfe_device *vfe_dev,
 			((fe_cfg->buf_height - 1) & 0x3FFF);
 		msm_camera_io_w(temp, vfe_dev->vfe_base + 0x284);
 
-		/* need to use formulae to calculate MAIN_UNPACK_PATTERN*/
+		
 		msm_camera_io_w(0xF6543210, vfe_dev->vfe_base + 0x288);
 		msm_camera_io_w(0xF, vfe_dev->vfe_base + 0x2A4);
 
@@ -955,12 +945,12 @@ static void msm_vfe47_cfg_input_mux(struct vfe_device *vfe_dev,
 		msm_vfe47_cfg_camif(vfe_dev, pix_cfg);
 		break;
 	case TESTGEN:
-		/* Change CGC override */
+		
 		val = msm_camera_io_r(vfe_dev->vfe_base + 0x3C);
 		val |= (1 << 31);
 		msm_camera_io_w(val, vfe_dev->vfe_base + 0x3C);
 
-		/* CAMIF and TESTGEN will both go thorugh CAMIF*/
+		
 		core_cfg |= 0x1 << 5;
 		msm_camera_io_w_mb(core_cfg, vfe_dev->vfe_base + 0x50);
 		msm_vfe47_cfg_camif(vfe_dev, pix_cfg);
@@ -1006,13 +996,13 @@ static void msm_vfe47_update_camif_state(struct vfe_device *vfe_dev,
 		msm_camera_io_w_mb(0x1, vfe_dev->vfe_base + 0x3A8);
 		msm_camera_io_w_mb(0x200, vfe_dev->vfe_base + 0x4A0);
 		vfe_dev->axi_data.src_info[VFE_PIX_0].active = 1;
-		/* testgen GO*/
+		
 		if (vfe_dev->axi_data.src_info[VFE_PIX_0].input_mux == TESTGEN)
 			msm_camera_io_w(1, vfe_dev->vfe_base + 0xAF4);
 	} else if (update_state == DISABLE_CAMIF) {
 		msm_camera_io_w_mb(0x0, vfe_dev->vfe_base + 0x3A8);
 		vfe_dev->axi_data.src_info[VFE_PIX_0].active = 0;
-		/* testgen OFF*/
+		
 		if (vfe_dev->axi_data.src_info[VFE_PIX_0].input_mux == TESTGEN)
 			msm_camera_io_w(1 << 1, vfe_dev->vfe_base + 0xAF4);
 	} else if (update_state == DISABLE_CAMIF_IMMEDIATELY) {
@@ -1052,7 +1042,7 @@ static void msm_vfe47_axi_cfg_wm_reg(
 		val |= 0x2;
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0xC);
 	if (!stream_info->frame_based) {
-		/* WR_IMAGE_SIZE */
+		
 		val = ((msm_isp_cal_word_per_line(
 			stream_info->output_format,
 			stream_info->plane_cfg[plane_idx].
@@ -1060,7 +1050,7 @@ static void msm_vfe47_axi_cfg_wm_reg(
 			(stream_info->plane_cfg[plane_idx].
 			output_height - 1);
 		msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x14);
-		/* WR_BUFFER_CFG */
+		
 		val = VFE47_BURST_LEN |
 			(stream_info->plane_cfg[plane_idx].output_height - 1) <<
 			2 |
@@ -1069,10 +1059,10 @@ static void msm_vfe47_axi_cfg_wm_reg(
 			output_stride)+1)/2) << 16;
 	}
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x18);
-	/* WR_IRQ_SUBSAMPLE_PATTERN */
+	
 	msm_camera_io_w(0xFFFFFFFF,
 		vfe_dev->vfe_base + wm_base + 0x20);
-	/* TD: Add IRQ subsample pattern */
+	
 }
 
 static void msm_vfe47_axi_clear_wm_reg(
@@ -1082,13 +1072,13 @@ static void msm_vfe47_axi_clear_wm_reg(
 	uint32_t val = 0;
 	uint32_t wm_base = VFE47_WM_BASE(stream_info->wm[plane_idx]);
 
-	/* WR_ADDR_CFG */
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0xC);
-	/* WR_IMAGE_SIZE */
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x14);
-	/* WR_BUFFER_CFG */
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x18);
-	/* WR_IRQ_SUBSAMPLE_PATTERN */
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + wm_base + 0x20);
 }
 
@@ -1109,21 +1099,21 @@ static void msm_vfe47_axi_cfg_wm_xbar_reg(
 	case PIX_VIEWFINDER: {
 		if (plane_cfg->output_plane_format != CRCB_PLANE &&
 			plane_cfg->output_plane_format != CBCR_PLANE) {
-			/* SINGLE_STREAM_SEL */
+			
 			xbar_cfg |= plane_cfg->output_plane_format << 8;
 		} else {
 			switch (stream_info->output_format) {
 			case V4L2_PIX_FMT_NV12:
 			case V4L2_PIX_FMT_NV14:
 			case V4L2_PIX_FMT_NV16:
-				/* PAIR_STREAM_SWAP_CTRL */
+				
 				xbar_cfg |= 0x3 << 4;
 				break;
 			}
-			xbar_cfg |= 0x1 << 2; /* PAIR_STREAM_EN */
+			xbar_cfg |= 0x1 << 2; 
 		}
 		if (stream_info->stream_src == PIX_VIEWFINDER)
-			xbar_cfg |= 0x1; /* VIEW_STREAM_EN */
+			xbar_cfg |= 0x1; 
 		else if (stream_info->stream_src == PIX_VIDEO)
 			xbar_cfg |= 0x2;
 		break;
@@ -1264,32 +1254,32 @@ static int msm_vfe47_axi_halt(struct vfe_device *vfe_dev,
 	int rc = 0;
 	enum msm_vfe_input_src i;
 
-	/* Keep only halt and restart mask */
+	
 	msm_camera_io_w(BIT(31), vfe_dev->vfe_base + 0x5C);
 	msm_camera_io_w(BIT(8), vfe_dev->vfe_base + 0x60);
 
-	/*Clear IRQ Status0, only leave reset irq mask*/
+	
 	msm_camera_io_w(0x7FFFFFFF, vfe_dev->vfe_base + 0x64);
 
-	/*Clear IRQ Status1, only leave halt irq mask*/
+	
 	msm_camera_io_w(0xFFFFFEFF, vfe_dev->vfe_base + 0x68);
 
-	/*push clear cmd*/
+	
 	msm_camera_io_w(0x1, vfe_dev->vfe_base + 0x58);
 
 	if (blocking) {
 		init_completion(&vfe_dev->halt_complete);
-		/* Halt AXI Bus Bridge */
+		
 		msm_camera_io_w_mb(0x1, vfe_dev->vfe_base + 0x374);
 		rc = wait_for_completion_timeout(
 			&vfe_dev->halt_complete, msecs_to_jiffies(500));
 	} else {
-		/* Halt AXI Bus Bridge */
+		
 		msm_camera_io_w_mb(0x1, vfe_dev->vfe_base + 0x374);
 	}
 
 	for (i = VFE_PIX_0; i <= VFE_RAW_2; i++) {
-		/* if any stream is waiting for update, signal complete */
+		
 		if (vfe_dev->axi_data.stream_update[i]) {
 			ISP_DBG("%s: complete stream update\n", __func__);
 			msm_isp_axi_stream_update(vfe_dev, i);
@@ -1323,7 +1313,7 @@ static int msm_vfe47_axi_restart(struct vfe_device *vfe_dev,
 	msm_camera_io_w(0xFFFFFEFF, vfe_dev->vfe_base + 0x68);
 	msm_camera_io_w(0x1, vfe_dev->vfe_base + 0x58);
 
-	/* Start AXI */
+	
 	msm_camera_io_w(0x0, vfe_dev->vfe_base + 0x374);
 
 	vfe_dev->hw_info->vfe_ops.core_ops.reg_update(vfe_dev, VFE_SRC_MAX);
@@ -1416,7 +1406,7 @@ static void msm_vfe47_stats_cfg_comp_mask(
 
 
 	if (vfe_dev->hw_info->stats_hw_info->num_stats_comp_mask < 1)
-		/* no stats composite masks */
+		
 		return;
 
 	if (vfe_dev->hw_info->stats_hw_info->num_stats_comp_mask >
@@ -1428,7 +1418,7 @@ static void msm_vfe47_stats_cfg_comp_mask(
 		return;
 	}
 
-	/* BF scale is controlled by BF also so ignore bit 0 of BF scale */
+	
 	stats_mask = stats_mask & 0x1FF;
 	mask_bf_scale = stats_mask >> SHIFT_BF_SCALE_BIT;
 
@@ -1503,21 +1493,16 @@ static void msm_vfe47_stats_cfg_wm_reg(
 	int stats_idx = STATS_IDX(stream_info->stream_handle);
 	uint32_t stats_base = VFE47_STATS_BASE(stats_idx);
 
-	/*
-	 * BF_SCALE does not have its own WR_ADDR_CFG,
-	 * IRQ_FRAMEDROP_PATTERN and IRQ_SUBSAMPLE_PATTERN;
-	 * it's using the same from BF.
-	 */
 	if (stats_idx == STATS_IDX_BF_SCALE)
 		return;
 
-	/* WR_ADDR_CFG */
+	
 	msm_camera_io_w(stream_info->framedrop_period << 2,
 		vfe_dev->vfe_base + stats_base + 0x8);
-	/* WR_IRQ_FRAMEDROP_PATTERN */
+	
 	msm_camera_io_w(stream_info->framedrop_pattern,
 		vfe_dev->vfe_base + stats_base + 0x10);
-	/* WR_IRQ_SUBSAMPLE_PATTERN */
+	
 	msm_camera_io_w(0xFFFFFFFF,
 		vfe_dev->vfe_base + stats_base + 0x14);
 }
@@ -1530,19 +1515,14 @@ static void msm_vfe47_stats_clear_wm_reg(
 	int stats_idx = STATS_IDX(stream_info->stream_handle);
 	uint32_t stats_base = VFE47_STATS_BASE(stats_idx);
 
-	/*
-	 * BF_SCALE does not have its own WR_ADDR_CFG,
-	 * IRQ_FRAMEDROP_PATTERN and IRQ_SUBSAMPLE_PATTERN;
-	 * it's using the same from BF.
-	 */
 	if (stats_idx == STATS_IDX_BF_SCALE)
 		return;
 
-	/* WR_ADDR_CFG */
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + stats_base + 0x8);
-	/* WR_IRQ_FRAMEDROP_PATTERN */
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + stats_base + 0x10);
-	/* WR_IRQ_SUBSAMPLE_PATTERN */
+	
 	msm_camera_io_w(val, vfe_dev->vfe_base + stats_base + 0x14);
 }
 
@@ -1551,15 +1531,15 @@ static void msm_vfe47_stats_cfg_ub(struct vfe_device *vfe_dev)
 	int i;
 	uint32_t ub_offset = 0;
 	uint32_t ub_size[VFE47_NUM_STATS_TYPE] = {
-		16, /* MSM_ISP_STATS_BF_SCALE */
-		16, /* MSM_ISP_STATS_HDR_BE */
-		16, /* MSM_ISP_STATS_BG */
-		16, /* MSM_ISP_STATS_BF */
-		16, /* MSM_ISP_STATS_HDR_BHIST */
-		16, /* MSM_ISP_STATS_RS */
-		16, /* MSM_ISP_STATS_CS */
-		16, /* MSM_ISP_STATS_IHIST */
-		16, /* MSM_ISP_STATS_BHIST */
+		16, 
+		16, 
+		16, 
+		16, 
+		16, 
+		16, 
+		16, 
+		16, 
+		16, 
 	};
 	if (vfe_dev->pdev->id == ISP_VFE1) {
 		ub_offset = VFE47_UB_SIZE_VFE1;
@@ -1621,7 +1601,7 @@ static void msm_vfe47_stats_update_cgc_override(struct vfe_device *vfe_dev,
 		}
 	}
 
-	/* CGC override */
+	
 	module_cfg = msm_camera_io_r(vfe_dev->vfe_base + 0x30);
 	if (enable)
 		module_cfg |= cgc_mask;

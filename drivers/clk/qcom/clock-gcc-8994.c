@@ -3086,6 +3086,28 @@ int is_xo_src(struct clk *clk)
                 return 0;
 }
 
+void clk_ignore_list_add(const char *clock_name)
+{
+	struct clk_lookup *p, *cl = NULL;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(gcc_clocks_8994_common); i++) {
+		p = &gcc_clocks_8994_common[i];
+		if (p->clk && !strcmp(p->clk->dbg_name, clock_name)) {
+			cl = p;
+		}
+	}
+	if (cl)
+	cl->clk->flags |= CLKFLAG_IGNORE;
+}
+
+int __init clk_ignore_list_init(void)
+{
+	clk_ignore_list_add("gcc_blsp1_uart2_apps_clk");
+	return 0;
+}
+module_init(clk_ignore_list_init);
+
 static int clock_blocked_print_one(struct clk *c)
 {
         if (!c || !c->prepare_count)

@@ -39,7 +39,7 @@ struct msm_bus_noc_ops {
 			uint32_t qos_delta, uint32_t qos_freq);
 	int (*limit_mport)(struct msm_bus_node_device_type *dev,
 			void __iomem *qos_base, uint32_t qos_off,
-			uint32_t qos_delta, uint32_t qos_freq, bool enable_lim,
+			uint32_t qos_delta, uint32_t qos_freq, int enable_lim,
 			uint64_t lim_bw);
 	bool (*update_bw_reg)(int mode);
 };
@@ -70,6 +70,8 @@ struct qos_params_type {
 	unsigned int prio_wr;
 	unsigned int prio1;
 	unsigned int prio0;
+	unsigned int reg_prio1;
+	unsigned int reg_prio0;
 	unsigned int gp;
 	unsigned int thmp;
 	unsigned int ws;
@@ -100,6 +102,9 @@ struct msm_bus_node_info_type {
 	unsigned int buswidth;
 	struct rule_update_path_info rule;
 	uint64_t lim_bw;
+	uint32_t util_fact;
+	uint32_t vrail_comp;
+	uint32_t num_aggports;
 };
 
 struct msm_bus_node_device_type {
@@ -116,7 +121,7 @@ struct msm_bus_node_device_type {
 };
 
 int msm_bus_enable_limiter(struct msm_bus_node_device_type *nodedev,
-				bool throttle_en, uint64_t lim_bw);
+				int throttle_en, uint64_t lim_bw);
 int msm_bus_update_clks(struct msm_bus_node_device_type *nodedev,
 	int ctx, int **dirty_nodes, int *num_dirty);
 #ifdef CONFIG_HTC_DEBUG_MSMBUS

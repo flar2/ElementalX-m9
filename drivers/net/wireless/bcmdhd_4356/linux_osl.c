@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: linux_osl.c 528428 2015-01-22 08:14:59Z $
+ * $Id: linux_osl.c 544165 2015-03-26 07:15:26Z $
  */
 
 #define LINUX_PORT
@@ -83,9 +83,6 @@ extern spinlock_t l2x0_reg_lock;
 #define DHD_SKB_1PAGE_BUFSIZE	(PAGE_SIZE*1)
 #define DHD_SKB_2PAGE_BUFSIZE	(PAGE_SIZE*2)
 #define DHD_SKB_4PAGE_BUFSIZE	(PAGE_SIZE*4)
-
-#define PREALLOC_FREE_MAGIC		0xFEDC
-#define PREALLOC_USED_MAGIC		0xFCDE
 #else
 #define DHD_SKB_HDRSIZE		336
 #define DHD_SKB_1PAGE_BUFSIZE	((PAGE_SIZE*1)-DHD_SKB_HDRSIZE)
@@ -380,9 +377,7 @@ int osl_static_mem_init(osl_t *osh, void *adapter)
 	return 0;
 #else
 	if (!bcm_static_skb && adapter) {
-#if defined(MEM_DEBUG)
 		int i;
-#endif
 		void *skb_buff_ptr = 0;
 		bcm_static_skb = (bcm_static_pkt_t *)((char *)bcm_static_buf + 2048);
 		skb_buff_ptr = wifi_platform_prealloc(adapter, 4, 0);
@@ -399,7 +394,13 @@ int osl_static_mem_init(osl_t *osh, void *adapter)
 #if defined(MEM_DEBUG)
 		bcm_static_skb->min = (void *)-1;
 		bcm_static_skb->max = (void *)0;
+#endif 
 		for (i = 0; i < STATIC_PKT_MAX_NUM; i++) {
+#if defined(MEM_DEBUG)
+#if defined(MEM_DEBUG_PAGEALLOC)
+			struct sk_buff *skb = bcm_static_skb->skb_8k[i];
+			memset(skb->head, PAGE_POISON, skb_end_offset(skb));
+#endif 
 			printk("[WLAN] %s: %d skb %p min %p max %p\n",
 				__FUNCTION__, i,
 				bcm_static_skb->skb_8k[i],
@@ -409,13 +410,15 @@ int osl_static_mem_init(osl_t *osh, void *adapter)
 				bcm_static_skb->min = bcm_static_skb->skb_8k[i];
 			if (bcm_static_skb->skb_8k[i] > bcm_static_skb->max)
 				bcm_static_skb->max = bcm_static_skb->skb_8k[i];
+#endif 
 			bcm_static_skb->pkt_use[i] = 0;
 		}
+#if defined(MEM_DEBUG)
 		printk("[WLAN] %s: min %p max %p\n",
 			__FUNCTION__,
 			bcm_static_skb->min,
 			bcm_static_skb->max);
-#endif
+#endif 
 
 #if defined(BCMPCIE)
 		spin_lock_init(&bcm_static_skb->osl_pkt_lock);
@@ -940,6 +943,15 @@ next_skb:
 	}
 }
 
+#if defined(MEM_DEBUG) && defined(MEM_DEBUG_PAGEALLOC)
+static bool single_bit_flip(unsigned char a, unsigned char b)
+{
+	unsigned char error = a ^ b;
+
+	return error && !(error & (error - 1));
+}
+#endif 
+
 #ifdef CONFIG_DHD_USE_STATIC_BUF
 void*
 osl_pktget_static(osl_t *osh, uint len)
@@ -979,6 +991,12 @@ osl_pktget_static(osl_t *osh, uint len)
 
 		if ((i != STATIC_PKT_2PAGE_NUM) &&
 			(index >= 0) && (index < STATIC_PKT_2PAGE_NUM)) {
+#if defined(MEM_DEBUG) && defined(MEM_DEBUG_PAGEALLOC)
+			unsigned char *start;
+			unsigned char *end;
+			char line[256] = "";
+			int dump_len;
+#endif 
 			bcm_static_skb->pkt_use[index] = 1;
 			skb = bcm_static_skb->skb_8k[index];
 			skb->data = skb->head + NET_SKB_PAD;
@@ -991,8 +1009,27 @@ osl_pktget_static(osl_t *osh, uint len)
 #endif 
 			skb->len = len;
 #if defined(MEM_DEBUG)
-			printk("[WLAN] %s: Get Static %d p %p \n", __FUNCTION__, i, skb);
-#endif
+			printk("[WLAN] %s: Get Static %d p %p \n", __FUNCTION__, index, skb);
+#if defined(MEM_DEBUG_PAGEALLOC)
+			dump_len = (skb->len > 128) ? 128 : skb->len;
+			start = memchr_inv(skb->data, PAGE_POISON, skb->len);
+			if (!start)
+				goto pagealloc_done;
+			for (end = skb_tail_pointer(skb) - 1; end > start; end--) {
+				if (*end != PAGE_POISON)
+					break;
+			}
+			if (start == end && single_bit_flip(*start, PAGE_POISON))
+				printk(KERN_ERR "[WLAN] %s: single bit error\n", __FUNCTION__);
+			else
+				printk(KERN_ERR "[WLAN] %s: memory corruption\n", __FUNCTION__);
+			snprintf(line, sizeof(line), "skb get %p data %p len %d",
+				skb, skb->data, skb->len);
+			bcm_print_bytes(line, (uchar *)skb->data, dump_len);
+			dump_stack();
+pagealloc_done:
+#endif 
+#endif 
 			skb->mac_len = PREALLOC_USED_MAGIC;
 			spin_unlock_irqrestore(&bcm_static_skb->osl_pkt_lock, flags);
 			return skb;
@@ -1000,7 +1037,7 @@ osl_pktget_static(osl_t *osh, uint len)
 	}
 
 	spin_unlock_irqrestore(&bcm_static_skb->osl_pkt_lock, flags);
-	printk("%s: all static pkt in use!\n", __FUNCTION__);
+	printk("[WLAN] %s: all static pkt in use!\n", __FUNCTION__);
 	return NULL;
 #else
 	down(&bcm_static_skb->osl_pkt_sem);
@@ -1110,10 +1147,14 @@ osl_pktfree_static(osl_t *osh, void *p, bool send)
 			bcm_static_skb->pkt_use[i] = 0;
 #if defined(MEM_DEBUG)
 			printk("[WLAN] %s: Free Static %d p %p \n", __FUNCTION__, i, p);
-#endif
+#if defined(MEM_DEBUG_PAGEALLOC)
+			memset(skb->head, PAGE_POISON, skb_end_offset(skb));
+#endif 
+#endif 
 			if (skb->mac_len != PREALLOC_USED_MAGIC)
 			{
-				printk("[WLAN] %s: Free Static p %p not in used\n", __FUNCTION__, p);
+				printk("[WLAN] %s: Free Static p %p not in used\n",
+					__FUNCTION__, p);
 				dump_stack();
 			}
 			skb->mac_len = PREALLOC_FREE_MAGIC;
@@ -1123,7 +1164,17 @@ osl_pktfree_static(osl_t *osh, void *p, bool send)
 	}
 
 	spin_unlock_irqrestore(&bcm_static_skb->osl_pkt_lock, flags);
-	printk("%s: packet %p does not exist in the pool\n", __FUNCTION__, p);
+	printk("[WLAN] %s: packet %p does not exist in the pool\n", __FUNCTION__, p);
+
+	
+	
+	
+	
+	
+	printk("[WLAN] %s: try osl_pktfree instead\n", __FUNCTION__);
+	osl_pktfree(osh, p, send);
+	
+
 #else
 	down(&bcm_static_skb->osl_pkt_sem);
 
@@ -1366,7 +1417,7 @@ osl_malloc(osl_t *osh, uint size)
 			if (i == STATIC_BUF_MAX_NUM)
 			{
 				up(&bcm_static_buf->static_sem);
-				printk("all static buff in use!\n");
+				printk("[WLAN] all static buff in use!\n");
 				goto original;
 			}
 

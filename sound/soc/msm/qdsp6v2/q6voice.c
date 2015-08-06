@@ -2036,11 +2036,14 @@ static int voice_send_set_device_cmd(struct voice_data *v)
 	int ret = 0;
 	void *apr_cvp;
 	u16 cvp_handle;
-
+	int voc_idx = 0;
 	if (v == NULL) {
 		pr_err("%s: v is NULL\n", __func__);
 		return -EINVAL;
 	}
+
+	voc_idx = voice_get_idx_for_session(v->session_id);
+
 	apr_cvp = common.apr_q6_cvp;
 
 	if (!apr_cvp) {
@@ -2070,11 +2073,11 @@ static int voice_send_set_device_cmd(struct voice_data *v)
 	cvp_setdev_cmd.cvp_set_device_v2.tx_port_id = v->dev_tx.port_id;
 	cvp_setdev_cmd.cvp_set_device_v2.rx_port_id = v->dev_rx.port_id;
 
-	if (common.ec_ref_ext) {
+	if (common.ec_ref_ext[voc_idx]) {
 		cvp_setdev_cmd.cvp_set_device_v2.vocproc_mode =
 				VSS_IVOCPROC_VOCPROC_MODE_EC_EXT_MIXING;
 		cvp_setdev_cmd.cvp_set_device_v2.ec_ref_port_id =
-				common.ec_port_id;
+				common.ec_port_id[voc_idx];
 	} else {
 		cvp_setdev_cmd.cvp_set_device_v2.vocproc_mode =
 				    VSS_IVOCPROC_VOCPROC_MODE_EC_INT_MIXING;
@@ -3255,10 +3258,14 @@ static int voice_setup_vocproc(struct voice_data *v)
 	struct cvp_create_full_ctl_session_cmd cvp_session_cmd;
 	int ret = 0;
 	void *apr_cvp;
+	int voc_idx = 0;
 	if (v == NULL) {
 		pr_err("%s: v is NULL\n", __func__);
 		return -EINVAL;
 	}
+
+	voc_idx = voice_get_idx_for_session(v->session_id);
+
 	apr_cvp = common.apr_q6_cvp;
 
 	if (!apr_cvp) {
@@ -3290,11 +3297,11 @@ static int voice_setup_vocproc(struct voice_data *v)
 	cvp_session_cmd.cvp_session.rx_port_id = v->dev_rx.port_id;
 	cvp_session_cmd.cvp_session.profile_id =
 					 VSS_ICOMMON_CAL_NETWORK_ID_NONE;
-	if (common.ec_ref_ext) {
+	if (common.ec_ref_ext[voc_idx]) { 
 		cvp_session_cmd.cvp_session.vocproc_mode =
 				VSS_IVOCPROC_VOCPROC_MODE_EC_EXT_MIXING;
 		cvp_session_cmd.cvp_session.ec_ref_port_id =
-					common.ec_port_id;
+					common.ec_port_id[voc_idx]; 
 	} else {
 		cvp_session_cmd.cvp_session.vocproc_mode =
 				 VSS_IVOCPROC_VOCPROC_MODE_EC_INT_MIXING;
@@ -4642,12 +4649,14 @@ static int voc_disable_cvp(uint32_t session_id)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
-
+	int voc_idx = 0;
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
 
 		return -EINVAL;
 	}
+
+	voc_idx = voice_get_idx_for_session(v->session_id);
 
 	mutex_lock(&v->lock);
 
@@ -4670,8 +4679,8 @@ static int voc_disable_cvp(uint32_t session_id)
 	}
 	mutex_unlock(&v->lock);
 
-	if (common.ec_ref_ext)
-		voc_set_ext_ec_ref(AFE_PORT_INVALID, false);
+	if (common.ec_ref_ext[voc_idx]) 
+		voc_set_ext_ec_ref(AFE_PORT_INVALID, false, voc_idx); 
 
 done:
 	return ret;
@@ -5142,12 +5151,14 @@ int voc_end_voice_call(uint32_t session_id)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
-
+	int voc_idx = 0;
 	if (v == NULL) {
 		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
 
 		return -EINVAL;
 	}
+
+	voc_idx = voice_get_idx_for_session(v->session_id);
 
 	mutex_lock(&v->lock);
 
@@ -5174,8 +5185,8 @@ int voc_end_voice_call(uint32_t session_id)
 
 		ret = -EINVAL;
 	}
-	if (common.ec_ref_ext)
-		voc_set_ext_ec_ref(AFE_PORT_INVALID, false);
+	if (common.ec_ref_ext[voc_idx]) 
+		voc_set_ext_ec_ref(AFE_PORT_INVALID, false, voc_idx); 
 
 	mutex_unlock(&v->lock);
 	return ret;
@@ -5233,12 +5244,14 @@ int voc_disable_device(uint32_t session_id)
 {
 	struct voice_data *v = voice_get_session(session_id);
 	int ret = 0;
-
+	int voc_idx = 0;
 	pr_debug("%s: voc state=%d\n", __func__, v->voc_state);
 	if (v == NULL) {
 		pr_err("%s: v is NULL\n", __func__);
 		return -EINVAL;
 	}
+
+	voc_idx = voice_get_idx_for_session(v->session_id);
 
 	mutex_lock(&v->lock);
 	if (v->voc_state == VOC_RUN) {
@@ -5259,8 +5272,8 @@ int voc_disable_device(uint32_t session_id)
 			 __func__, v->voc_state);
 	}
 
-	if (common.ec_ref_ext)
-		voc_set_ext_ec_ref(AFE_PORT_INVALID, false);
+	if (common.ec_ref_ext[voc_idx]) 
+		voc_set_ext_ec_ref(AFE_PORT_INVALID, false, voc_idx); 
 done:
 	mutex_unlock(&v->lock);
 
@@ -5494,10 +5507,13 @@ fail:
 	return ret;
 }
 
-int voc_set_ext_ec_ref(uint16_t port_id, bool state)
+int voc_set_ext_ec_ref(uint16_t port_id, bool state, int voc_idx) 
 {
 	int ret = 0;
-
+	if(voc_idx < 0 || voc_idx >= MAX_VOC_SESSIONS) {
+		pr_err("voc_idx %d is invalid\n",voc_idx);
+		return ret;
+	}
 	mutex_lock(&common.common_lock);
 	if (state == true) {
 		if (port_id == AFE_PORT_INVALID) {
@@ -5505,11 +5521,11 @@ int voc_set_ext_ec_ref(uint16_t port_id, bool state)
 			ret = -EINVAL;
 			goto exit;
 		}
-		common.ec_port_id = port_id;
-		common.ec_ref_ext = true;
+		common.ec_port_id[voc_idx] = port_id;	
+		common.ec_ref_ext[voc_idx] = true;	
 	} else {
-		common.ec_ref_ext = false;
-		common.ec_port_id = port_id;
+		common.ec_ref_ext[voc_idx] = false;	
+		common.ec_port_id[voc_idx] = port_id;	
 	}
 exit:
 	mutex_unlock(&common.common_lock);
@@ -6994,7 +7010,9 @@ static int __init voice_init(void)
 	common.default_vol_step_val = 0;
 	common.default_vol_ramp_duration_ms = DEFAULT_VOLUME_RAMP_DURATION;
 	common.default_mute_ramp_duration_ms = DEFAULT_MUTE_RAMP_DURATION;
-	common.ec_ref_ext = false;
+	
+	
+
 	
 	common.mvs_info.network_type = VSS_NETWORK_ID_DEFAULT;
 
@@ -7042,6 +7060,7 @@ static int __init voice_init(void)
 		init_waitqueue_head(&common.voice[i].cvp_wait);
 
 		mutex_init(&common.voice[i].lock);
+		common.ec_ref_ext[i] = false;
 	}
 
 	if (voice_init_cal_data())

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,6 +37,12 @@ static DEFINE_MUTEX(scm_lock);
 
 #define SCM_EBUSY_WAIT_MS 30
 #define SCM_EBUSY_MAX_RETRY 20
+#define SCM_EBUSY_MAX_RETRY_RESTORE_CFG 60
+
+#define RESTORE_SEC_CFG    2
+
+#define IOMMU_SEC_ID	18
+#define IOMMU_SPARE_NUM	0
 
 #define N_EXT_SCM_ARGS 7
 #define FIRST_EXT_ARG_IDX 3
@@ -502,10 +508,19 @@ static int allocate_extra_arg_buffer(struct scm_desc *desc, gfp_t flags)
 	return 0;
 }
 
+static inline bool is_restore_cfg(u32 fn_id, struct scm_desc *desc)
+{
+	return fn_id == SCM_SIP_FNID(SCM_SVC_MP, RESTORE_SEC_CFG) &&
+		desc->args[0] == IOMMU_SEC_ID &&
+		desc->args[1] == IOMMU_SPARE_NUM;
+}
+
 int scm_call2(u32 fn_id, struct scm_desc *desc)
 {
 	int arglen = desc->arginfo & 0xf;
 	int ret, retry_count = 0;
+	int retry_count_max = is_restore_cfg(fn_id, desc)?
+		SCM_EBUSY_MAX_RETRY_RESTORE_CFG:SCM_EBUSY_MAX_RETRY;
 	u64 x0;
 
 	ret = allocate_extra_arg_buffer(desc, GFP_KERNEL);
@@ -539,7 +554,7 @@ int scm_call2(u32 fn_id, struct scm_desc *desc)
 
 		if (ret == SCM_V2_EBUSY)
 			msleep(SCM_EBUSY_WAIT_MS);
-	}  while (ret == SCM_V2_EBUSY && (retry_count++ < SCM_EBUSY_MAX_RETRY));
+	}  while (ret == SCM_V2_EBUSY && (retry_count++ < retry_count_max));
 
 	if (ret < 0)
 		pr_err("scm_call failed: func id %#llx, arginfo: %#x, args: %#llx, %#llx, %#llx, %#llx, ret: %d, syscall returns: %#llx, %#llx, %#llx\n",
@@ -759,6 +774,47 @@ s32 scm_call_atomic4_3(u32 svc, u32 cmd, u32 arg1, u32 arg2,
 }
 EXPORT_SYMBOL(scm_call_atomic4_3);
 
+s32 scm_call_atomic5_3(u32 svc, u32 cmd, u32 arg1, u32 arg2,
+	u32 arg3, u32 arg4, u32 arg5, u32 *ret1, u32 *ret2, u32 *ret3)
+{
+	int ret;
+	int context_id;
+	register u32 r0 asm("r0") = SCM_ATOMIC(svc, cmd, 5);
+	register u32 r1 asm("r1") = (uintptr_t)&context_id;
+	register u32 r2 asm("r2") = arg1;
+	register u32 r3 asm("r3") = arg2;
+	register u32 r4 asm("r4") = arg3;
+	register u32 r5 asm("r5") = arg4;
+	register u32 r6 asm("r6") = arg5;
+
+	asm volatile(
+		__asmeq("%0", R0_STR)
+		__asmeq("%1", R1_STR)
+		__asmeq("%2", R2_STR)
+		__asmeq("%3", R3_STR)
+		__asmeq("%4", R0_STR)
+		__asmeq("%5", R1_STR)
+		__asmeq("%6", R2_STR)
+		__asmeq("%7", R3_STR)
+#ifdef REQUIRES_SEC
+			".arch_extension sec\n"
+#endif
+		"smc	#0\n"
+		: "=r" (r0), "=r" (r1), "=r" (r2), "=r" (r3)
+		: "r" (r0), "r" (r1), "r" (r2), "r" (r3), "r" (r4), "r" (r5),
+		 "r" (r6));
+	ret = r0;
+
+	if (ret1)
+		*ret1 = r1;
+	if (ret2)
+		*ret2 = r2;
+	if (ret3)
+		*ret3 = r3;
+	return r0;
+}
+EXPORT_SYMBOL(scm_call_atomic5_3);
+
 u32 scm_get_version(void)
 {
 	int context_id;
@@ -889,7 +945,6 @@ int scm_get_feat_version(u32 feat)
 }
 EXPORT_SYMBOL(scm_get_feat_version);
 
-#define RESTORE_SEC_CFG    2
 int scm_restore_sec_cfg(u32 device_id, u32 spare, int *scm_ret)
 {
 	struct scm_desc desc = {0};

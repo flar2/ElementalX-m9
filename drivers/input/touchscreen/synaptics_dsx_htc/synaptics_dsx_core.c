@@ -3961,6 +3961,7 @@ static int synaptics_rmi4_free_fingers(struct synaptics_rmi4_data *rmi4_data)
 			input_report_abs(rmi4_data->input_dev, ABS_MT_POSITION,	(1 << 31));
 #endif
 		}
+		rmi4_data->report_points[ii].state = 0;
 	}
 	rmi4_data->glove_status = 0;
 #endif
@@ -4105,6 +4106,10 @@ static int synaptics_rmi4_reinit_device(struct synaptics_rmi4_data *rmi4_data)
 	if (rmi4_data->cover_mode || (rmi4_data->glove_setting & 0x01)) {
 		synaptics_rmi4_set_chip_mode(rmi4_data);
 	}
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
+	else
+		synaptics_rmi4_querry_f51_data(rmi4_data);
+#endif
 	retval = 0;
 
 exit:
@@ -4181,6 +4186,10 @@ static int synaptics_rmi4_reset_device(struct synaptics_rmi4_data *rmi4_data)
 	if (rmi4_data->cover_mode || (rmi4_data->glove_setting & 0x01)) {
 		synaptics_rmi4_set_chip_mode(rmi4_data);
 	}
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
+	else
+		synaptics_rmi4_querry_f51_data(rmi4_data);
+#endif
 
 	synaptics_rmi4_sensor_wake(rmi4_data);
 
@@ -4402,16 +4411,24 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 		goto err_set_input_dev;
 	}
 
-	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0) {
 #ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
+	if (strcmp(htc_get_bootmode(), "recovery") == 0) {
+		pr_info("Recovery mode. Disable touch\n");
+		goto err_off_mode;
+	}
+
+	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0) {
 		pr_info("Offmode charging. Disable touch interrupts\n");
 		offmode_charging_flag = 1;
+	}
 #else
-		pr_info("Offmode charging. Set touch chip to sleep mode and skip touch driver probe\n");
+	if ((strcmp(htc_get_bootmode(), "offmode_charging") == 0)
+		|| (strcmp(htc_get_bootmode(), "recovery") == 0)) {
+		pr_info("%s mode. Set touch chip to sleep mode and skip touch driver probe\n", htc_get_bootmode());
 		synaptics_rmi4_sensor_sleep(rmi4_data);
 		goto err_off_mode;
-#endif
 	}
+#endif
 
 	if (bdata->support_glove) {
 		synaptics_rmi4_set_status(rmi4_data, 0);
@@ -4574,9 +4591,7 @@ err_enable_irq:
 	fb_unregister_client(&rmi4_data->fb_notifier);
 #endif
 
-#ifndef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_SUPPORT_INCELL
 err_off_mode:
-#endif
 	synaptics_rmi4_empty_fn_list(rmi4_data);
 	if (rmi4_data->temp_report_data != NULL)
 		kfree(rmi4_data->temp_report_data);

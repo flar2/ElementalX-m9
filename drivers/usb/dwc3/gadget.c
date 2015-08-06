@@ -65,9 +65,10 @@
 static int bulk_ep_xfer_timeout_ms;
 module_param(bulk_ep_xfer_timeout_ms, int, S_IRUGO | S_IWUSR);
 
-static void dwc3_gadget_wakeup_interrupt(struct dwc3 *dwc);
+#define bulk_ep_xfer_timeout_ns (bulk_ep_xfer_timeout_ms * NSEC_PER_MSEC)
+static void dwc3_gadget_wakeup_interrupt(struct dwc3 *dwc, bool remote_wakeup);
 static int dwc3_gadget_wakeup_int(struct dwc3 *dwc);
-
+static void dwc3_restart_hrtimer(struct dwc3 *dwc);
 
 struct dwc3_usb_gadget {
 	struct work_struct wakeup_work;
@@ -608,6 +609,8 @@ static int __dwc3_gadget_ep_disable(struct dwc3_ep *dep)
 	dep->type = 0;
 	dep->flags = 0;
 
+	memset(&dep->trb_pool[0], 0, sizeof(struct dwc3_trb) * DWC3_TRB_NUM);
+	dbg_event(dep->number, "Clr_TRB", 0);
 	return 0;
 }
 
@@ -1124,8 +1127,8 @@ static int __dwc3_gadget_kick_transfer(struct dwc3_ep *dep, u16 cmd_param,
 
 		if (usb_endpoint_xfer_bulk(dep->endpoint.desc) &&
 						bulk_ep_xfer_timeout_ms) {
-			hrtimer_start(&dep->xfer_timer, ktime_set(0,
-				bulk_ep_xfer_timeout_ms * NSEC_PER_MSEC),
+			hrtimer_start(&dep->xfer_timer,
+				ktime_set(0, bulk_ep_xfer_timeout_ns),
 				HRTIMER_MODE_REL);
 		}
 	}
@@ -1286,8 +1289,7 @@ static int dwc3_gadget_ep_queue(struct usb_ep *ep, struct usb_request *request,
 	}
 
 	if (dwc3_gadget_is_suspended(dwc)) {
-		if (dwc->gadget.remote_wakeup &&
-				dwc->gadget.speed != USB_SPEED_SUPER)
+		if (dwc->gadget.remote_wakeup)
 			dwc3_gadget_wakeup(&dwc->gadget);
 		spin_unlock_irqrestore(&dwc->lock, flags);
 		return dwc->gadget.remote_wakeup ? -EAGAIN : -ENOTSUPP;
@@ -1473,20 +1475,14 @@ static void dwc3_gadget_wakeup_work(struct work_struct *w)
 {
 	struct dwc3_usb_gadget *dwc3_gadget;
 	struct dwc3		*dwc;
-	unsigned long		flags;
 	int			ret;
 
 	dwc3_gadget = container_of(w, struct dwc3_usb_gadget, wakeup_work);
 	dwc = dwc3_gadget->dwc;
 
-
-	spin_lock_irqsave(&dwc->lock, flags);
-
 	if (atomic_read(&dwc->in_lpm)) {
-		spin_unlock_irqrestore(&dwc->lock, flags);
 		dbg_event(0xFF, "Gdgwake gsyn", 0);
 		pm_runtime_get_sync(dwc->dev);
-		spin_lock_irqsave(&dwc->lock, flags);
 	}
 
 	ret = dwc3_gadget_wakeup_int(dwc);
@@ -1495,19 +1491,20 @@ static void dwc3_gadget_wakeup_work(struct work_struct *w)
 		pr_err("Remote wakeup failed. ret = %d.\n", ret);
 	else
 		pr_debug("Remote wakeup succeeded.\n");
-
-	spin_unlock_irqrestore(&dwc->lock, flags);
 }
 
 static int dwc3_gadget_wakeup_int(struct dwc3 *dwc)
 {
-	u32			timeout = 0;
 	bool			link_recover_only = false;
 
 	u32			reg;
 	int			ret = 0;
 	u8			link_state;
+	unsigned long		flags;
 
+	pr_debug("%s(): Entry\n", __func__);
+	disable_irq(dwc->irq);
+	spin_lock_irqsave(&dwc->lock, flags);
 	link_state = dwc3_get_link_state(dwc);
 
 	switch (link_state) {
@@ -1523,13 +1520,25 @@ static int dwc3_gadget_wakeup_int(struct dwc3 *dwc)
 	default:
 		dev_dbg(dwc->dev, "can't wakeup from link state %d\n",
 				link_state);
-		ret = -EINVAL;
+		dwc3_restart_hrtimer(dwc);
 		goto out;
 	}
+
+	
+	reg = dwc3_readl(dwc->regs, DWC3_DEVTEN);
+	reg |= DWC3_DEVTEN_ULSTCNGEN;
+	dwc3_writel(dwc->regs, DWC3_DEVTEN, reg);
+	mb();
 
 	ret = dwc3_gadget_set_link_state(dwc, DWC3_LINK_STATE_RECOV);
 	if (ret < 0) {
 		dev_err(dwc->dev, "failed to put link in Recovery\n");
+		
+		reg = dwc3_readl(dwc->regs, DWC3_DEVTEN);
+		reg &= ~DWC3_DEVTEN_ULSTCNGEN;
+		dwc3_writel(dwc->regs, DWC3_DEVTEN, reg);
+		
+		mb();
 		goto out;
 	}
 
@@ -1541,27 +1550,45 @@ static int dwc3_gadget_wakeup_int(struct dwc3 *dwc)
 		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 	}
 
+	spin_unlock_irqrestore(&dwc->lock, flags);
+	enable_irq(dwc->irq);
+	ret = wait_event_interruptible_timeout(dwc->wait_linkstate,
+			(dwc->link_state < DWC3_LINK_STATE_U3) ||
+			(dwc->link_state == DWC3_LINK_STATE_SS_DIS),
+			msecs_to_jiffies(3000)); 
+
+	spin_lock_irqsave(&dwc->lock, flags);
 	
+	reg = dwc3_readl(dwc->regs, DWC3_DEVTEN);
+	reg &= ~DWC3_DEVTEN_ULSTCNGEN;
+	dwc3_writel(dwc->regs, DWC3_DEVTEN, reg);
+	mb();
 
-	do {
-		reg = dwc3_readl(dwc->regs, DWC3_DSTS);
-
-		
-		if (DWC3_DSTS_USBLNKST(reg) == DWC3_LINK_STATE_U0)
-			break;
-		udelay(10);
-		timeout++;
-	} while (timeout < 10000);
-
-	if (DWC3_DSTS_USBLNKST(reg) != DWC3_LINK_STATE_U0) {
-		dev_err(dwc->dev, "failed to send remote wakeup\n");
+	if (!ret) {
+		dev_dbg(dwc->dev, "Timeout moving into state(%d)\n",
+							dwc->link_state);
 		ret = -EINVAL;
-		goto out;
+		spin_unlock_irqrestore(&dwc->lock, flags);
+		goto out1;
+	} else {
+		ret = 0;
+		if (dwc->link_state == DWC3_LINK_STATE_SS_DIS ||
+				dwc->gadget.state == USB_STATE_DEFAULT)
+			link_recover_only = true;
 	}
 
 	if (!link_recover_only)
-		dwc3_gadget_wakeup_interrupt(dwc);
+		dwc3_gadget_wakeup_interrupt(dwc, true);
+
+	spin_unlock_irqrestore(&dwc->lock, flags);
+	pr_debug("%s: Exit\n", __func__);
+	return ret;
+
 out:
+	spin_unlock_irqrestore(&dwc->lock, flags);
+	enable_irq(dwc->irq);
+
+out1:
 	return ret;
 }
 
@@ -1671,6 +1698,10 @@ static int dwc3_gadget_run_stop(struct dwc3 *dwc, int is_on)
 			return -ETIMEDOUT;
 		udelay(1);
 	} while (1);
+
+	
+	if (!is_on)
+		udelay(12000);
 
 	dev_vdbg(dwc->dev, "gadget %s data soft-%s\n",
 			dwc->gadget_driver
@@ -2031,6 +2062,33 @@ out:
 	return HRTIMER_NORESTART;
 }
 
+static void dwc3_restart_hrtimer(struct dwc3 *dwc)
+{
+	int i;
+	struct dwc3_ep	*dep;
+
+	if (!bulk_ep_xfer_timeout_ms)
+		return;
+
+	for (i = 0; i < dwc->num_out_eps; i++) {
+		dep = dwc->eps[i];
+
+		
+		if (dep && dep->endpoint.desc &&
+			usb_endpoint_xfer_bulk(dep->endpoint.desc) &&
+			!dep->direction && (dep->flags & DWC3_EP_ENABLED)) {
+
+			if (!hrtimer_active(&dep->xfer_timer)) {
+				pr_debug("%s(): restart hrtimer of (%s)\n",
+						__func__, dep->name);
+				hrtimer_start(&dep->xfer_timer,
+					ktime_set(0, bulk_ep_xfer_timeout_ns),
+					HRTIMER_MODE_REL);
+			}
+		}
+	}
+}
+
 static int dwc3_gadget_init_hw_endpoints(struct dwc3 *dwc,
 		u8 num, u32 direction)
 {
@@ -2284,8 +2342,8 @@ static void dwc3_endpoint_transfer_complete(struct dwc3 *dwc,
 		if (event->status & DEPEVT_STATUS_LST)
 			hrtimer_try_to_cancel(&dep->xfer_timer);
 		else if (!clean_busy && (dwc->link_state != DWC3_LINK_STATE_U3))
-			hrtimer_start(&dep->xfer_timer, ktime_set(0,
-				bulk_ep_xfer_timeout_ms * NSEC_PER_MSEC),
+			hrtimer_start(&dep->xfer_timer,
+				ktime_set(0, bulk_ep_xfer_timeout_ns),
 				HRTIMER_MODE_REL);
 	}
 
@@ -2539,6 +2597,7 @@ static void dwc3_gadget_disconnect_interrupt(struct dwc3 *dwc)
 	dwc->gadget.speed = USB_SPEED_UNKNOWN;
 	dwc->setup_packet_pending = false;
 	dwc->link_state = DWC3_LINK_STATE_SS_DIS;
+	wake_up_interruptible(&dwc->wait_linkstate);
 }
 
 void dwc3_gadget_usb3_phy_suspend(struct dwc3 *dwc, int suspend)
@@ -2601,6 +2660,7 @@ static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_DCFG, reg);
 	dwc->gadget.speed = USB_SPEED_UNKNOWN;
 	dwc->link_state = DWC3_LINK_STATE_U0;
+	wake_up_interruptible(&dwc->wait_linkstate);
 }
 
 static void dwc3_update_ram_clk_sel(struct dwc3 *dwc, u32 speed)
@@ -2646,8 +2706,6 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 	dwc->speed = speed;
 
 	dwc3_update_ram_clk_sel(dwc, speed);
-	dwc->link_state = dwc3_get_link_state(dwc);
-	pr_debug("%s(): LINK_STATE:%d\n", __func__, dwc->link_state);
 
 	switch (speed) {
 	case DWC3_DCFG_SUPERSPEED:
@@ -2698,9 +2756,7 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 		dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 	}
 
-	if (dwc->gadget.speed != USB_SPEED_SUPER)
-		
-		dwc3_gadget_usb3_phy_suspend(dwc, true);
+	dwc3_gadget_usb3_phy_suspend(dwc, true);
 
 	dep = dwc->eps[0];
 	ret = __dwc3_gadget_ep_enable(dep, &dwc3_gadget_ep0_desc, NULL, true);
@@ -2720,21 +2776,32 @@ static void dwc3_gadget_conndone_interrupt(struct dwc3 *dwc)
 
 }
 
-static void dwc3_gadget_wakeup_interrupt(struct dwc3 *dwc)
+static void dwc3_gadget_wakeup_interrupt(struct dwc3 *dwc, bool remote_wakeup)
 {
+	bool perform_resume = true;
+
 	dev_dbg(dwc->dev, "%s\n", __func__);
 
+	if (!remote_wakeup && dwc->link_state != DWC3_LINK_STATE_U3)
+		perform_resume = false;
+
 	
-	if (dwc->link_state == DWC3_LINK_STATE_U3) {
+	if (perform_resume) {
 		dbg_event(0xFF, "WAKEUP", 0);
 
 		
 		if (dwc->enable_bus_suspend)
 			usb_phy_set_suspend(dwc->dotg->otg.phy, 0);
 
+		
+		dwc3_restart_hrtimer(dwc);
+
+		dwc->link_state = DWC3_LINK_STATE_U0;
+
 		spin_unlock(&dwc->lock);
 		dwc->gadget_driver->resume(&dwc->gadget);
 		spin_lock(&dwc->lock);
+		return;
 	}
 
 	dwc->link_state = DWC3_LINK_STATE_U0;
@@ -2784,8 +2851,9 @@ static void dwc3_gadget_linksts_change_interrupt(struct dwc3 *dwc,
 		}
 	}
 
+	dev_dbg(dwc->dev, "Going from (%d)--->(%d)\n", dwc->link_state, next);
 	dwc->link_state = next;
-
+	wake_up_interruptible(&dwc->wait_linkstate);
 	dev_vdbg(dwc->dev, "%s link %d\n", __func__, dwc->link_state);
 }
 
@@ -2796,7 +2864,7 @@ static void dwc3_gadget_suspend_interrupt(struct dwc3 *dwc,
 
 	dev_dbg(dwc->dev, "%s Entry\n", __func__);
 
-	if (next == DWC3_LINK_STATE_U3) {
+	if (dwc->link_state != next && next == DWC3_LINK_STATE_U3) {
 		dbg_event(0xFF, "SUSPEND", 0);
 		if (dwc->gadget.state != USB_STATE_CONFIGURED) {
 			pr_err("%s(): state:%d. Ignore SUSPEND.\n",
@@ -2869,7 +2937,7 @@ static void dwc3_gadget_interrupt(struct dwc3 *dwc,
 		dwc->dbg_gadget_events.connect++;
 		break;
 	case DWC3_DEVICE_EVENT_WAKEUP:
-		dwc3_gadget_wakeup_interrupt(dwc);
+		dwc3_gadget_wakeup_interrupt(dwc, false);
 		dwc->dbg_gadget_events.wakeup++;
 		break;
 	case DWC3_DEVICE_EVENT_LINK_STATUS_CHANGE:
@@ -2995,6 +3063,9 @@ static irqreturn_t dwc3_thread_interrupt(int irq, void *_dwc)
 			union dwc3_event event;
 
 			event.raw = *(u32 *) (evt->buf + evt->lpos);
+#if defined(CONFIG_HTC_DEBUG_RTB)
+			uncached_logk(LOGK_LOGBUF,(void *)((unsigned long int) event.raw));
+#endif
 
 			dwc3_process_event_entry(dwc, &event);
 

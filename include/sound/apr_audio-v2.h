@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
 *
 * This program is free software; you can redistribute it and/or modify
 * it under the terms of the GNU General Public License version 2 and
@@ -1181,6 +1181,20 @@ struct afe_port_cmdrsp_get_param_v2 {
 	u32                  status;
 } __packed;
 
+#define AFE_PARAM_ID_LPASS_CORE_SHARED_CLOCK_CONFIG	0x0001028C
+#define AFE_API_VERSION_LPASS_CORE_SHARED_CLK_CONFIG	0x1
+struct afe_param_id_lpass_core_shared_clk_cfg {
+	u32	lpass_core_shared_clk_cfg_minor_version;
+	u32	enable;
+} __packed;
+
+struct afe_lpass_core_shared_clk_config_command {
+	struct apr_hdr		   hdr;
+	struct afe_port_cmd_set_param_v2 param;
+	struct afe_port_param_data_v2    pdata;
+	struct afe_param_id_lpass_core_shared_clk_cfg clk_cfg;
+} __packed;
+
 
 #define ADSP_MEMORY_MAP_EBI_POOL      0
 
@@ -1200,7 +1214,7 @@ struct afe_port_cmdrsp_get_param_v2 {
 #define VPM_TX_DM_FLUENCE_COPP_TOPOLOGY			0x00010F72
 #define VPM_TX_QMIC_FLUENCE_COPP_TOPOLOGY		0x00010F75
 #define VPM_TX_DM_RFECNS_COPP_TOPOLOGY			0x00010F86
-#define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX		0x11000002
+#define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX		0x10015002
 
 
 
@@ -3271,8 +3285,8 @@ struct srs_trumedia_params {
 #define AUDPROC_MODULE_ID_DTS_HPX_PREMIX 0x0001077C
 #define AUDPROC_MODULE_ID_DTS_HPX_POSTMIX 0x0001077B
 #define ASM_STREAM_POSTPROC_TOPO_ID_DTS_HPX 0x00010DED
-#define ASM_STREAM_POSTPROC_TOPO_ID_HPX_PLUS 0x11000000
-#define ASM_STREAM_POSTPROC_TOPO_ID_HPX_MASTER 0x11000001
+#define ASM_STREAM_POSTPROC_TOPO_ID_HPX_PLUS  0x10015000
+#define ASM_STREAM_POSTPROC_TOPO_ID_HPX_MASTER  0x10015001
 struct asm_dts_eagle_param {
 	struct apr_hdr	hdr;
 	struct asm_stream_cmd_set_pp_params_v2 param;
@@ -3675,7 +3689,7 @@ struct afe_svc_cmd_set_clip_bank_selection {
 
 #define US_POINT_EPOS_FORMAT_V2 0x0001272D
 #define US_RAW_FORMAT_V2        0x0001272C
-#define US_PROX_FORMAT_V2       0x0001272E
+#define US_PROX_FORMAT_V4       0x0001273B
 #define US_RAW_SYNC_FORMAT      0x0001272F
 #define US_GES_SYNC_FORMAT      0x00012730
 

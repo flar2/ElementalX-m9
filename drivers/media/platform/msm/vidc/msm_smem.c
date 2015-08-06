@@ -168,7 +168,7 @@ static int ion_user_to_kernel(struct smem_client *client, int fd, u32 offset,
                 break;
         case HAL_BUFFER_OUTPUT:
         case HAL_BUFFER_OUTPUT2:
-                dprintk(VIDC_DBG,
+                dprintk(VIDC_WARN,
                         "[Vidc_Mem][%p] Import_O: Addr(%p) SZ(%zx) FD(%d)\n",
                         client->inst, hndl->buffer, mem->size, fd);
                 break;
@@ -312,7 +312,7 @@ static void free_ion_mem(struct smem_client *client, struct msm_smem *mem)
                 break;
         case HAL_BUFFER_OUTPUT:
         case HAL_BUFFER_OUTPUT2:
-                dprintk(VIDC_DBG,
+                dprintk(VIDC_WARN,
                         "[Vidc_Mem][%p] Free_O: Addr(%p) SZ(%zx)\n",
                         client->inst, hndl->buffer, mem->size);
                 break;

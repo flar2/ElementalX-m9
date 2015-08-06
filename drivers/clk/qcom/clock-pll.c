@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -290,13 +290,13 @@ static int variable_rate_pll_clk_enable(struct clk *c)
 	writel_relaxed(mode, PLL_MODE_REG(pll));
 
 	/*
-	 * 5us delay mandated by HPG. However, put in a 50us delay here.
+	 * 5us delay mandated by HPG. However, put in a 200us delay here.
 	 * This is to address possible locking issues with the PLL exhibit
 	 * early "transient" locks about 16us from this point. With this
 	 * higher delay, we avoid running into those transients.
 	 */
 	mb();
-	udelay(50);
+	udelay(200);
 
 	/* Clear test control bits */
 	if (pll->test_ctl_lo_reg && pll->vals.test_ctl_lo_val &&
@@ -509,7 +509,7 @@ static long variable_rate_pll_round_rate(struct clk *c, unsigned long rate)
 	if (!pll->src_rate)
 		return 0;
 
-	if (pll->no_prepared_reconfig && c->prepare_count && c->rate != rate)
+	if (pll->no_prepared_reconfig && c->prepare_count)
 		return -EINVAL;
 
 	if (rate < pll->min_rate)

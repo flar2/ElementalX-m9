@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -44,6 +44,8 @@
 #include "idle.h"
 #include "pm-boot.h"
 #include "../../../arch/arm/mach-msm/clock.h"
+
+#include <soc/qcom/rpm_htc_cmd.h>
 
 #ifdef CONFIG_HTC_POWER_DEBUG
 #include <soc/qcom/htc_util.h>
@@ -155,11 +157,22 @@ static bool msm_pm_is_L1_writeback(void)
 #endif
 }
 
+void prevent_enter_vddmin(bool on)
+{
+	if (on)
+		htc_rpm_cmd_vote_vdd_dig(RAILWAY_SVS_SOC);
+	else
+		htc_rpm_cmd_vote_vdd_dig(RAILWAY_NO_REQUEST);
+	pr_info("PM: keep digital voltage = %d\n", on);
+}
+
 static void htc_lpm_pre_action(bool from_idle)
 {
 	int is_last_core_for_suspend = (!from_idle && cpu_online(smp_processor_id()));
 
 	if (is_last_core_for_suspend) {
+		prevent_enter_vddmin(false);
+
 		if (suspend_console_deferred)
 			suspend_console();
 
@@ -176,6 +189,8 @@ static void htc_lpm_post_action(bool from_idle)
 
 		if (suspend_console_deferred)
 			resume_console();
+
+		prevent_enter_vddmin(true);
 	}
 }
 
@@ -408,6 +423,7 @@ static bool __ref msm_pm_spm_power_collapse(
 	bool save_cpu_regs = (cpu_online(cpu) || from_idle);
 #ifdef CONFIG_HTC_POWER_DEBUG
         int curr_len = 0;
+	int is_last_core_for_suspend = (!from_idle && cpu_online(cpu));
 #endif
 
 	if (MSM_PM_DEBUG_POWER_COLLAPSE & msm_pm_debug_mask)
@@ -433,7 +449,7 @@ static bool __ref msm_pm_spm_power_collapse(
 	msm_jtag_save_state();
 
 #ifdef CONFIG_HTC_POWER_DEBUG
-	if (!from_idle && smp_processor_id() == 0) {
+	if (is_last_core_for_suspend) {
 		if (MSM_PM_DEBUG_GPIO & msm_pm_debug_mask) {
 			if (gpio_sleep_status_info) {
 				memset(gpio_sleep_status_info, 0,
@@ -525,14 +541,18 @@ static bool msm_pm_power_collapse_standalone(
 	bool collapsed;
 
 #ifdef CONFIG_HTC_POWER_DEBUG
+	int is_last_core_for_suspend = (!from_idle && cpu_online(cpu));
+#endif
+
+#ifdef CONFIG_HTC_POWER_DEBUG
 	if ((from_idle && (MSM_PM_DEBUG_IDLE_CLK & msm_pm_debug_mask)) ||
-			(!from_idle && (smp_processor_id() == 0))) {
+			(is_last_core_for_suspend)) {
 		clock_debug_print_enabled();
 
 		if (MSM_PM_DEBUG_BLOCK_XO_CLOCK & msm_pm_debug_mask)
 			clock_blocked_print();
 	}
-	if (smp_processor_id() == 0) {
+	if (cpu_online(cpu)) {
 		if ((!from_idle) && (MSM_PM_DEBUG_RPM_STAT & msm_pm_debug_mask)){
 			msm_rpm_dump_stat();
 		}
@@ -611,7 +631,7 @@ static bool msm_pm_power_collapse(bool from_idle)
 		pr_info("CPU%u: %s: idle %d\n",
 			cpu, __func__, (int)from_idle);
 #ifdef CONFIG_HTC_POWER_DEBUG
-	if (smp_processor_id() == 0) {
+	if (cpu_online(cpu)) {
 		if ((!from_idle) && (MSM_PM_DEBUG_RPM_STAT & msm_pm_debug_mask)){
 			msm_rpm_dump_stat();
 		}
@@ -1006,6 +1026,8 @@ static int msm_pm_htc_footprint_init(void)
 
 static int msm_pm_htc_init(void)
 {
+	prevent_enter_vddmin(true);
+
 	msm_pm_htc_footprint_init();
 
 	suspend_console_deferred = 1;
@@ -1136,15 +1158,25 @@ static int __init msm_pm_drv_init(void)
 
 	rc = platform_driver_register(&msm_cpu_pm_snoc_client_driver);
 
-	if (rc) {
+	if (rc)
 		pr_err("%s(): failed to register driver %s\n", __func__,
 				msm_cpu_pm_snoc_client_driver.driver.name);
-		return rc;
-	}
-
-	return platform_driver_register(&msm_cpu_pm_driver);
+	return rc;
 }
 late_initcall(msm_pm_drv_init);
+
+static int __init msm_pm_debug_counters_init(void)
+{
+	int rc;
+
+	rc = platform_driver_register(&msm_cpu_pm_driver);
+
+	if (rc)
+		pr_err("%s(): failed to register driver %s\n", __func__,
+				msm_cpu_pm_driver.driver.name);
+	return rc;
+}
+fs_initcall(msm_pm_debug_counters_init);
 
 int __init msm_pm_sleep_status_init(void)
 {

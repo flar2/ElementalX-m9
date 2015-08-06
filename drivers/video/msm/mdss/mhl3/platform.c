@@ -1564,7 +1564,7 @@ static int si_8620_parse_dt(struct device *dev)
 	 * Need this for I/O expander in case we're using SPI as
 	 * the register I/O.
 	 */
-	if (!of_property_read_u32(np, "sil,i2c_port#", &value))
+	if (!of_property_read_u32(np, "sil,i2c-port", &value))
 		i2c_adapter_num = value;
 
 	MHL_TX_DBG_INFO("Resources assigned to driver...\n");

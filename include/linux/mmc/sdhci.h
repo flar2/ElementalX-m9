@@ -26,7 +26,13 @@ struct sdhci_next {
 
 enum sdhci_power_policy {
 	SDHCI_PERFORMANCE_MODE,
+	SDHCI_PERFORMANCE_MODE_INIT,
 	SDHCI_POWER_SAVE_MODE,
+};
+
+enum sdhci_cluster_info {
+	SDHCI_LITTLE_CLUSTER,
+	SDHCI_BIG_CLUSTER,
 };
 
 struct sdhci_host {
@@ -175,7 +181,10 @@ struct sdhci_host {
 #define SDHCI_TUNING_MODE_1	0
 	struct timer_list	tuning_timer;	
 
-	unsigned int cpu_dma_latency_us;
+	unsigned int *cpu_dma_latency_us;
+	unsigned int cpu_dma_latency_tbl_sz;
+	enum sdhci_cluster_info pm_qos_index;
+	unsigned int *cpu_affinity_mask;
 	struct pm_qos_request pm_qos_req_dma;
 	unsigned int pm_qos_timeout_us;         
 	struct device_attribute pm_qos_tout;

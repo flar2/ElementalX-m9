@@ -70,7 +70,7 @@ static int zram_show_mem_notifier(struct notifier_block *nb,
 			pr_info("Zram[%d] compr_data_size = %llu\n", i,
 				(unsigned long long)data_size);
 			pr_info("Zram[%d] orig_data_size = %u\n", i,
-				zram->stats.pages_stored);
+				atomic_read(&zram->stats.pages_stored));
 		}
 
 		up_read(&zram->init_lock);

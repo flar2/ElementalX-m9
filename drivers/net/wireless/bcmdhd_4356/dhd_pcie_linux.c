@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_pcie_linux.c 532246 2015-02-05 12:04:09Z $
+ * $Id: dhd_pcie_linux.c 542237 2015-03-19 06:49:27Z $
  */
 
 
@@ -239,20 +239,20 @@ static int dhdpcie_resume_dev(struct pci_dev *dev)
 	pci_restore_state(dev);
 	err = pci_enable_device(dev);
 	if (err) {
-		printf("%s:pci_enable_device error %d \n", __FUNCTION__, err);
+		DHD_ERROR(("%s:pci_enable_device error %d \n", __FUNCTION__, err));
 		return err;
 	}
 	pci_set_master(dev);
 	err = pci_set_power_state(dev, PCI_D0);
 	if (err) {
-		printf("%s:pci_set_power_state error %d \n", __FUNCTION__, err);
+		DHD_ERROR(("%s:pci_set_power_state error %d \n", __FUNCTION__, err));
 		return err;
 	}
 	return err;
 }
 
 #ifdef DHD_RX_DUMP
-extern int dhd_rx_dump;
+extern int dhd_rx_dump_flag;
 #endif
 #ifdef DHD_TX_DUMP
 extern int dhd_tx_dump_flag;
@@ -268,10 +268,10 @@ int dhdpcie_pci_suspend_resume(struct dhd_bus *bus, bool state)
 #endif 
 		rc = dhdpcie_suspend_dev(dev);
 #ifdef DHD_RX_DUMP
-        if (!rc) dhd_rx_dump = 1;
+		if (!rc) dhd_rx_dump_flag = 1;
 #endif
 #ifdef DHD_TX_DUMP
-        if (!rc) dhd_tx_dump_flag = 1;
+		if (!rc) dhd_tx_dump_flag = 1;
 #endif
 	} else {
 		rc = dhdpcie_resume_dev(dev);
@@ -349,9 +349,9 @@ dhdpcie_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		DHD_ERROR(("%s: chipmatch failed!!\n", __FUNCTION__));
 			return -ENODEV;
 	}
-	printf("PCI_PROBE:  bus %X, slot %X,vendor %X, device %X"
+	DHD_ERROR(("PCI_PROBE:  bus %X, slot %X,vendor %X, device %X"
 		"(good PCI location)\n", pdev->bus->number,
-		PCI_SLOT(pdev->devfn), pdev->vendor, pdev->device);
+		PCI_SLOT(pdev->devfn), pdev->vendor, pdev->device));
 
 	if (dhdpcie_init (pdev)) {
 		DHD_ERROR(("%s: PCIe Enumeration failed\n", __FUNCTION__));
@@ -480,7 +480,7 @@ int dhdpcie_get_resource(dhdpcie_info_t *dhdpcie_info)
 	pdev = dhdpcie_info->dev;
 	do {
 		if (pci_enable_device(pdev)) {
-			printf("%s: Cannot enable PCI device\n", __FUNCTION__);
+			DHD_ERROR(("%s: Cannot enable PCI device\n", __FUNCTION__));
 			break;
 		}
 		pci_set_master(pdev);
@@ -491,9 +491,9 @@ int dhdpcie_get_resource(dhdpcie_info_t *dhdpcie_info)
 		bar1_size = pci_resource_len(pdev, 2);
 
 		if ((bar1_size == 0) || (bar1_addr == 0)) {
-			printf("%s: BAR1 Not enabled for this device  size(%ld),"
+			DHD_ERROR(("%s: BAR1 Not enabled for this device size(%ld),"
 				" addr(0x"PRINTF_RESOURCE")\n",
-				__FUNCTION__, bar1_size, bar1_addr);
+				__FUNCTION__, bar1_size, bar1_addr));
 			goto err;
 		}
 
@@ -860,6 +860,10 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->islinkdown) {
 		options = MSM_PCIE_CONFIG_NO_CFG_RESTORE;
+                
+                
+                DHD_ERROR(("%s: do link recovery\n", __FUNCTION__));
+                
 	}
 	ret = msm_pcie_pm_control(MSM_PCIE_RESUME, bus->dev->bus->number,
 		bus->dev, NULL, options);
@@ -874,7 +878,10 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 		bus->dev, NULL, 0);
 #endif 
 	if (ret) {
-		DHD_ERROR(("%s Failed to bring up PCIe link\n", __FUNCTION__));
+                
+                
+		DHD_ERROR(("%s Failed to bring up PCIe link. ret=%d\n", __FUNCTION__, ret));
+                
 		goto done;
 	}
 
@@ -1011,9 +1018,9 @@ dhdpcie_alloc_resource(dhd_bus_t *bus)
 		bar1_size = pci_resource_len(bus->dev, 2);
 
 		if ((bar1_size == 0) || (bar1_addr == 0)) {
-			printf("%s: BAR1 Not enabled for this device size(%ld),"
+			DHD_ERROR(("%s: BAR1 Not enabled for this device size(%ld),"
 				" addr(0x"PRINTF_RESOURCE")\n",
-				__FUNCTION__, bar1_size, bar1_addr);
+				__FUNCTION__, bar1_size, bar1_addr));
 			break;
 		}
 

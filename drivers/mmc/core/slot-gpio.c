@@ -21,6 +21,7 @@
 #include <linux/irq.h>
 
 struct workqueue_struct *enable_detection_workqueue = NULL;	
+unsigned int disable_auto_sd = 0;
 
 struct mmc_gpio {
 	int ro_gpio;
@@ -29,6 +30,20 @@ struct mmc_gpio {
 	bool status;
 	char cd_label[0]; 
 };
+
+
+static int __init nsb_setup(char *this_opt){
+
+	if (!this_opt || !*this_opt)
+		return 1;
+
+	if(*this_opt == '1')
+		disable_auto_sd = 1;
+
+	return 0;
+}
+
+__setup("NSB=", nsb_setup);
 
 void mmc_enable_detection(struct work_struct *work)
 {
@@ -118,7 +133,10 @@ static irqreturn_t mmc_gpio_cd_irqt(int irq, void *dev_id)
 		host->removed_cnt = 0;
 		host->crc_count = 0;
 		
-		mmc_detect_change(host, msecs_to_jiffies(200));
+		if (disable_auto_sd)
+			goto out;
+		
+		mmc_detect_change(host, msecs_to_jiffies(host->extended_debounce + 200));
 		mmc_gpio_send_uevent(host);
 	}
 out:

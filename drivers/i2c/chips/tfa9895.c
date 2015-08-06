@@ -342,7 +342,7 @@ static long tfa9895_ioctl(struct file *file, unsigned int cmd,
 		dsp_enabled = *(int *)buf;
 		break;
 	case TFA9895_KERNEL_LOCK_NR:
-		pr_debug("%s: TFA9895_KERNEL_LOCK %d\n", __func__, *(int *)buf);
+		pr_info("%s: TFA9895_KERNEL_LOCK %d\n", __func__, *(int *)buf);
 		if(*(int *)buf) {
 			mutex_lock(&spk_amp_lock);
 		}

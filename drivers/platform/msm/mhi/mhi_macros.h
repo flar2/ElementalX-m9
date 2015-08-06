@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,7 +12,7 @@
 #ifndef _H_MHI_MACROS
 #define _H_MHI_MACROS
 
-#define MHI_IPC_LOG_PAGES (50)
+#define MHI_IPC_LOG_PAGES (100)
 #define MHI_LOG_SIZE 0x1000
 #define MHI_LINK_STABILITY_WAIT_MS 100
 #define MHI_MAX_LINK_RETRIES 9
@@ -47,7 +47,7 @@
 #define MAX_NR_TRBS_PER_HARD_CHAN (128 + 16)
 #define MHI_PCIE_VENDOR_ID 0x17CB
 #define MHI_PCIE_DEVICE_ID_9x35 0x0300
-#define MHI_PCIE_DEVICE_ID_ZIRC 0x0301
+#define MHI_PCIE_DEVICE_ID_9640 0x0301
 #define TRB_MAX_DATA_SIZE 0x1000
 
 

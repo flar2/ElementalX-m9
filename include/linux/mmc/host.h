@@ -88,6 +88,7 @@ struct mmc_ios {
 
 enum mmc_load {
 	MMC_LOAD_HIGH,
+	MMC_LOAD_INIT,
 	MMC_LOAD_LOW,
 };
 
@@ -312,6 +313,7 @@ struct mmc_host {
 #endif
 
 	int			rescan_disable;	
+	int			rescan_only_remove;
 	int			rescan_entered;	
 
 	struct mmc_card		*card;		
@@ -422,6 +424,8 @@ struct mmc_host {
 	unsigned int		crc_count;
 	spinlock_t		lock_cd_pin;
 	int			cd_pin_depth;
+	unsigned int	extended_debounce;
+	bool			wakeup_on_idle;
 	unsigned long		private[0] ____cacheline_aligned;
 };
 

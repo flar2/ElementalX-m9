@@ -448,8 +448,13 @@ static void gs_rx_push(struct work_struct *w)
 		port->read_started--;
 	}
 
-	if (do_push)
+	if (do_push) {
+		if (port->port.low_latency)
+			spin_unlock(&port->port_lock);
 		tty_flip_buffer_push(&port->port);
+		if (port->port.low_latency)
+			spin_lock(&port->port_lock);
+	}
 
 	if (!list_empty(queue) && tty) {
 		if (!test_bit(TTY_THROTTLED, &tty->flags)) {

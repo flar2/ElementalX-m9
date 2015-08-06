@@ -466,7 +466,7 @@ static ssize_t pn_temp1_show(struct device *dev,
 	}
 #endif
 
-	ret = sprintf(buf, "GPIO INT = %d "
+	ret = snprintf(buf, MAX_BUFFER_SIZE*2 , "GPIO INT = %d "
 		"Rx:ret=%d [0x%x, 0x%x, 0x%x, 0x%x]\n", val, ret, buffer[0], buffer[1],
 		buffer[2], buffer[3]);
 
@@ -573,7 +573,7 @@ static ssize_t debug_enable_show(struct device *dev,
 	int ret = 0;
 	I("debug_enable_show\n");
 
-	ret = sprintf(buf, "is_debug=%d\n", is_debug);
+	ret = snprintf(buf, MAX_BUFFER_SIZE*2 , "is_debug=%d\n", is_debug);
 	return ret;
 }
 
@@ -592,7 +592,7 @@ static ssize_t nxp_chip_alive_show(struct device *dev,
 {
 	int ret = 0;
 	I("%s is %d\n", __func__, is_alive);
-	ret = sprintf(buf, "%d\n", is_alive);
+	ret = snprintf(buf, MAX_BUFFER_SIZE*2 ,"%d\n", is_alive);
 	return ret;
 }
 
@@ -603,7 +603,7 @@ static ssize_t nxp_uicc_swp_show(struct device *dev,
 {
 	int ret = 0;
 	I("%s is %d\n", __func__, is_uicc_swp);
-	ret = sprintf(buf, "%d\n", is_uicc_swp);
+	ret = snprintf(buf, MAX_BUFFER_SIZE*2 , "%d\n", is_uicc_swp);
 	return ret;
 }
 
@@ -622,7 +622,7 @@ static ssize_t nxp_chip_model_show(struct device *dev,struct device_attribute *a
 {
 	int ret = 0;
 	I("%s is PN547\n", __func__);
-	ret = sprintf(buf, "PN547");
+	ret = snprintf(buf, MAX_BUFFER_SIZE*2 , "PN547");
 	return ret;
 }
 
@@ -632,7 +632,7 @@ static ssize_t nxp_chip_fw_show(struct device *dev, struct device_attribute *att
 {
 	int ret = 0;
 	I("%s is 122\n", __func__);
-	ret = sprintf(buf, "122");
+	ret = snprintf(buf, MAX_BUFFER_SIZE*2 , "122");
 	return ret;
 }
 
@@ -642,28 +642,41 @@ static ssize_t nxp_chip_manufacturer_show(struct device *dev, struct device_attr
 {
 	int ret = 0;
 	I("%s is 4\n", __func__);
-	ret = sprintf(buf, "4");
+	ret = snprintf(buf, MAX_BUFFER_SIZE*2 ,"4");
 	return ret;
 }
 
 static DEVICE_ATTR(nxp_chip_manufacturer, 0444, nxp_chip_manufacturer_show, NULL);
 
-static void pn544_hw_reset(void)
+static void pn544_hw_reset_control(int en_num)
 {
-
-	pn544_Enable();
-	msleep(50);
-	pn544_Disable();
-	msleep(50);
-	pn544_Enable();
-	msleep(50);
+	switch (en_num) {
+	case 0:
+		pn544_Enable();
+		msleep(50);
+		pn544_Disable();
+		msleep(50);
+		pn544_Enable();
+		msleep(50);
+		pn544_Disable();
+		msleep(50);
+		break;
+	case 1:
+	default:
+		pn544_Enable();
+		msleep(50);
+		pn544_Disable();
+		msleep(50);
+		pn544_Enable();
+		msleep(50);
+	}
 }
 
 void nfc_nci_dump_data(unsigned char *data, int len) {
 	int i = 0, j = 0;
 	memset(NCI_TMP, 0x00, MAX_BUFFER_SIZE);
 	for (i = 0, j = 0; i < len; i++)
-		j += sprintf(NCI_TMP + j, " 0x%02X", data[i]);
+		j += snprintf(NCI_TMP + j, MAX_BUFFER_SIZE*2 ," 0x%02X", data[i]);
 	I("%s\r\n", NCI_TMP);
 }
 
@@ -1158,9 +1171,9 @@ static ssize_t mfg_nfc_ctrl_show(struct device *dev,
 	int ret = 0;
 	I("%s mfc_nfc_cmd_result is %d\n", __func__, mfc_nfc_cmd_result);
 	if(mfc_nfc_cmd_result == 99) {
-		ret = sprintf(buf, "%d\n%s\n%s\n\n",mfc_nfc_cmd_result,CPLC,RF_PARAM_CE_eSE);
+		ret = snprintf(buf, MAX_BUFFER_SIZE*2 , "%d\n%s\n%s\n\n",mfc_nfc_cmd_result,CPLC,RF_PARAM_CE_eSE);
 	} else {
-		ret = sprintf(buf, "%d\n\n", mfc_nfc_cmd_result);
+		ret = snprintf(buf, MAX_BUFFER_SIZE*2 , "%d\n\n", mfc_nfc_cmd_result);
 	}
 	return ret;
 }
@@ -1181,26 +1194,29 @@ static int mfg_nfc_test(int code)
 	switch (code) {
 	case 0:  
 		I("%s: get nfcversion :\n", __func__);
-		pn544_hw_reset();
+		pn544_hw_reset_control(1);
 		if (script_processor(nfc_version_script, sizeof(nfc_version_script)) == 0) {
 			I("%s: get nfcversion succeed", __func__);
 		}
+		pn544_hw_reset_control(0);
 		break;
 	case 1:  
 		I("%s: nfcreader test :\n", __func__);
-		pn544_hw_reset();
+		pn544_hw_reset_control(1);
 		if (script_processor(nfc_reader_script, sizeof(nfc_reader_script)) == 0) {
 			I("%s: nfcreader test succeed\n", __func__);
 			mfc_nfc_cmd_result = 1;
 		}
+		pn544_hw_reset_control(0);
 		break;
 	case 2:  
 		I("%s: nfccard test :\n", __func__);
-		pn544_hw_reset();
+		pn544_hw_reset_control(1);
 		if (script_processor(nfc_card_script, sizeof(nfc_card_script)) == 0) {
 			I("%s: nfccard test succeed\n", __func__);
 			mfc_nfc_cmd_result = 1;
 		}
+		pn544_hw_reset_control(0);
 		break;
 #if FTM_NFC_CPLC
 	case 3:  
@@ -1208,8 +1224,7 @@ static int mfg_nfc_test(int code)
 		memset(CPLC, 0, MAX_BUFFER_SIZE);
 		memset(RF_PARAM_CE_eSE, 0, MAX_BUFFER_SIZE);
 		memset(NCI_TMP, 0, MAX_BUFFER_SIZE);
-		pn544_hw_reset();
-
+		pn544_hw_reset_control(1);
 		if (script_processor(nfc_cplc_part1_script, sizeof(nfc_cplc_part1_script)) == 0) {
 			I("nci_cplc_part1 complete.\r\n");
 			msleep(2000);
@@ -1241,10 +1256,11 @@ static int mfg_nfc_test(int code)
 			I("nci_cplc_part2_2 script processing error!\r\n");
 			break;
 		}
+		pn544_hw_reset_control(0);
 		break;
 #endif  
 	case 4:   
-		pn544_hw_reset();
+		pn544_hw_reset_control(1);
 		if (script_processor(nfc_model_script, sizeof(nfc_model_script)) == 0) {
 			I("get nfc model cmplete");
 		} else {
@@ -1252,19 +1268,23 @@ static int mfg_nfc_test(int code)
 			break;
 		}
 		mdelay(1);
-		pn544_hw_reset();
+		pn544_hw_reset_control(1);
 		watchdog_counter = 0;
 		if (script_processor(nfc_version_script, sizeof(nfc_version_script)) == 0) {
 			I("get nfc fw cmplete");
 		} else {
 			E("get nfc fw fail");
 		}
+		pn544_hw_reset_control(0);
+		break;
+	case 99:
+		I("Turn off NFC_PVDD");
+		pn544_htc_off_mode_charging();
 		break;
 	default:
-		E("%s: case default\n", __func__);
+		E("%s: case default do nothing\n", __func__);
 		break;
 	}
-	pn544_hw_reset();
 	I("%s: END\n", __func__);
 	return 0;
 }
@@ -1475,7 +1495,7 @@ static int pn544_probe(struct i2c_client *client,
 				"pn544_probe : failed to allocate \
 				memory for module data\n");
 		ret = -ENOMEM;
-		goto err_exit;
+		goto err_kzalloc;
 	}
 
 	pn_info = pni;
@@ -1665,12 +1685,14 @@ err_misc_register:
 	wake_lock_destroy(&pni->io_wake_lock);
 	kfree(pni);
 	pn_info = NULL;
+err_kzalloc:
 	gpio_free(platform_data->firm_gpio);
 err_request_gpio_firm:
 	gpio_free(platform_data->ven_gpio);
 err_request_gpio_ven:
 	gpio_free(platform_data->irq_gpio);
 err_exit:
+	kfree(platform_data);
 	E("%s: prob fail\n", __func__);
 	return ret;
 }

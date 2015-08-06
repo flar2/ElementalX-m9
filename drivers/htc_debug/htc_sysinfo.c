@@ -79,7 +79,11 @@ void add_emmc_part_entry(unsigned int dev_num, unsigned int part_size, char *nam
 	strncpy(emmc_partitions[emmc_partition_update].partition_name, name, 16);
 	emmc_partitions[emmc_partition_update].dev_num = dev_num;
 	emmc_partitions[emmc_partition_update].partition_size = part_size;
-	emmc_partitions[emmc_partition_update + 1].partition_size = 0;
+	if ((emmc_partition_update + 1) < MSM_MAX_PARTITIONS)
+		emmc_partitions[emmc_partition_update + 1].partition_size = 0;
+	else
+		pr_debug("%s: partition is full:%u (MAX:%u).\n"
+				, __func__, emmc_partition_update, MSM_MAX_PARTITIONS);
 
 	emmc_partition_update ++;
 }
@@ -101,7 +105,7 @@ static ssize_t htc_emmc_partition_write(struct file *file, const char __user *bu
 	if (copy_from_user(buf, buffer, 64))
 		return -EFAULT;
 
-	if ((ret = sscanf(buf, "%d %d %16s", &dev_num, &partition_size, partition_name)) != 3) {
+	if ((ret = sscanf(buf, "%u %u %16s", &dev_num, &partition_size, partition_name)) != 3) {
 		pr_info("%s: partition information format error:\
 			%d items input matched. \n", __func__, ret);
 		return -EINVAL;

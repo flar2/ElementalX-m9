@@ -302,7 +302,7 @@ ssize_t send_scratch_pad(struct device *dev, struct device_attribute *attr,
 		MHL_TX_DBG_ERR("error exit\n");
 		return -EINVAL;
 	}
-	memcpy(pinput, buf, count);
+	strncpy(pinput, buf, count);
 
 	str = strstr(pinput, "offset=");
 	if (str != NULL) {
@@ -740,7 +740,7 @@ ssize_t set_reg_access_data(struct device *dev, struct device_attribute *attr,
 
 	if (pinput == 0)
 		return -EINVAL;
-	memcpy(pinput, buf, count);
+	strncpy(pinput, buf, count);
 
 	str = pinput;
 	for (i = 0; (i < MAX_DEBUG_TRANSFER_SIZE) && ('\0' != *str); i++) {
@@ -2651,7 +2651,7 @@ ssize_t show_hdcp_status(struct device *dev, struct device_attribute *attr, char
 ssize_t set_hdcp_status(struct device *dev, struct device_attribute *attr,
 				  const char *buf, size_t count)
 {
-	int i;
+	int i = 0;
 	struct mhl_dev_context	*dev_context = dev_get_drvdata(dev);
 
 	if (sscanf(buf, "%d", &i) == 1 || sscanf(buf, "%d", &i) == 0) {
@@ -4599,14 +4599,13 @@ static void si_mhl_tx_emsc_received(struct mhl_dev_context *context)
 {
 	struct drv_hw_context *hw_context =
 		(struct drv_hw_context *)(&context->drv_context);
-	int length, index, pass;
+	int length, index;
 	uint16_t burst_id;
 	uint8_t *prbuf, *pmsg;
 
 	while (si_mhl_tx_drv_peek_block_input_buffer(context,
 		&prbuf, &length) == 0) {
 		index = 0;
-		pass = 0;
 		do {
 			struct MHL_burst_id_t *p_burst_id;
 			pmsg = &prbuf[index];
@@ -4775,7 +4774,7 @@ static void si_mhl_tx_emsc_received(struct mhl_dev_context *context)
 					MHL_TX_DBG_INFO("BURST_ID: %04X\n",
 						burst_id)
 					switch (burst_id) {
-					case SILICON_IMAGE_ADOPTER_ID:
+					case LOCAL_ADOPTER_ID:
 						context->sii_adopter_id = true;
 						break;
 					case burst_id_HID_PAYLOAD:
@@ -4790,7 +4789,7 @@ static void si_mhl_tx_emsc_received(struct mhl_dev_context *context)
 				}
 				}
 				break;
-			case SILICON_IMAGE_ADOPTER_ID:
+			case LOCAL_ADOPTER_ID:
 				{
 				struct si_adopter_id_data *p_burst =
 					(struct si_adopter_id_data *)

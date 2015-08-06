@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_pcie.c 532217 2015-02-05 09:55:05Z $
+ * $Id: dhd_pcie.c 556876 2015-05-15 04:44:13Z $
  */
 
 
@@ -35,6 +35,7 @@
 #if defined(DHD_DEBUG)
 #include <hnd_armtrap.h>
 #include <hnd_cons.h>
+#include <linux/htc_flags.h>
 #endif 
 #include <dngl_stats.h>
 #include <pcie_core.h>
@@ -73,9 +74,16 @@ int dhd_dongle_memsize;
 int dhd_dongle_ramsize;
 #ifdef DHD_DEBUG
 static int dhdpcie_checkdied(dhd_bus_t *bus, char *data, uint size);
-int dhdpcie_checkdied_2(dhd_pub_t *dhd);
+int dhd_checkdied(dhd_pub_t *dhd);
+
+#ifdef CUSTOMER_HW_ONE
+#if defined(USE_STATIC_MEMDUMP)
+int dhd_pub_mem_dump(dhd_pub_t *dhd);
+#endif 
+#endif 
+
 static int dhdpcie_bus_readconsole(dhd_bus_t *bus);
-#endif
+#endif 
 #if defined(USE_STATIC_MEMDUMP)
 int dhdpcie_mem_dump(dhd_bus_t *bus);
 #endif 
@@ -1326,11 +1334,22 @@ break2:
 	return BCME_OK;
 }
 
-int dhdpcie_checkdied_2(dhd_pub_t *dhd)
+int dhd_checkdied(dhd_pub_t *dhd)
 {
-        dhd_bus_t *bus = dhd->bus;
-        return dhdpcie_checkdied(bus, NULL, 0);
+	dhd_bus_t *bus = dhd->bus;
+	return dhdpcie_checkdied(bus, NULL, 0);
 }
+
+#ifdef CUSTOMER_HW_ONE
+#if defined(USE_STATIC_MEMDUMP)
+int dhd_pub_mem_dump(dhd_pub_t *dhd)
+{
+	dhd_bus_t *bus = dhd->bus;
+	dhd->memdump_enabled = DUMP_MEMFILE_USR_TRIGGER;
+	return dhdpcie_mem_dump(bus);
+}
+#endif 
+#endif 
 
 static int
 dhdpcie_checkdied(dhd_bus_t *bus, char *data, uint size)
@@ -1354,6 +1373,13 @@ dhdpcie_checkdied(dhd_bus_t *bus, char *data, uint size)
 	if (DHD_NOCHECKDIED_ON())
 		return 0;
 
+#ifdef CUSTOMER_HW_ONE
+	if (bus->dhd->busstate != DHD_BUS_DATA) {
+		DHD_ERROR(("%s: bus not ready.\n", __FUNCTION__));
+		return 0;
+	}
+#endif
+
 	if (data == NULL) {
 		size = msize;
 		mbuffer = data = MALLOC(bus->dhd->osh, msize);
@@ -1371,8 +1397,18 @@ dhdpcie_checkdied(dhd_bus_t *bus, char *data, uint size)
 		goto done;
 	}
 
-	if ((bcmerror = dhdpcie_readshared(bus)) < 0)
-		goto done;
+	if (bus->shared_addr != 0) {
+		
+		if ((rv = dhdpcie_bus_membytes(bus, FALSE, bus->shared_addr,
+			(uint8 *)pciedev_shared, sizeof(pciedev_shared_t))) < 0) {
+			DHD_ERROR(("Failed to read PCIe shared struct with %d\n", rv));
+			goto done;
+		}
+	}
+	else {
+		if ((bcmerror = dhdpcie_readshared(bus)) < 0)
+			goto done;
+	}
 
 	bcm_binit(&strbuf, data, size);
 
@@ -1515,6 +1551,14 @@ dhdpcie_mem_dump(dhd_bus_t *bus)
 	uint8 *buf = NULL, *databuf = NULL;
 
 	
+	
+	if (!(get_radio_flag() & BIT(3))) {
+		DHD_ERROR(("%s: radio flag 8 8 disabled\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
+	
+
+	
 	size = bus->ramsize;
 #ifdef USE_STATIC_MEMDUMP
 	buf = DHD_OS_PREALLOC(bus->dhd, DHD_PREALLOC_MEMDUMP_BUF, size);
@@ -1582,6 +1626,12 @@ dhdpcie_bus_membytes(dhd_bus_t *bus, bool write, ulong address, uint8 *data, uin
 	little_endian = *(char *)&detect_endian_flag;
 
 #ifdef CONFIG_ARCH_MSM8994
+	if ((address > DONGLE_TCM_MAP_SIZE) ||
+		(address + size > DONGLE_TCM_MAP_SIZE)) {
+		DHD_ERROR(("%s: invalid addr %lx size %d",
+				__FUNCTION__, address, size));
+		return BCME_BADADDR;
+	}
 	
 	is_64bit_unaligned = (address & 0x7);
 #endif
@@ -1698,15 +1748,32 @@ dhd_bus_schedule_queue(struct dhd_bus  *bus, uint16 flow_id, bool txs)
 
 			ret = dhd_prot_txdata(bus->dhd, txp, flow_ring_node->flow_info.ifindex);
 			if (ret != BCME_OK) { 
-				DHD_INFO(("%s: Reinserrt %d\n", __FUNCTION__, ret));
+				DHD_INFO(("%s: Reinsert %d\n", __FUNCTION__, ret));
 				dhd_prot_txdata_write_flush(bus->dhd, flow_id, FALSE);
 				
-				dhd_flow_queue_reinsert(bus->dhd, queue, txp);
+				ret = dhd_flow_queue_reinsert(bus->dhd, queue, txp);
 				DHD_FLOWRING_UNLOCK(flow_ring_node->lock, flags);
 
+#ifdef CUSTOMER_HW_ONE
+				bus->dhd->txdesc_no_res++;
+				if (bus->dhd->txdesc_no_res > 32) {
+					DHD_ERROR(("%s: txdesc_no_res %d reinsert %d\n",
+						__FUNCTION__, bus->dhd->txdesc_no_res, ret));
+					ret = BCME_NORESOURCE;
+				}
+#endif
 				
-				return BCME_OK;
+				return ret;
 			}
+#ifdef CUSTOMER_HW_ONE
+			else {
+				if (bus->dhd->txdesc_no_res) {
+					DHD_ERROR(("%s: txdesc_no_res %d cleared\n",
+						__FUNCTION__, bus->dhd->txdesc_no_res));
+					bus->dhd->txdesc_no_res = 0;
+				}
+			}
+#endif
 		}
 
 		dhd_prot_txdata_write_flush(bus->dhd, flow_id, FALSE);
@@ -2592,6 +2659,20 @@ pcie2_mdioop(dhd_bus_t *bus, uint physmedia, uint regaddr, bool write, uint *val
 	return -1;
 }
 
+int dhd_bus_suspend(dhd_pub_t *dhdpub)
+{
+	dhd_bus_t *bus = dhdpub->bus;
+	int bcmerror = 0;
+	bus->force_suspend = 1;
+	bcmerror = dhdpcie_bus_suspend(bus, 1);
+	bus->force_suspend = 0;
+	if (bcmerror) {
+		DHD_ERROR(("%s: suspend PCIE bus failed %d\n",
+			__FUNCTION__, bcmerror));
+	}
+	return bcmerror;
+}
+
 int
 dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag)
 {
@@ -2728,9 +2809,11 @@ dhd_bus_devreset(dhd_pub_t *dhdp, uint8 flag)
 				
 #ifdef CUSTOMER_HW_ONE
 				if (dhdpcie_chipmatch (bus->dev->vendor, bus->dev->device)) {
-					DHD_ERROR(("%s: WIFI_OTP: chipmatch failed!!\n", __FUNCTION__));
+					DHD_ERROR(("%s: WIFI_OTP: chipmatch failed!!\n",
+						__FUNCTION__));
 				}
-				DHD_ERROR(("%s: WIFI_OTP: bus->device: %X \n", __FUNCTION__, bus->dev->device));
+				DHD_ERROR(("%s: WIFI_OTP: bus->device: %X \n",
+					__FUNCTION__, bus->dev->device));
 #endif
 				
 
@@ -3242,10 +3325,13 @@ dhdpcie_bus_suspend(struct dhd_bus *bus, bool state)
 	bool pending;
 	unsigned long flags;
 	int rc = 0;
+
+#ifdef CUSTOMER_HW_ONE
 	struct net_device *netdev = NULL;
 	dhd_pub_t *pub = (dhd_pub_t *)(bus->dhd);
-
 	netdev = dhd_idx2net(pub, 0);
+#endif 
+
 	if (bus->dhd == NULL) {
 		DHD_ERROR(("bus not inited\n"));
 		return BCME_ERROR;
@@ -3271,14 +3357,18 @@ dhdpcie_bus_suspend(struct dhd_bus *bus, bool state)
 		bus->wait_for_d3_ack = 0;
 		bus->suspended = TRUE;
 		DHD_GENERAL_LOCK(bus->dhd, flags);
+		bus->dhd->busstate = DHD_BUS_SUSPEND;
+#ifdef CUSTOMER_HW_ONE
 		netif_stop_queue(netdev);
 		DHD_INFO(("prepare in suspend mode stop net device traffic\n"));
-		bus->dhd->busstate = DHD_BUS_SUSPEND;
+#endif 
 		if (bus->dhd->tx_in_progress) {
 			DHD_ERROR(("Tx Request is not ended\n"));
 			bus->dhd->busstate = DHD_BUS_DATA;
+#ifdef CUSTOMER_HW_ONE
 			DHD_ERROR(("1. fail to suspend, start net device traffic\n"));
 			netif_start_queue(netdev);
+#endif 
 			DHD_GENERAL_UNLOCK(bus->dhd, flags);
 			bus->suspended = FALSE;
 			return -EBUSY;
@@ -3297,22 +3387,19 @@ dhdpcie_bus_suspend(struct dhd_bus *bus, bool state)
 			
 			if (!bus->force_suspend && dhd_os_check_wakelock_all(bus->dhd)) {
 				DHD_ERROR(("Suspend failed because of wakelock\n"));
-				bus->dev->current_state = PCI_D3hot;
-				pci_set_master(bus->dev);
-				rc = pci_set_power_state(bus->dev, PCI_D0);
-				if (rc) {
-					DHD_ERROR(("%s: pci_set_power_state failed:"
-						" current_state[%d], ret[%d]\n",
-						__FUNCTION__, bus->dev->current_state, rc));
-				}
 				bus->suspended = FALSE;
 				DHD_GENERAL_LOCK(bus->dhd, flags);
 				bus->dhd->busstate = DHD_BUS_DATA;
+#ifdef CUSTOMER_HW_ONE
 				DHD_ERROR(("2. fail to suspend, start net device traffic\n"));
 				netif_start_queue(netdev);
+#endif 
 				DHD_GENERAL_UNLOCK(bus->dhd, flags);
 				rc = BCME_ERROR;
 			} else {
+				DHD_OS_WAKE_LOCK_WAIVE(bus->dhd);
+				dhdpcie_send_mb_data(bus, H2D_HOST_D0_INFORM_IN_USE);
+				DHD_OS_WAKE_LOCK_RESTORE(bus->dhd);
 				DHD_INTR(("%s: disable PCIE interrupts\n", __FUNCTION__));
 				dhdpcie_bus_intr_disable(bus);
 				rc = dhdpcie_pci_suspend_resume(bus, state);
@@ -3328,23 +3415,17 @@ dhdpcie_bus_suspend(struct dhd_bus *bus, bool state)
 				dhdpcie_mem_dump(bus);
 			}
 #endif 
-			bus->dev->current_state = PCI_D3hot;
-			pci_set_master(bus->dev);
-			rc = pci_set_power_state(bus->dev, PCI_D0);
-			if (rc) {
-				DHD_ERROR(("%s: pci_set_power_state failed:"
-					" current_state[%d], ret[%d]\n",
-					__FUNCTION__, bus->dev->current_state, rc));
-			}
 			bus->suspended = FALSE;
 			DHD_GENERAL_LOCK(bus->dhd, flags);
 			bus->dhd->busstate = DHD_BUS_DATA;
+#ifdef CUSTOMER_HW_ONE
 			DHD_ERROR(("3. fail to suspend, start net device traffic\n"));
 			netif_start_queue(netdev);
+#endif 
 			DHD_GENERAL_UNLOCK(bus->dhd, flags);
 			if (bus->dhd->d3ackcnt_timeout >= MAX_CNTL_D3ACK_TIMEOUT) {
-				DHD_ERROR(("%s: Event HANG send up "
-					"due to PCIe linkdown\n", __FUNCTION__));
+			DHD_ERROR(("%s: Event HANG send up "
+				"due to PCIe linkdown\n", __FUNCTION__));
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 #ifdef CONFIG_ARCH_MSM
 				bus->islinkdown = TRUE;
@@ -3357,13 +3438,40 @@ dhdpcie_bus_suspend(struct dhd_bus *bus, bool state)
 		bus->wait_for_d3_ack = 1;
 	} else {
 		
+#ifdef CUSTOMER_HW_ONE
+		
+		{
+			uint32 val;
+
+			val = OSL_PCI_READ_CONFIG(bus->osh, PCI_CFG_VID, sizeof(uint32));
+			if ((val & 0xFFFF) != VENDOR_BROADCOM) {
+				DHD_ERROR(("%s : failed to read PCI configuration space!\n",
+					__FUNCTION__));
+#ifdef SUPPORT_LINKDOWN_RECOVERY
+#ifdef CONFIG_ARCH_MSM
+				bus->islinkdown = TRUE;
+#endif 
+#endif 
+				dhd_os_check_hang(bus->dhd, 0, -ETIMEDOUT);
+				return -ETIMEDOUT;
+			}
+		}
+#endif 
+
 		rc = dhdpcie_pci_suspend_resume(bus, state);
+		if (bus->dhd->busstate == DHD_BUS_SUSPEND) {
+			DHD_OS_WAKE_LOCK_WAIVE(bus->dhd);
+			dhdpcie_send_mb_data(bus, H2D_HOST_D0_INFORM);
+			DHD_OS_WAKE_LOCK_RESTORE(bus->dhd);
+		}
 		bus->suspended = FALSE;
 		DHD_GENERAL_LOCK(bus->dhd, flags);
 		bus->dhd->busstate = DHD_BUS_DATA;
 		DHD_GENERAL_UNLOCK(bus->dhd, flags);
+#ifdef CUSTOMER_HW_ONE
 		DHD_INFO(("Normal resumed, start net device traffic\n"));
 		netif_wake_queue(netdev);
+#endif 
 		DHD_INTR(("%s: enable PCIE interrupts\n", __FUNCTION__));
 		dhdpcie_bus_intr_enable(bus);
 #ifdef BCMPCIE_OOB_HOST_WAKE
@@ -3740,6 +3848,8 @@ void dhd_bus_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 			dhd_prot_print_flow_ring(dhdp, flow_ring_node->prot_info, strbuf);
 		}
 	}
+	bcm_bprintf(strbuf, "D0 inform cnt %d\n", dhdp->bus->d0_inform_cnt);
+	bcm_bprintf(strbuf, "D0 inform in use cnt %d\n", dhdp->bus->d0_inform_in_use_cnt);
 }
 
 static void
@@ -3752,6 +3862,11 @@ dhd_update_txflowrings(dhd_pub_t *dhd)
 
 	item = dll_head_p(&bus->const_flowring);
 	while (item) {
+
+		if (dhd->hang_was_sent) {
+			break;
+		}
+
 		DHD_FLOWID_LOCK(dhd->flowid_lock, flags);
 		if (dll_end(&bus->const_flowring, item)) {
 			DHD_FLOWID_UNLOCK(dhd->flowid_lock, flags);
@@ -3909,6 +4024,14 @@ dhdpcie_send_mb_data(dhd_bus_t *bus, uint32 h2d_mb_data)
 
 	if (h2d_mb_data == H2D_HOST_D3_INFORM)
 		DHD_INFO_HW4(("%s: send H2D_HOST_D3_INFORM to dongle\n", __FUNCTION__));
+	if (h2d_mb_data == H2D_HOST_D0_INFORM_IN_USE) {
+		DHD_INFO_HW4(("%s: send H2D_HOST_D0_INFORM_IN_USE to dongle\n", __FUNCTION__));
+		bus->d0_inform_in_use_cnt++;
+	}
+	if (h2d_mb_data == H2D_HOST_D0_INFORM) {
+		DHD_INFO_HW4(("%s: send H2D_HOST_D0_INFORM to dongle\n", __FUNCTION__));
+		bus->d0_inform_cnt++;
+	}
 }
 
 static void
@@ -3944,9 +4067,17 @@ dhdpcie_handle_mb_data(dhd_bus_t *bus)
 	if (d2h_mb_data & D2H_DEV_FWHALT)  {
 		DHD_INFO(("FW trap has happened\n"));
 #ifdef DHD_DEBUG
+#if defined(CUSTOMER_HW_ONE) && defined(USE_STATIC_MEMDUMP)
+		
+		bus->dhd->memdump_enabled = DUMP_MEMFILE_HANG;
+#endif 
 		dhdpcie_checkdied(bus, NULL, 0);
 #endif
 		bus->dhd->busstate = DHD_BUS_DOWN;
+#if defined(CUSTOMER_HW_ONE) && !defined(USE_STATIC_MEMDUMP)
+		
+		dhd_os_check_hang(bus->dhd, 0, 0);
+#endif 
 	}
 }
 
@@ -3998,6 +4129,11 @@ dhdpci_bus_read_frames(dhd_bus_t *bus)
 	more |= dhd_prot_process_msgbuf_txcpl(bus->dhd, dhd_txbound);
 
 	more |= dhd_prot_process_msgbuf_rxcpl(bus->dhd, dhd_rxbound);
+
+	
+	if (bus->dhd->hang_was_sent) {
+		more = FALSE;
+	}
 	DHD_PERIM_UNLOCK(bus->dhd); 
 
 	return more;
@@ -4319,7 +4455,7 @@ dhdpcie_chipmatch(uint16 vendor, uint16 device)
 
 	
 #ifdef CUSTOMER_HW_ONE
-	if ( device == BCM4356_D11AC_ID ) {
+	if (device == BCM4356_D11AC_ID) {
 		DHD_ERROR(("%s: WIFI_OTP: OTP is NOT empty\n", __FUNCTION__));
         otp_write = 1;
 	} else {

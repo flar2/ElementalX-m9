@@ -108,6 +108,8 @@
 #define MDSS_MDP_HW_REV_200	MDSS_MDP_REV(2, 0, 0) 
 
 enum {
+	NOTIFY_UPDATE_INIT,
+	NOTIFY_UPDATE_DEINIT,
 	NOTIFY_UPDATE_START,
 	NOTIFY_UPDATE_STOP,
 	NOTIFY_UPDATE_POWER_OFF,
@@ -165,6 +167,9 @@ enum {
 	MDP_RGBA_5551,	
 	MDP_ARGB_4444,	
 	MDP_RGBA_4444,	
+	MDP_RGB_565_UBWC,
+	MDP_RGBA_8888_UBWC,
+	MDP_Y_CBCR_H2V2_UBWC,
 	MDP_IMGTYPE_LIMIT,
 	MDP_RGB_BORDERFILL,	
 	MDP_FB_FORMAT = MDP_IMGTYPE2_START,    
@@ -227,6 +232,8 @@ enum {
 #define MDP_SMP_FORCE_ALLOC		0x00200000
 #define MDP_TRANSP_NOP 0xffffffff
 #define MDP_ALPHA_NOP 0xff
+
+#define MDP_SMART_BLIT			0xC0000000
 
 #define MDP_FB_PAGE_PROTECTION_NONCACHED         (0)
 #define MDP_FB_PAGE_PROTECTION_WRITECOMBINE      (1)
@@ -295,6 +302,7 @@ struct mdp_blit_req {
 	uint32_t flags;
 	int sharpening_strength;  
 	uint8_t color_space;
+	uint32_t fps;
 };
 
 struct mdp_blit_req_list {
@@ -505,6 +513,7 @@ enum mdss_mdp_blend_op {
 	BLEND_OP_MAX,
 };
 
+#define DECIMATED_DIMENSION(dim, deci) (((dim) + ((1 << (deci)) - 1)) >> (deci))
 #define MAX_PLANES	4
 struct mdp_scale_data {
 	uint8_t enable_pxl_ext;
@@ -667,6 +676,7 @@ enum {
 	mdp_lut_igc,
 	mdp_lut_pgc,
 	mdp_lut_hist,
+	mdp_lut_rgb,
 	mdp_lut_max,
 };
 
@@ -687,6 +697,16 @@ struct mdp_pgc_lut_data {
 	struct mdp_ar_gc_lut_data *b_data;
 };
 
+struct mdp_rgb_lut_data {
+	uint32_t flags;
+	uint32_t lut_type;
+	struct fb_cmap cmap;
+};
+
+enum {
+	mdp_rgb_lut_gc,
+	mdp_rgb_lut_hist,
+};
 
 struct mdp_lut_cfg_data {
 	uint32_t lut_type;
@@ -694,6 +714,7 @@ struct mdp_lut_cfg_data {
 		struct mdp_igc_lut_data igc_lut_data;
 		struct mdp_pgc_lut_data pgc_lut_data;
 		struct mdp_hist_lut_data hist_lut_data;
+		struct mdp_rgb_lut_data rgb_lut_data;
 	} data;
 };
 

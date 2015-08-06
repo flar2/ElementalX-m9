@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,6 +15,7 @@
 #include <linux/kthread.h>
 #include <linux/uaccess.h>
 #include <linux/wait.h>
+#include <linux/wakelock.h>
 #include <linux/jiffies.h>
 #include <linux/sched.h>
 #include <linux/msm_audio_ion.h>
@@ -37,6 +38,7 @@
 	}\
 }
 
+#define WAKELOCK_TIMEOUT	5000
 enum {
 	AFE_COMMON_RX_CAL = 0,
 	AFE_COMMON_TX_CAL,
@@ -75,6 +77,12 @@ enum {
 	QUICK_CALIB_DISABLE,
 	QUICK_CALIB_ENABLE
 };
+
+struct wlock {
+	struct wakeup_source ws;
+};
+
+static struct wlock wl;
 
 struct afe_ctl {
 	void *apr;
@@ -3450,6 +3458,7 @@ int afe_validate_port(u16 port_id)
 	case SLIMBUS_6_TX:
 	case AFE_PORT_ID_PRIMARY_MI2S_RX:
 	case AFE_PORT_ID_PRIMARY_MI2S_TX:
+	case AFE_PORT_ID_SECONDARY_MI2S_RX:
 	case AFE_PORT_ID_QUATERNARY_MI2S_RX:
 	case AFE_PORT_ID_QUATERNARY_MI2S_TX:
 	case AFE_PORT_ID_TERTIARY_MI2S_RX:
@@ -3868,6 +3877,80 @@ fail_cmd:
 	return ret;
 }
 
+int afe_enable_lpass_core_shared_clock(u16 port_id, u32 enable)
+{
+	struct afe_lpass_core_shared_clk_config_command clk_cfg;
+	int index = 0;
+	int ret = 0;
+
+	index = q6audio_get_port_index(port_id);
+	ret = q6audio_is_digital_pcm_interface(port_id);
+	if (ret < 0) {
+		pr_err("%s: q6audio_is_digital_pcm_interface fail %d\n",
+		       __func__, ret);
+		return -EINVAL;
+	}
+
+	ret = afe_q6_interface_prepare();
+	if (ret != 0) {
+		pr_err("%s: Q6 interface prepare failed %d\n", __func__, ret);
+		return ret;
+	}
+
+	mutex_lock(&this_afe.afe_cmd_lock);
+	clk_cfg.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+	clk_cfg.hdr.pkt_size = sizeof(clk_cfg);
+	clk_cfg.hdr.src_port = 0;
+	clk_cfg.hdr.dest_port = 0;
+	clk_cfg.hdr.token = index;
+
+	clk_cfg.hdr.opcode = AFE_PORT_CMD_SET_PARAM_V2;
+	clk_cfg.param.port_id = q6audio_get_port_id(port_id);
+	clk_cfg.param.payload_size = sizeof(clk_cfg) - sizeof(struct apr_hdr)
+						- sizeof(clk_cfg.param);
+	clk_cfg.param.payload_address_lsw = 0x00;
+	clk_cfg.param.payload_address_msw = 0x00;
+	clk_cfg.param.mem_map_handle = 0x00;
+	clk_cfg.pdata.module_id = AFE_MODULE_AUDIO_DEV_INTERFACE;
+	clk_cfg.pdata.param_id = AFE_PARAM_ID_LPASS_CORE_SHARED_CLOCK_CONFIG;
+	clk_cfg.pdata.param_size =  sizeof(clk_cfg.clk_cfg);
+	clk_cfg.clk_cfg.lpass_core_shared_clk_cfg_minor_version =
+				AFE_API_VERSION_LPASS_CORE_SHARED_CLK_CONFIG;
+	clk_cfg.clk_cfg.enable = enable;
+
+	pr_debug("%s: port id = %d, enable = %d\n",
+		 __func__, q6audio_get_port_id(port_id), enable);
+
+	atomic_set(&this_afe.state, 1);
+	atomic_set(&this_afe.status, 0);
+	ret = apr_send_pkt(this_afe.apr, (uint32_t *) &clk_cfg);
+	if (ret < 0) {
+		pr_err("%s: AFE enable for port 0x%x ret %d\n",
+		       __func__, port_id, ret);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+	ret = wait_event_timeout(this_afe.wait[index],
+			(atomic_read(&this_afe.state) == 0),
+			msecs_to_jiffies(TIMEOUT_MS));
+	if (!ret) {
+		pr_err("%s: wait_event timeout\n", __func__);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+	if (atomic_read(&this_afe.status) != 0) {
+		pr_err("%s: config cmd failed\n", __func__);
+		ret = -EINVAL;
+		goto fail_cmd;
+	}
+
+fail_cmd:
+	mutex_unlock(&this_afe.afe_cmd_lock);
+	return ret;
+}
+
 int q6afe_check_osr_clk_freq(u32 freq)
 {
 	int ret = 0;
@@ -4212,6 +4295,8 @@ static int afe_set_cal_fb_spkr_prot(int32_t cal_type, size_t data_size,
 	if (data_size != sizeof(*cal_data))
 		goto done;
 
+	if (this_afe.prot_cfg.mode == MSM_SPKR_PROT_CALIBRATION_IN_PROGRESS)
+		__pm_wakeup_event(&wl.ws, jiffies_to_msecs(WAKELOCK_TIMEOUT));
 	mutex_lock(&this_afe.cal_data[AFE_FB_SPKR_PROT_CAL]->lock);
 	memcpy(&this_afe.prot_cfg, &cal_data->cal_info,
 		sizeof(this_afe.prot_cfg));
@@ -4276,6 +4361,7 @@ static int afe_get_cal_fb_spkr_prot(int32_t cal_type, size_t data_size,
 		cal_data->cal_info.r0[SP_V2_SPKR_2] = -1;
 	}
 	mutex_unlock(&this_afe.cal_data[AFE_FB_SPKR_PROT_CAL]->lock);
+	__pm_relax(&wl.ws);
 done:
 	return ret;
 }
@@ -4308,6 +4394,7 @@ static int afe_map_cal_data(int32_t cal_type,
 			__func__,
 			&cal_block->cal_data.paddr,
 			cal_block->map_data.map_size);
+		goto done;
 	}
 	cal_block->map_data.q6map_handle = atomic_read(&this_afe.
 		mem_map_cal_handles[cal_index]);
@@ -4496,6 +4583,7 @@ static int __init afe_init(void)
 	for (i = 0; i < AFE_MAX_PORTS; i++)
 		init_waitqueue_head(&this_afe.wait[i]);
 
+	wakeup_source_init(&wl.ws, "spkr-prot");
 	ret = afe_init_cal_data();
 	if (ret)
 		pr_err("%s: could not init cal data! %d\n", __func__, ret);
@@ -4510,6 +4598,7 @@ static void __exit afe_exit(void)
 
 	config_debug_fs_exit();
 	mutex_destroy(&this_afe.afe_cmd_lock);
+	wakeup_source_trash(&wl.ws);
 }
 
 device_initcall(afe_init);

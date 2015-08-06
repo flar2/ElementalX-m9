@@ -17,6 +17,8 @@
 #include <linux/log2.h>
 #include <linux/workqueue.h>
 
+#define ALARM_GROUP_TIME 60
+
 static int rtc_timer_enqueue(struct rtc_device *rtc, struct rtc_timer *timer);
 static void rtc_timer_remove(struct rtc_device *rtc, struct rtc_timer *timer);
 
@@ -389,29 +391,10 @@ static int __rtc_set_alarm(struct rtc_device *rtc, struct rtc_wkalrm *alarm)
 			pr_info("[RTC] powersave/nightmode alarm group to: %0d:%02d:%02d\n", alarm->time.tm_hour, alarm->time.tm_min, grp_alarm_sec);
 		} else if (screen_off) {
 			pr_info("[RTC] screeoff original alarm to: %02d:%02d:%02d\n", alarm->time.tm_hour, alarm->time.tm_min, alarm->time.tm_sec);
-			if (screenoff_policy == 1) {
-				if (alarm->time.tm_sec > screen_off_sec1) {
-					rtc_tm_to_time(&alarm->time, &tmp);
-					rtc_time_to_tm(tmp + 60, &alarm->time);
-		           alarm->time.tm_sec = screen_off_sec4;
-				} else if (alarm->time.tm_sec > screen_off_sec2)
-			       alarm->time.tm_sec = screen_off_sec1;
-				else if (alarm->time.tm_sec > screen_off_sec3)
-	               alarm->time.tm_sec = screen_off_sec2;
-				else if (alarm->time.tm_sec > screen_off_sec4)
-		           alarm->time.tm_sec = screen_off_sec3;
-				else
-			       alarm->time.tm_sec = screen_off_sec4;
-			} else {
-				if (alarm->time.tm_sec > screen_off_sec1) {
-					rtc_tm_to_time(&alarm->time, &tmp);
-					rtc_time_to_tm(tmp + 60, &alarm->time);
-		           alarm->time.tm_sec = screen_off_sec2;
-				} else if (alarm->time.tm_sec > screen_off_sec2)
-		           alarm->time.tm_sec = screen_off_sec1;
-				else
-		           alarm->time.tm_sec = screen_off_sec2;
-			}
+			rtc_tm_to_time(&alarm->time, &tmp);
+			tmp += ALARM_GROUP_TIME - (tmp % ALARM_GROUP_TIME);
+			rtc_time_to_tm(tmp, &alarm->time);
+
 			pr_info("[RTC] screeoff alarm group to: %02d:%02d:%02d\n", alarm->time.tm_hour, alarm->time.tm_min, alarm->time.tm_sec);
 		}
 #endif

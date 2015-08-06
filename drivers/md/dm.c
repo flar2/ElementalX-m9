@@ -1400,7 +1400,7 @@ static void dm_request_fn(struct request_queue *q)
 	while (!blk_queue_stopped(q)) {
 		rq = blk_peek_request(q);
 		if (!rq)
-			goto delay_and_out;
+			goto out;
 
 		
 		pos = 0;

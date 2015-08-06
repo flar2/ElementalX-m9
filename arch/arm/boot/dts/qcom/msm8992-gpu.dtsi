@@ -89,6 +89,14 @@
 		/* IOMMU Data */
 		iommu = <&kgsl_iommu>;
 
+		/* Trace bus */
+		coresight-id = <67>;
+		coresight-name = "coresight-gfx";
+		coresight-nr-inports = <0>;
+		coresight-outports = <0>;
+		coresight-child-list = <&funnel_in0>;
+		coresight-child-ports = <4>;
+
 		/* Power levels  */
 		qcom,gpu-pwrlevels {
 			#address-cells = <1>;
@@ -161,7 +169,7 @@
                  */
                 qcom,ocmem-bus-client {
                         qcom,msm-bus,name = "gpu-ocmem";
-                        qcom,msm-bus,num-cases = <8>;
+                        qcom,msm-bus,num-cases = <7>;
                         qcom,msm-bus,num-paths = <1>;
                         qcom,msm-bus,vectors-KBps =
 				<89 662 0 9600000>,     /* gpu=600 */

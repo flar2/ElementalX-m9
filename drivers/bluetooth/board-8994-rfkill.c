@@ -28,6 +28,9 @@ extern void bt_export_bd_address(void);
 extern void msm_hs_uart_gpio_config_ext(int on);
 extern void bluesleep_set_bt_pwr_state(int on);
 
+extern bool get_gpio4_state(void);
+extern int lock_wlan_seci_gpio(void);
+
 #define BT_REG_ON    114
 #define BT_WAKE_HOST 108
 #define BT_WAKE_DEV  112
@@ -116,9 +119,11 @@ static void htc_config_bt_off(void)
 
 static int bluetooth_set_power(void *data, bool blocked)
 {
-	if (!blocked)
+	if (!blocked) {
+		if (get_gpio4_state() == false)
+			lock_wlan_seci_gpio();
 		htc_config_bt_on();
-	else
+	} else
 		htc_config_bt_off();
 
 	return 0;

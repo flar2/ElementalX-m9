@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd.h 533926 2015-02-12 03:55:12Z $
+ * $Id: dhd.h 556045 2015-05-12 08:30:49Z $
  */
 
 
@@ -124,7 +124,7 @@ enum dhd_op_flags {
 
 #ifdef BCMPCIE
 #ifndef MAX_CNTL_D3ACK_TIMEOUT
-#define MAX_CNTL_D3ACK_TIMEOUT 2
+#define MAX_CNTL_D3ACK_TIMEOUT 1
 #endif 
 #endif 
 
@@ -179,9 +179,13 @@ enum dhd_dongledump_mode {
 	DUMP_DISABLED = 0,
 	DUMP_MEMONLY,
 	DUMP_MEMFILE,
-	DUMP_MEMFILE_BUGON
+	DUMP_MEMFILE_BUGON,
+#ifdef CUSTOMER_HW_ONE
+	DUMP_MEMFILE_USR_TRIGGER,
+	DUMP_MEMFILE_HANG
+#endif 
 };
-#endif
+#endif 
 
 #ifndef DHD_SDALIGN
 #ifdef CUSTOMER_HW_ONE
@@ -431,6 +435,8 @@ typedef struct dhd_pub {
 	bool tx_in_progress;
 #ifdef CUSTOMER_HW_ONE
 	bool os_stopped;
+	uint32 txdesc_no_res;
+	bool allow_p2p_event;
 #endif
 	unsigned int irq_cpu_count[NR_CPUS+1];
 } dhd_pub_t;
@@ -638,8 +644,8 @@ extern void dhd_os_sdlock_rxq(dhd_pub_t * pub);
 extern void dhd_os_sdunlock_rxq(dhd_pub_t * pub);
 extern void dhd_os_sdlock_sndup_rxq(dhd_pub_t * pub);
 #ifdef DHDTCPACK_SUPPRESS
-extern void dhd_os_tcpacklock(dhd_pub_t *pub);
-extern void dhd_os_tcpackunlock(dhd_pub_t *pub);
+extern unsigned long dhd_os_tcpacklock(dhd_pub_t *pub);
+extern void dhd_os_tcpackunlock(dhd_pub_t *pub, unsigned long flags);
 #endif 
 
 extern int dhd_customer_oob_irq_map(void *adapter, unsigned long *irq_flags_ptr);
@@ -704,6 +710,9 @@ extern bool dhd_support_sta_mode(dhd_pub_t *dhd);
 
 #ifdef DHD_DEBUG
 extern int write_to_file(dhd_pub_t *dhd, uint8 *buf, int size);
+#ifdef CUSTOMER_HW_ONE
+extern int user_triger_write_to_file(dhd_pub_t *dhd, uint8 *buf, int size);
+#endif
 #endif 
 
 typedef struct {

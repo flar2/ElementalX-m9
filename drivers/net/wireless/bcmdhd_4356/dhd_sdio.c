@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_sdio.c 518753 2014-12-03 10:32:06Z $
+ * $Id: dhd_sdio.c 542237 2015-03-19 06:49:27Z $
  */
 
 #include <typedefs.h>
@@ -1548,7 +1548,7 @@ dhd_bus_txdata(struct dhd_bus *bus, void *pkt)
 		for (i = 0; i < (datalen - 4); i++) {
 			DHD_ERROR(("%02X ", dump_data[i]));
 			if ((i & 15) == 15)
-				printk("\n");
+				DHD_ERROR(("\n"));
 		}
 		DHD_ERROR(("\n"));
 	}

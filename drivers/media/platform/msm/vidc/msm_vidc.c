@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -529,8 +529,10 @@ int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)
 		if (rc < 0)
 			goto exit;
 
-		same_fd_handle = get_same_fd_buffer(&inst->registeredbufs,
-					b->m.planes[i].reserved[0]);
+		if (!is_dynamic_output_buffer_mode(b, inst))
+			same_fd_handle = get_same_fd_buffer(
+						&inst->registeredbufs,
+						b->m.planes[i].reserved[0]);
 
 		populate_buf_info(binfo, b, i);
 		if (same_fd_handle) {
@@ -542,7 +544,7 @@ int map_and_register_buf(struct msm_vidc_inst *inst, struct v4l2_buffer *b)
 		} else {
 			if (inst->map_output_buffer) {
 #if 1
-                                dprintk(VIDC_DBG,
+                                dprintk(VIDC_WARN,
                                         "[Vidc_Mem][%p] Import_%s: UsrAddr(%lx) FD(%d)\n",
                                         inst, ((get_hal_buffer_type(inst, b) == HAL_BUFFER_INPUT)? "I":"O"),
                                         binfo->uvaddr[i], b->m.planes[i].reserved[0]);
@@ -1262,7 +1264,7 @@ void *msm_vidc_open(int core_id, int session_type)
 	mutex_init(&inst->lock);
 
 	INIT_MSM_VIDC_LIST(&inst->pendingq);
-	INIT_MSM_VIDC_LIST(&inst->internalbufs);
+	INIT_MSM_VIDC_LIST(&inst->scratchbufs);
 	INIT_MSM_VIDC_LIST(&inst->persistbufs);
 	INIT_MSM_VIDC_LIST(&inst->pending_getpropq);
 	INIT_MSM_VIDC_LIST(&inst->outputbufs);
@@ -1327,6 +1329,8 @@ void *msm_vidc_open(int core_id, int session_type)
 
 	setup_event_queue(inst, &core->vdev[session_type].vdev);
 
+	pr_info(VIDC_DBG_TAG "Opening video instance finish : %p, %d\n",
+		VIDC_MSG_PRIO2STRING(VIDC_INFO), inst, session_type);
 	return inst;
 fail_init:
 	vb2_queue_release(&inst->bufq[OUTPUT_PORT].vb2_bufq);

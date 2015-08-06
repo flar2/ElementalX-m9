@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: siutils.c 497460 2014-08-19 15:14:13Z $
+ * $Id: siutils.c 542237 2015-03-19 06:49:27Z $
  */
 
 #include <bcm_cfg.h>
@@ -480,7 +480,7 @@ si_doattach(si_info_t *sii, uint devid, osl_t *osh, void *regs,
 	if (!check_rev()) {
 		
 		if (!check_pcie_link_status()) {
-			printk("%s : PCIE LINK is abnormal status\n", __FUNCTION__);
+			SI_ERROR(("%s : PCIE LINK is abnormal status\n", __FUNCTION__));
 			return NULL;
 		}
 	}

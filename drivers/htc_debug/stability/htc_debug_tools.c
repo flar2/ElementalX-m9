@@ -31,7 +31,7 @@ void htc_debug_watchdog_check_pet(unsigned long long timestamp)
 			last_pet_check = timestamp;
 			pr_info("\n%s: MSM watchdog was blocked for more than %d seconds!\n", __func__, pet_check_counter++);
 			pr_info("%s: Prepare to dump stack...\n", __func__);
-			dump_stack();
+			arch_trigger_different_cpu_backtrace_dump_timeout(2);
 #if defined(CONFIG_HTC_DEBUG_WORKQUEUE)
 			pr_info("%s: Prepare to dump pending works on global workqueue...\n", __func__);
 			workqueue_show_pending_work();

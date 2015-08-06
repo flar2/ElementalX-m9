@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -140,7 +140,8 @@
 
 		bcl@4200 {
 			compatible = "qcom,msm-bcl";
-			reg = <0x4200 0xFF>;
+			reg = <0x4200 0xFF 0x88E 0x2>;
+			reg-names = "fg_user_adc", "pon_spare";
 			interrupts = <0x2 0x42 0x0>,
 					<0x2 0x42 0x1>;
 			interrupt-names = "bcl-high-ibat-int",
@@ -148,13 +149,14 @@
 			qcom,vbat-scaling-factor = <39000>;
 			qcom,vbat-gain-numerator = <1>;
 			qcom,vbat-gain-denominator = <128>;
-			qcom,vbat-polling-delay-ms = <50>;
+			qcom,vbat-polling-delay-ms = <100>;
 			qcom,ibat-scaling-factor = <39000>;
 			qcom,ibat-gain-numerator = <1>;
 			qcom,ibat-gain-denominator = <128>;
 			qcom,ibat-offset-numerator = <1200>;
 			qcom,ibat-offset-denominator = <1>;
-			qcom,ibat-polling-delay-ms = <50>;
+			qcom,ibat-polling-delay-ms = <100>;
+			qcom,inhibit-derating-ua = <550000>;
 		};
 
 		pmi8994_vadc: vadc@3100 {
@@ -185,7 +187,7 @@
 			qcom,adjust-fastchg-thr-mv = <4260>;
 			qcom,float-voltage-mv = <4400>;
 			qcom,float-voltage-cmp-mv = <4060>;
-			qcom,iusb-max-ma = <1500>;
+			qcom,iusb-max-ma = <500>;
 			qcom,charging-timeout-mins = <768>;
 			qcom,precharging-timeout-mins = <24>;
 			qcom,warm-ibatmax = <250>;
@@ -203,6 +205,7 @@
 			qcom,parallel-allowed-lowering-ma = <500>;
 			qcom,usbin-vadc = <&pmi8994_vadc>;
 			regulator-name = "pmi8994_otg_vreg";
+			qcom,autoadjust-vfloat;
 
 			qcom,chgr@1000 {
 				reg = <0x1000 0x100>;
@@ -301,13 +304,14 @@
 			compatible = "qcom,qpnp-fg";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			qcom,resume-soc = <98>;
+			qcom,resume-soc = <95>;
 			status = "okay";
 			qcom,warm-bat-decidegc = <460>;
 			qcom,cool-bat-decidegc = <100>;
 			qcom,hot-bat-decidegc = <550>;
 			qcom,cold-bat-decidegc = <0>;
 			qcom,bcl-lm-threshold-ma = <127>;
+			qcom,bcl-mh-threshold-ma = <405>;
 			qcom,fg-iterm-ma = <284>;
 			qcom,thermal-coefficients = [97 85 62 49 5A 35];
 			qcom,ext-sense-type = <1>;
@@ -315,6 +319,14 @@
 			qcom,stored-batt-magic-num = <(-1)>;
 			qcom,stored-batt-soc = <(-1)>;
 			qcom,stored-batt-update-time = <(-1)>;
+			qcom,stored-batt-temperature = <271>;
+			qcom,stored-batt-temp-diff = <200>;
+			qcom,fg-chg-iterm-ma = <50>;
+			qcom,cycle-counter-en;
+			qcom,cycle-counter-low-soc = <15>;
+			qcom,cycle-counter-high-soc = <85>;
+			qcom,capacity-learning-on;
+			qcom,fg-cc-cv-threshold-mv = <4390>;
 
 			qcom,fg-soc@4000 {
 				status = "okay";
@@ -366,6 +378,10 @@
 
 			qcom,fg-adc-ibat@4255 {
 				reg = <0x4255 0x1>;
+			};
+
+			qcom,revid-tp-rev@1f1 {
+				reg = <0x1f1 0x1>;
 			};
 
 			qcom,fg-memif@4400 {
@@ -453,14 +469,14 @@
 				qcom,qpnp-lab-init-amoled-voltage = <4600000>;
 				qcom,qpnp-lab-init-lcd-voltage = <5500000>;
 
-				qcom,qpnp-lab-soft-start = <400>;
+				qcom,qpnp-lab-soft-start = <800>;
 
 				qcom,qpnp-lab-full-pull-down;
 				qcom,qpnp-lab-pull-down-enable;
 				qcom,qpnp-lab-switching-clock-frequency = <1600>;
 				qcom,qpnp-lab-limit-maximum-current = <800>;
 				qcom,qpnp-lab-limit-max-current-enable;
-				qcom,qpnp-lab-ps-threshold = <40>;
+				qcom,qpnp-lab-ps-threshold = <20>;
 				qcom,qpnp-lab-ps-enable;
 				qcom,qpnp-lab-nfet-size = <100>;
 				qcom,qpnp-lab-pfet-size = <100>;
@@ -483,11 +499,11 @@
 				qcom,qpnp-ibb-init-amoled-voltage = <4000000>;
 				qcom,qpnp-ibb-init-lcd-voltage = <5500000>;
 
-				qcom,qpnp-ibb-soft-start = <10000>;
+				qcom,qpnp-ibb-soft-start = <1000>;
 
 				qcom,qpnp-ibb-discharge-resistor = <300>;
-				qcom,qpnp-ibb-lab-pwrup-delay = <10000>;
-				qcom,qpnp-ibb-lab-pwrdn-delay = <10000>;
+				qcom,qpnp-ibb-lab-pwrup-delay = <4000>;
+				qcom,qpnp-ibb-lab-pwrdn-delay = <4000>;
 				qcom,qpnp-ibb-en-discharge;
 
 				qcom,qpnp-ibb-full-pull-down;
@@ -559,6 +575,50 @@
 			qcom,wave-samp-rep-cnt = <1>;
 		};
 
+		qcom,leds@d000 {
+			compatible = "qcom,leds-qpnp";
+			reg = <0xd000 0x100>;
+			label = "rgb";
+			status = "okay";
+
+			qcom,rgb_0 {
+				label = "rgb";
+				qcom,id = <3>;
+				qcom,mode = "pwm";
+				pwms = <&pmi8994_pwm_3 0 0>;
+				qcom,pwm-us = <1000>;
+				qcom,max-current = <12>;
+				qcom,default-state = "off";
+				linux,name = "red";
+				linux,default-trigger =
+					"battery-charging";
+			};
+
+			qcom,rgb_1 {
+				label = "rgb";
+				qcom,id = <4>;
+				qcom,mode = "pwm";
+				pwms = <&pmi8994_pwm_2 0 0>;
+				qcom,pwm-us = <1000>;
+				qcom,max-current = <12>;
+				qcom,default-state = "off";
+				linux,name = "green";
+				linux,default-trigger = "battery-full";
+			};
+
+			qcom,rgb_2 {
+				label = "rgb";
+				qcom,id = <5>;
+				qcom,mode = "pwm";
+				pwms = <&pmi8994_pwm_1 0 0>;
+				qcom,pwm-us = <1000>;
+				qcom,max-current = <12>;
+				qcom,default-state = "off";
+				linux,name = "blue";
+				linux,default-trigger = "boot-indication";
+			};
+		};
+
 		qcom,leds@d300 {
 			compatible = "qcom,qpnp-flash-led";
 			status = "okay";
@@ -581,6 +641,7 @@
 			qcom,headroom-sense-ch0-enabled;
 			qcom,headroom-sense-ch1-enabled;
 			qcom,power-detect-enabled;
+			qcom,gpio-flash-strobe = <&msm_gpio 22 0x00>;
 
 			pmi8994_flash0: qcom,flash_0 {
 				label = "flash";

@@ -21,27 +21,10 @@
 #include <asm/unaligned.h>
 
 static int usb_autobot_mode(void);
+static int usb_mirrorlink_mode(void);
 #define REQUEST_RESET_DELAYED (HZ / 10) 
 static void fsg_update_mode(int _linux_fsg_mode);
-void usb_composite_force_reset(struct usb_composite_dev *cdev)
-{
-	unsigned long           flags;
-
-	spin_lock_irqsave(&cdev->lock, flags);
-	
-	if (cdev && cdev->gadget && cdev->gadget->speed != USB_SPEED_UNKNOWN) {
-		usb_gadget_disconnect(cdev->gadget);
-		spin_unlock_irqrestore(&cdev->lock, flags);
-
-		msleep(500);
-
-		spin_lock_irqsave(&cdev->lock, flags);
-		usb_gadget_connect(cdev->gadget);
-		spin_unlock_irqrestore(&cdev->lock, flags);
-	} else {
-		spin_unlock_irqrestore(&cdev->lock, flags);
-	}
-}
+void usb_android_force_reset(struct usb_composite_dev *cdev);
 
 static void composite_request_reset(struct work_struct *w)
 {
@@ -51,23 +34,31 @@ static void composite_request_reset(struct work_struct *w)
 	if (cdev) {
 		if (usb_autobot_mode())
 			return;
+		if (usb_mirrorlink_mode())
+			return;
 		printk(KERN_WARNING "%s(%d):os_type=%d, mtp=%d\n",
 				__func__, __LINE__, os_type, is_mtp_enable);
 		if (os_type == OS_LINUX && is_mtp_enable) {
+			if (linux_mtp_mode == 1)
+				return;
 			fsg_update_mode(1);
 			fsg_mode = 1;
+			linux_mtp_mode = 1;
 		} else if (os_type == OS_LINUX && disk_mode) {
 			fsg_update_mode(0);
 			fsg_mode = 1;
+			linux_mtp_mode = 0;
 		} else {
 			fsg_update_mode(0);
 			fsg_mode = 0;
 			if (cdev->do_serial_number_change)
 				cdev->do_serial_number_change = false;
+			else if (linux_mtp_mode == 1)
+				linux_mtp_mode = 0;
 			else
 				return;
 		}
-		usb_composite_force_reset(cdev);
+		usb_android_force_reset(cdev);
 	}
 }
 
@@ -292,6 +283,7 @@ int usb_interface_id(struct usb_configuration *config,
 
 	if (id < MAX_CONFIG_INTERFACES) {
 		config->interface[id] = function;
+		function->intf_id = id;
 		config->next_interface_id = id + 1;
 		return id;
 	}
@@ -299,38 +291,20 @@ int usb_interface_id(struct usb_configuration *config,
 }
 EXPORT_SYMBOL_GPL(usb_interface_id);
 
-int usb_get_func_interface_id(struct usb_function *func)
-{
-	int id;
-	struct usb_configuration *config;
-
-	if (!func)
-		return -EINVAL;
-
-	config = func->config;
-
-	for (id = 0; id < MAX_CONFIG_INTERFACES; id++) {
-		if (config->interface[id] == func)
-			return id;
-	}
-	return -ENODEV;
-}
-
-static int usb_func_wakeup_int(struct usb_function *func,
-					bool use_pending_flag)
+static int usb_func_wakeup_int(struct usb_function *func)
 {
 	int ret;
-	int interface_id;
 	unsigned long flags;
 	struct usb_gadget *gadget;
 	struct usb_composite_dev *cdev;
 
-	pr_debug("%s - %s function wakeup, use pending: %u\n",
-		__func__, func->name ? func->name : "", use_pending_flag);
 
 	if (!func || !func->config || !func->config->cdev ||
 		!func->config->cdev->gadget)
 		return -EINVAL;
+
+	pr_debug("%s - %s function wakeup\n", __func__,
+					func->name ? func->name : "");
 
 	gadget = func->config->cdev->gadget;
 	if ((gadget->speed != USB_SPEED_SUPER) || !func->func_wakeup_allowed) {
@@ -343,34 +317,9 @@ static int usb_func_wakeup_int(struct usb_function *func,
 	}
 
 	cdev = get_gadget_data(gadget);
+
 	spin_lock_irqsave(&cdev->lock, flags);
-
-	if (use_pending_flag && !func->func_wakeup_pending) {
-		pr_debug("Pending flag is cleared - Function wakeup is cancelled.\n");
-		spin_unlock_irqrestore(&cdev->lock, flags);
-		return 0;
-	}
-
-	ret = usb_get_func_interface_id(func);
-	if (ret < 0) {
-		ERROR(func->config->cdev,
-			"Function %s - Unknown interface id. Canceling USB request. ret=%d\n",
-			func->name ? func->name : "", ret);
-
-		spin_unlock_irqrestore(&cdev->lock, flags);
-		return ret;
-	}
-
-	interface_id = ret;
-	ret = usb_gadget_func_wakeup(gadget, interface_id);
-
-	if (use_pending_flag) {
-		func->func_wakeup_pending = false;
-	} else {
-		if (ret == -EAGAIN)
-			func->func_wakeup_pending = true;
-	}
-
+	ret = usb_gadget_func_wakeup(gadget, func->intf_id);
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
 	return ret;
@@ -383,7 +332,7 @@ int usb_func_wakeup(struct usb_function *func)
 	pr_debug("%s function wakeup\n",
 		func->name ? func->name : "");
 
-	ret = usb_func_wakeup_int(func, false);
+	ret = usb_func_wakeup_int(func);
 	if (ret == -EAGAIN) {
 		DBG(func->config->cdev,
 			"Function wakeup for %s could not complete due to suspend state. Delayed until after bus resume.\n",
@@ -891,6 +840,7 @@ void usb_remove_config(struct usb_composite_dev *cdev,
 		os_type = OS_NOT_YET;
 		fsg_update_mode(0);
 		fsg_mode = 0;
+		linux_mtp_mode = 0;
 	}
 #ifdef CONFIG_HTC_USB_DEBUG_FLAG
 	printk("[USB]%s unbind+\n",__func__);
@@ -1232,9 +1182,13 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			if (w_length == 4) {
 				pr_info("%s: OS_MAC\n", __func__);
 				os_type = OS_MAC;
+				if (linux_mtp_mode)
+					schedule_delayed_work(&cdev->request_reset, REQUEST_RESET_DELAYED);
 			} else if (w_length == 255) {
 				pr_info("%s: OS_WINDOWS\n", __func__);
 				os_type = OS_WINDOWS;
+				if (linux_mtp_mode)
+					schedule_delayed_work(&cdev->request_reset, REQUEST_RESET_DELAYED);
 			} else if (w_length == 9 && os_type != OS_WINDOWS) {
 				pr_info("%s: OS_LINUX\n", __func__);
 				os_type = OS_LINUX;
@@ -1702,7 +1656,7 @@ composite_resume(struct usb_gadget *gadget)
 
 	if (cdev->config) {
 		list_for_each_entry(f, &cdev->config->functions, list) {
-			ret = usb_func_wakeup_int(f, true);
+			ret = usb_func_wakeup_int(f);
 			if (ret) {
 				if (ret == -EAGAIN) {
 					ERROR(f->config->cdev,

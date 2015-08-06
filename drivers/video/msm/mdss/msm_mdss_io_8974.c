@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -278,7 +278,7 @@ static void mdss_dsi_20nm_phy_regulator_enable(struct mdss_dsi_ctrl_pdata
 	} else {
 		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_1,
 			pd->regulator[1]);
-		MIPI_OUTP(phy_io_base +	MDSS_DSI_DSIPHY_REGULATOR_CTRL_2,
+		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_2,
 			pd->regulator[2]);
 		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_3,
 			pd->regulator[3]);
@@ -288,7 +288,7 @@ static void mdss_dsi_20nm_phy_regulator_enable(struct mdss_dsi_ctrl_pdata
 			pd->regulator[6]);
 		MIPI_OUTP(ctrl_pdata->phy_io.base + MDSS_DSI_DSIPHY_LDO_CNTRL,
 			0x00);
-		MIPI_OUTP(phy_io_base +	MDSS_DSI_DSIPHY_REGULATOR_CTRL_0,
+		MIPI_OUTP(phy_io_base + MDSS_DSI_DSIPHY_REGULATOR_CTRL_0,
 			pd->regulator[0]);
 	}
 }
@@ -398,7 +398,7 @@ int mdss_dsi_clk_init(struct platform_device *pdev,
 	}
 
 	if ((ctrl->panel_data.panel_info.type == MIPI_CMD_PANEL) ||
-		ctrl->panel_data.panel_info.mipi.dynamic_switch_enabled ||
+		ctrl->panel_data.panel_info.mipi.dms_mode ||
 		ctrl->panel_data.panel_info.ulps_suspend_enabled) {
 		ctrl->mmss_misc_ahb_clk = clk_get(dev, "core_mmss_clk");
 		if (IS_ERR(ctrl->mmss_misc_ahb_clk)) {
@@ -1024,9 +1024,9 @@ static int mdss_dsi_ulps_config(struct mdss_dsi_ctrl_pdata *ctrl,
 		/*
 		 * Clear out any phy errors prior to exiting ULPS
 		 * This fixes certain instances where phy does not exit
-		 * ULPS cleanly.
+		 * ULPS cleanly. Also, do not print error during such cases.
 		 */
-		mdss_dsi_dln0_phy_err(ctrl);
+		mdss_dsi_dln0_phy_err(ctrl, false);
 
 		/*
 		 * ULPS Exit Request

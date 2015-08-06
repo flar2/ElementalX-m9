@@ -182,6 +182,8 @@ struct mhl_dev_context {
 	struct  workqueue_struct    *wq;
 	enum    usb_connect_type    statMHL;
 	struct  work_struct         mhl_disconnect_notifier_work;
+	struct 	delayed_work		irq_timeout_work;
+	bool 	fake_cable_out;
 
 #define DEV_FLAG_SHUTDOWN	0x01	
 #define DEV_FLAG_COMM_MODE	0x02	
@@ -367,6 +369,7 @@ struct mhl_drv_info {
 	struct regulator *vbus_otg;
 	struct platform_device *hdmi_pdev;
 	struct msm_hdmi_mhl_ops *hdmi_mhl_ops;
+	int mhl_coc_swing;
 };
 
 int mhl_handle_power_change_request(struct device *parent_dev, bool power_up);

@@ -330,7 +330,7 @@ static int kgsl_iommu_fault_handler(struct iommu_domain *domain,
 	if (adreno_dev->ft_pf_policy & KGSL_FT_PAGEFAULT_GPUHALT_ENABLE) {
 		adreno_set_gpu_fault(adreno_dev, ADRENO_IOMMU_PAGE_FAULT);
 		
-		kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_OFF);
+		kgsl_pwrctrl_change_state(device, KGSL_STATE_AWARE);
 		adreno_dispatcher_schedule(device);
 	}
 
@@ -627,18 +627,9 @@ static int kgsl_attach_pagetable_iommu_domain(struct kgsl_mmu *mmu)
 							iommu_unit->dev[j].dev);
 				if (ret) {
 					KGSL_MEM_ERR(mmu->device,
-						"Failed to attach device, err %d then retry once\n",
+						"Failed to attach device, err %d\n",
 						ret);
-					
-					msleep(500);
-					ret = iommu_attach_device(iommu_pt->domain,
-							iommu_unit->dev[j].dev);
-					if (ret) {
-						KGSL_MEM_ERR(mmu->device,
-								"Failed to retry attaching device, err %d\n",
-								ret);
-						panic("kgsl attaches iommu failed!");
-					}
+					goto done;
 				}
 				iommu_unit->dev[j].attached = true;
 				KGSL_MEM_INFO(mmu->device,
@@ -658,6 +649,7 @@ static int kgsl_attach_pagetable_iommu_domain(struct kgsl_mmu *mmu)
 			}
 		}
 	}
+done:
 	return ret;
 }
 
@@ -1418,7 +1410,7 @@ struct scatterlist *_create_sg_no_large_pages(struct kgsl_memdesc *memdesc)
 
 	for_each_sg(memdesc->sg, s, memdesc->sglen, i) {
 		if (SZ_1M <= s->length)
-			sglen_alloc += DIV_ROUND_UP(s->length, SZ_16K);
+			sglen_alloc += DIV_ROUND_UP(s->length, SZ_64K);
 		else
 			sglen_alloc++;
 	}

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,6 +24,7 @@
 #include <linux/debug_display.h>
 
 #include "mdss_dsi.h"
+#include "mdss_htc_util.h"
 
 #define DT_CMD_HDR 6
 #define MIN_REFRESH_RATE 30
@@ -159,6 +160,8 @@ static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 	
 	if (pcmds->link_state == DSI_LP_MODE)
 		cmdreq.flags  |= CMD_REQ_LP_MODE;
+	else if (pcmds->link_state == DSI_HS_MODE)
+		cmdreq.flags |= CMD_REQ_HS_MODE;
 
 	cmdreq.rlen = 0;
 	cmdreq.cb = NULL;
@@ -189,8 +192,29 @@ static unsigned int bl_to_brightness(int val, int brt_dim, int brt_min, int brt_
 	} else if (val > BRI_SETTING_MAX)
 		brt_val = brt_max;
 
-	PR_DISP_INFO("%s:level=%d, brightness=%d", __func__, val, brt_val);
 	return brt_val;
+}
+
+static unsigned int bl_to_brt_table(int val, struct mdss_dsi_ctrl_pdata *ctrl_pdata)
+{
+	int index = 0, remainder;
+	unsigned int code, code1, code2;
+
+	index = val / 10;
+	remainder = val % 10;
+
+	if (remainder != 0 ) {
+		code1 = ctrl_pdata->brt_code_table[index];
+		code2 = ctrl_pdata->brt_code_table[index+1];
+
+		
+		code = (code2 - code1) * remainder / 10 + code1;
+	} else {
+		
+		code = ctrl_pdata->brt_code_table[index];
+	}
+
+	return code;
 }
 #if 0
 static unsigned char linear_pwm(int val, int max_brt, int bl_max)
@@ -502,9 +526,8 @@ static int mdss_dsi_set_col_page_addr(struct mdss_panel_data *pdata)
 
 			if (mdss_dsi_is_left_ctrl(ctrl)) {
 				if (pinfo->partial_update_roi_merge) {
-					
 					mdss_dsi_send_col_page_addr(other,
-							&other->roi, 0);
+							&roi, 0);
 				} else {
 					mdss_dsi_send_col_page_addr(ctrl,
 							&ctrl->roi, 1);
@@ -513,9 +536,8 @@ static int mdss_dsi_set_col_page_addr(struct mdss_panel_data *pdata)
 				}
 			} else {
 				if (pinfo->partial_update_roi_merge) {
-					
 					mdss_dsi_send_col_page_addr(ctrl,
-							&ctrl->roi, 0);
+							&roi, 0);
 				} else {
 					mdss_dsi_send_col_page_addr(other,
 							&other->roi, 1);
@@ -544,7 +566,7 @@ static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
 
 	mipi  = &pdata->panel_info.mipi;
 
-	if (!mipi->dynamic_switch_enabled)
+	if (!mipi->dms_mode)
 		return;
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
@@ -580,15 +602,25 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 
 	switch (ctrl_pdata->bklt_ctrl) {
 	case BL_WLED:
-		if (!ctrl_pdata->panel_data.panel_info.act_brt)
+		if (!ctrl_pdata->panel_data.panel_info.act_brt) {
+			int temp_bl_level = bl_level;
 			bl_level = bl_to_brightness(bl_level, ctrl_pdata->brt_dim,
 							ctrl_pdata->brt_min,
 							ctrl_pdata->brt_def,
 							ctrl_pdata->brt_high,
 							ctrl_pdata->brt_extra,
 							ctrl_pdata->brt_max);
-
-		PR_DISP_INFO("%s:bl_level=%d\n", __func__, bl_level);
+			pr_info("%s: act_brt=false, level=%d, bl_level=%d\n",
+				__func__, temp_bl_level, bl_level);
+		} else {
+			if(ctrl_pdata->brt_code_table) {
+				int temp_bl_level = bl_level;
+				bl_level = bl_to_brt_table(bl_level, ctrl_pdata);
+				pr_info("%s: act_brt=true, level=%d, bl_level=%d\n",
+					__func__, temp_bl_level, bl_level);
+			} else
+				pr_info("%s: bl_level=%d\n", __func__, bl_level);
+		}
 		led_trigger_event(bl_led_trigger, bl_level);
 		break;
 	case BL_PWM:
@@ -621,6 +653,7 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_info *pinfo;
+	struct dsi_panel_cmds *on_cmds;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -638,10 +671,16 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 			goto end;
 	}
 
+	on_cmds = &ctrl->on_cmds;
+
+	if ((pinfo->mipi.dms_mode == DYNAMIC_MODE_SWITCH_IMMEDIATE) &&
+			(pinfo->mipi.boot_mode != pinfo->mipi.mode))
+		on_cmds = &ctrl->post_dms_on_cmds;
+
 	if (pdata->panel_info.first_power_on == 1)
 		pdata->panel_info.first_power_on = 0;
-	else if (ctrl->on_cmds.cmd_cnt)
-		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
+	else if (on_cmds->cmd_cnt)
+		mdss_dsi_panel_cmds_send(ctrl, on_cmds);
 
 end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
@@ -1109,6 +1148,56 @@ static void mdss_dsi_parse_roi_alignment(struct device_node *np,
 	}
 }
 
+static void mdss_dsi_parse_dms_config(struct device_node *np,
+	struct mdss_dsi_ctrl_pdata *ctrl)
+{
+	struct mdss_panel_info *pinfo = &ctrl->panel_data.panel_info;
+	const char *data;
+	bool dms_enabled;
+
+	dms_enabled = of_property_read_bool(np,
+		"qcom,dynamic-mode-switch-enabled");
+
+	if (!dms_enabled) {
+		pinfo->mipi.dms_mode = DYNAMIC_MODE_SWITCH_DISABLED;
+		goto exit;
+	}
+
+	
+	pinfo->mipi.dms_mode = DYNAMIC_MODE_SWITCH_SUSPEND_RESUME;
+	data = of_get_property(np, "qcom,dynamic-mode-switch-type", NULL);
+	if (data && !strcmp(data, "dynamic-switch-immediate"))
+		pinfo->mipi.dms_mode = DYNAMIC_MODE_SWITCH_IMMEDIATE;
+	else
+		pr_debug("%s: default dms suspend/resume\n", __func__);
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl->video2cmd,
+		"qcom,video-to-cmd-mode-switch-commands", NULL);
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl->cmd2video,
+		"qcom,cmd-to-video-mode-switch-commands", NULL);
+
+	mdss_dsi_parse_dcs_cmds(np, &ctrl->post_dms_on_cmds,
+		"qcom,mdss-dsi-post-mode-switch-on-command",
+		"qcom,mdss-dsi-post-mode-switch-on-command-state");
+
+	if (pinfo->mipi.dms_mode == DYNAMIC_MODE_SWITCH_IMMEDIATE &&
+		!ctrl->post_dms_on_cmds.cmd_cnt) {
+		pr_warn("%s: No post dms on cmd specified\n", __func__);
+		pinfo->mipi.dms_mode = DYNAMIC_MODE_SWITCH_DISABLED;
+	}
+
+	if (!ctrl->video2cmd.cmd_cnt || !ctrl->cmd2video.cmd_cnt) {
+		pr_warn("%s: No commands specified for dynamic switch\n",
+			__func__);
+		pinfo->mipi.dms_mode = DYNAMIC_MODE_SWITCH_DISABLED;
+	}
+exit:
+	pr_info("%s: dynamic switch feature enabled: %d\n", __func__,
+		pinfo->mipi.dms_mode);
+	return;
+}
+
 static void mdss_dsi_parse_esd_params(struct device_node *np,
 	struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -1210,9 +1299,10 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 	pinfo->cont_splash_enabled = of_property_read_bool(np,
 		"qcom,cont-splash-enabled");
 
+	pinfo->partial_update_supported = of_property_read_bool(np,
+		"qcom,partial-update-enabled");
 	if (pinfo->mipi.mode == DSI_CMD_MODE) {
-		pinfo->partial_update_enabled = of_property_read_bool(np,
-				"qcom,partial-update-enabled");
+		pinfo->partial_update_enabled = pinfo->partial_update_supported;
 		pr_info("%s: partial_update_enabled=%d\n", __func__,
 					pinfo->partial_update_enabled);
 		if (pinfo->partial_update_enabled) {
@@ -1236,24 +1326,8 @@ static int mdss_dsi_parse_panel_features(struct device_node *np,
 	pr_info("%s: ulps during suspend feature %s", __func__,
 		(pinfo->ulps_suspend_enabled ? "enabled" : "disabled"));
 
-	pinfo->mipi.dynamic_switch_enabled = of_property_read_bool(np,
-		"qcom,dynamic-mode-switch-enabled");
+	mdss_dsi_parse_dms_config(np, ctrl);
 
-	if (pinfo->mipi.dynamic_switch_enabled) {
-		mdss_dsi_parse_dcs_cmds(np, &ctrl->video2cmd,
-			"qcom,video-to-cmd-mode-switch-commands", NULL);
-
-		mdss_dsi_parse_dcs_cmds(np, &ctrl->cmd2video,
-			"qcom,cmd-to-video-mode-switch-commands", NULL);
-
-		if (!ctrl->video2cmd.cmd_cnt || !ctrl->cmd2video.cmd_cnt) {
-			pr_warn("No commands specified for dynamic switch\n");
-			pinfo->mipi.dynamic_switch_enabled = 0;
-		}
-	}
-
-	pr_info("%s: dynamic switch feature enabled: %d\n", __func__,
-		pinfo->mipi.dynamic_switch_enabled);
 	pinfo->panel_ack_disabled = of_property_read_bool(np,
 				"qcom,panel-ack-disabled");
 
@@ -1369,26 +1443,26 @@ static void mdss_dsi_parse_dfps_config(struct device_node *pan_node,
 	if (data) {
 		if (!strcmp(data, "dfps_suspend_resume_mode")) {
 			pinfo->dfps_update = DFPS_SUSPEND_RESUME_MODE;
-			pr_debug("dfps mode: suspend/resume\n");
+			PR_DISP_INFO("dfps mode: suspend/resume\n");
 		} else if (!strcmp(data, "dfps_immediate_clk_mode")) {
 			pinfo->dfps_update = DFPS_IMMEDIATE_CLK_UPDATE_MODE;
-			pr_debug("dfps mode: Immediate clk\n");
+			PR_DISP_INFO("dfps mode: Immediate clk\n");
 		} else if (!strcmp(data, "dfps_immediate_porch_mode_hfp")) {
 			pinfo->dfps_update =
 				DFPS_IMMEDIATE_PORCH_UPDATE_MODE_HFP;
-			pr_debug("dfps mode: Immediate porch HFP\n");
+			PR_DISP_INFO("dfps mode: Immediate porch HFP\n");
 		} else if (!strcmp(data, "dfps_immediate_porch_mode_vfp")) {
 			pinfo->dfps_update =
 				DFPS_IMMEDIATE_PORCH_UPDATE_MODE_VFP;
-			pr_debug("dfps mode: Immediate porch VFP\n");
+			PR_DISP_INFO("dfps mode: Immediate porch VFP\n");
 		} else {
 			pinfo->dfps_update = DFPS_SUSPEND_RESUME_MODE;
-			pr_debug("default dfps mode: suspend/resume\n");
+			PR_DISP_INFO("default dfps mode: suspend/resume\n");
 		}
 		mdss_dsi_set_refresh_rate_range(pan_node, pinfo);
 	} else {
 		pinfo->dynamic_fps = false;
-		pr_debug("dfps update mode not configured: disable\n");
+		PR_DISP_INFO("dfps update mode not configured: disable\n");
 	}
 	pinfo->new_fps = pinfo->mipi.frame_rate;
 
@@ -1458,6 +1532,7 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	data = of_get_property(np, "qcom,mdss-dsi-panel-type", NULL);
 	if (data && !strncmp(data, "dsi_cmd_mode", 12))
 		pinfo->mipi.mode = DSI_CMD_MODE;
+	pinfo->mipi.boot_mode = pinfo->mipi.mode;
 	tmp = 0;
 	data = of_get_property(np, "qcom,mdss-dsi-pixel-packing", NULL);
 	if (data && !strcmp(data, "loose"))
@@ -1747,6 +1822,8 @@ static int mdss_panel_parse_dt(struct device_node *np,
 						mdss_dsi_nt35596_read_status;
 		}
 	}
+	pinfo->mipi.force_clk_lane_hs = of_property_read_bool(np,
+		"qcom,mdss-dsi-force-clock-lane-hs");
 
 	rc = mdss_dsi_parse_panel_features(np, ctrl_pdata);
 	if (rc) {
@@ -1775,6 +1852,45 @@ static int mdss_panel_parse_dt(struct device_node *np,
 	ctrl_pdata->brt_high  = (!rc ? res[3] : BRI_SETTING_HIGH);
 	ctrl_pdata->brt_extra = (!rc ? res[4] : BRI_SETTING_EXTRA);
 	ctrl_pdata->brt_max   = (!rc ? res[5] : BRI_SETTING_MAX);
+
+	
+	data = of_get_property(np, "htc,brt-code-table", &len);
+	if (!data) {
+		pr_debug("%s: read brt-code-table failed\n", __func__);
+	} else {
+		u32 *buf;
+		int max_brightness;
+		len /= sizeof(u32);
+
+		max_brightness = 10 * (len - 1);
+		pr_debug("%s : max_brightness=%d\n", __func__, max_brightness);
+
+		
+		buf = kzalloc(len * sizeof(u32), GFP_KERNEL);
+		if (!buf) {
+			goto end;
+		}
+		rc = of_property_read_u32_array(np, "htc,brt-code-table", buf, len);
+		if (rc) {
+			pr_err("%s:%d, dt not specified\n",__func__, __LINE__);
+			rc = -EINVAL;
+			goto end;
+		}
+
+		ctrl_pdata->brt_code_table = kzalloc(len * sizeof(u16), GFP_KERNEL);
+		if (!ctrl_pdata->brt_code_table) {
+			pr_err("%s:%d, allocate memory failed\n",__func__, __LINE__);
+			rc = -ENOMEM;
+			goto end;
+		}
+
+		for (i=0; i < len; i++) {
+			ctrl_pdata->brt_code_table[i] = (u16) buf[i];
+			pr_info("%s : buf=%d i=%d\n",__func__, buf[i], i);
+		}
+end:
+			kfree(buf);
+	}
 
 	rc = of_property_read_u32(np, "htc,mdss-camera-blk", &tmp);
 	pinfo->camera_blk = (!rc ? tmp : BRI_SETTING_DEF);
@@ -1854,6 +1970,7 @@ int mdss_dsi_panel_init(struct device_node *node,
 	} else {
 		pr_info("%s: Panel Name = %s\n", __func__, panel_name);
 		strlcpy(&pinfo->panel_name[0], panel_name, MDSS_MAX_PANEL_LEN);
+		htc_panel_info(panel_name);
 	}
 	rc = mdss_panel_parse_dt(node, ctrl_pdata);
 	if (rc) {
@@ -1870,6 +1987,7 @@ int mdss_dsi_panel_init(struct device_node *node,
 
 	pinfo->dynamic_switch_pending = false;
 	pinfo->is_lpm_mode = false;
+	pinfo->esd_rdy = false;
 
 	ctrl_pdata->on = mdss_dsi_panel_on;
 	ctrl_pdata->off = mdss_dsi_panel_off;

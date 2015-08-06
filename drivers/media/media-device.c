@@ -48,10 +48,12 @@ static int media_device_get_info(struct media_device *dev,
 
 	memset(&info, 0, sizeof(info));
 
+	
 	if (!dev || !dev->dev || !dev->dev->driver) {
 		pr_err("%s: failed\n", __func__);
 		return -EFAULT;
 	}
+	
 
 	strlcpy(info.driver, dev->dev->driver->name, sizeof(info.driver));
 	strlcpy(info.model, dev->model, sizeof(info.model));

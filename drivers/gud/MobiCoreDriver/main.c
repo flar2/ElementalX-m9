@@ -11,18 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  */
-/*
- * MobiCore Driver Kernel Module.
- *
- * This driver represents the command proxy on the lowest layer, from the
- * secure world to the non secure world, and vice versa.
-
- * This driver offers IOCTL commands, for access to the secure world, and has
- * the interface from the secure world to the normal world.
- * The access to the driver is possible with a file descriptor,
- * which has to be created by the fd = open(/dev/mobicore) command or
- * fd = open(/dev/mobicore-user)
- */
 #include <linux/miscdevice.h>
 #include <linux/interrupt.h>
 #include <linux/highmem.h>
@@ -57,7 +45,6 @@
 #include <linux/platform_device.h>
 #endif
 
-/* Define a MobiCore device structure for use with dev_debug() etc */
 struct device_driver mcd_debug_name = {
 	.name = "MobiCore"
 };
@@ -68,13 +55,10 @@ struct device mcd_debug_subname = {
 
 struct device *mcd = &mcd_debug_subname;
 
-/* We need 2 devices for admin and user interface*/
 #define MC_DEV_MAX 2
 
-/* Need to discover a chrdev region for the driver */
 static dev_t mc_dev_admin, mc_dev_user;
 struct cdev mc_admin_cdev, mc_user_cdev;
-/* Device class for the driver assigned major */
 static struct class *mc_device_class;
 
 #ifndef FMODE_PATH
@@ -86,16 +70,10 @@ static struct sock *__get_socket(struct file *filp)
 	struct sock *u_sock = NULL;
 	struct inode *inode = filp->f_path.dentry->d_inode;
 
-	/*
-	 *	Socket ?
-	 */
 	if (S_ISSOCK(inode->i_mode) && !(filp->f_mode & FMODE_PATH)) {
 		struct socket *sock = SOCKET_I(inode);
 		struct sock *s = sock->sk;
 
-		/*
-		 *	PF_UNIX ?
-		 */
 		if (s && sock->ops && sock->ops->family == PF_UNIX)
 			u_sock = s;
 	}
@@ -103,10 +81,8 @@ static struct sock *__get_socket(struct file *filp)
 }
 
 
-/* MobiCore interrupt context data */
 struct mc_context ctx;
 
-/* Get process context from file pointer */
 static struct mc_instance *get_instance(struct file *file)
 {
 	return (struct mc_instance *)(file->private_data);
@@ -116,14 +92,9 @@ static uint32_t get_new_buffer_handle(void)
 {
 	uint32_t handle;
 	struct mc_buffer *buffer;
-	/* assumption ctx.bufs_lock mutex is locked */
+	
 retry:
 	handle = atomic_inc_return(&ctx.buffer_counter);
-	/* The handle must leave 12 bits (PAGE_SHIFT) for the 12 LSBs to be
-	 * zero, as mmap requires the offset to be page-aligned, plus 1 bit for
-	 * the MSB to be 0 too, so mmap does not see the offset as negative
-	 * and fail.
-	 */
 	if ((handle << (PAGE_SHIFT+1)) == 0)  {
 		atomic_set(&ctx.buffer_counter, 1);
 		handle = 1;
@@ -136,7 +107,6 @@ retry:
 	return handle;
 }
 
-/* Clears the reserved bit of each page and frees the pages */
 static inline void free_continguous_pages(void *addr, unsigned int order)
 {
 	int i;
@@ -151,7 +121,6 @@ static inline void free_continguous_pages(void *addr, unsigned int order)
 	free_pages((unsigned long)addr, order);
 }
 
-/* Frees the memory associated with a buffer */
 static int free_buffer(struct mc_buffer *buffer)
 {
 	if (buffer->handle == 0)
@@ -190,7 +159,7 @@ static uint32_t mc_find_cont_wsm_addr(struct mc_instance *instance, void *uaddr,
 
 	mutex_lock(&ctx.bufs_lock);
 
-	/* search for the given handle in the buffers list */
+	
 	list_for_each_entry(buffer, &ctx.cont_bufs, list) {
 		if (buffer->uaddr == uaddr && buffer->len == len) {
 			*addr = buffer->addr;
@@ -198,7 +167,7 @@ static uint32_t mc_find_cont_wsm_addr(struct mc_instance *instance, void *uaddr,
 		}
 	}
 
-	/* Coundn't find the buffer */
+	
 	ret = -EINVAL;
 
 found:
@@ -278,7 +247,7 @@ static uint32_t mc_find_cont_wsm(struct mc_instance *instance, uint32_t handle,
 
 	mutex_lock(&ctx.bufs_lock);
 
-	/* search for the given handle in the buffers list */
+	
 	list_for_each_entry(buffer, &ctx.cont_bufs, list) {
 		if (buffer->handle == handle) {
 			if (mc_check_owner_fd(buffer->instance, fd)) {
@@ -291,7 +260,7 @@ static uint32_t mc_find_cont_wsm(struct mc_instance *instance, uint32_t handle,
 		}
 	}
 
-	/* Couldn't find the buffer */
+	
 	ret = -EINVAL;
 
 found:
@@ -301,15 +270,6 @@ found:
 	return ret;
 }
 
-/*
- * __free_buffer - Free a WSM buffer allocated with mobicore_allocate_wsm
- *
- * @instance
- * @handle		handle of the buffer
- *
- * Returns 0 if no error
- *
- */
 static int __free_buffer(struct mc_instance *instance, uint32_t handle,
 		bool unlock)
 {
@@ -323,7 +283,7 @@ static int __free_buffer(struct mc_instance *instance, uint32_t handle,
 		return -EFAULT;
 
 	mutex_lock(&ctx.bufs_lock);
-	/* search for the given handle in the buffers list */
+	
 	list_for_each_entry(buffer, &ctx.cont_bufs, list) {
 		if (buffer->handle == handle)
 			goto found_buffer;
@@ -336,11 +296,9 @@ found_buffer:
 		goto err;
 	}
 	mutex_unlock(&ctx.bufs_lock);
-	/* Only unmap if the request is coming from the user space and
-	 * it hasn't already been unmapped */
 	if (!unlock && buffer->uaddr != NULL) {
 #ifndef MC_VM_UNMAP
-		/* do_munmap must be done with mm->mmap_sem taken */
+		
 		down_write(&mm->mmap_sem);
 		ret = do_munmap(mm,
 				(long unsigned int)buffer->uaddr,
@@ -351,16 +309,13 @@ found_buffer:
 		ret = vm_munmap((long unsigned int)buffer->uaddr, buffer->len);
 #endif
 		if (ret < 0) {
-			/* Something is not right if we end up here, better not
-			 * clean the buffer so we just leak memory instead of
-			 * creating security issues */
 			MCDRV_DBG_ERROR(mcd, "Memory can't be unmapped");
 			return -EINVAL;
 		}
 	}
 
 	mutex_lock(&ctx.bufs_lock);
-	/* search for the given handle in the buffers list */
+	
 	list_for_each_entry(buffer, &ctx.cont_bufs, list) {
 		if (buffer->handle == handle)
 			goto del_buffer;
@@ -425,7 +380,7 @@ int mc_get_buffer(struct mc_instance *instance,
 	if (mutex_lock_interruptible(&instance->lock))
 		return -ERESTARTSYS;
 
-	/* allocate a new buffer. */
+	
 	cbuffer = kzalloc(sizeof(*cbuffer), GFP_KERNEL);
 
 	if (cbuffer == NULL) {
@@ -455,7 +410,7 @@ int mc_get_buffer(struct mc_instance *instance,
 	cbuffer->len = len;
 	cbuffer->instance = instance;
 	cbuffer->uaddr = 0;
-	/* Refcount +1 because the TLC is requesting it */
+	
 	atomic_set(&cbuffer->usage, 1);
 
 	INIT_LIST_HEAD(&cbuffer->list);
@@ -478,10 +433,6 @@ unlock_instance:
 	return ret;
 }
 
-/*
- * __lock_buffer() - Locks a contiguous buffer - +1 refcount.
- * Assumes the instance lock is already taken!
- */
 static int __lock_buffer(struct mc_instance *instance, uint32_t handle)
 {
 	int ret = 0;
@@ -496,7 +447,7 @@ static int __lock_buffer(struct mc_instance *instance, uint32_t handle)
 	}
 
 	mutex_lock(&ctx.bufs_lock);
-	/* search for the given handle in the buffers list */
+	
 	list_for_each_entry(buffer, &ctx.cont_bufs, list) {
 		if (buffer->handle == handle) {
 			atomic_inc(&buffer->usage);
@@ -530,10 +481,6 @@ static phys_addr_t get_mci_base_phys(unsigned int len)
 	}
 }
 
-/*
- * Create a MMU table from a virtual memory buffer which can be vmalloc
- * or user space virtual memory
- */
 int mc_register_wsm_mmu(struct mc_instance *instance,
 	void *buffer, uint32_t len,
 	uint32_t *handle, phys_addr_t *phys)
@@ -563,9 +510,9 @@ int mc_register_wsm_mmu(struct mc_instance *instance,
 		return -EINVAL;
 	}
 
-	/* set response */
+	
 	*handle = table->handle;
-	/* WARNING: daemon shouldn't know this either, but live with it */
+	
 	if (is_daemon(instance))
 		*phys = table->phys;
 	else
@@ -586,12 +533,11 @@ int mc_unregister_wsm_mmu(struct mc_instance *instance, uint32_t handle)
 	if (WARN(!instance, "No instance data available"))
 		return -EFAULT;
 
-	/* free table (if no further locks exist) */
+	
 	mc_free_mmu_table(instance, handle);
 
 	return ret;
 }
-/* Lock the object from handle, it could be a WSM MMU table or a cont buffer! */
 static int mc_lock_handle(struct mc_instance *instance, uint32_t handle)
 {
 	int ret = 0;
@@ -607,9 +553,9 @@ static int mc_lock_handle(struct mc_instance *instance, uint32_t handle)
 	mutex_lock(&instance->lock);
 	ret = mc_lock_mmu_table(instance, handle);
 
-	/* Handle was not a MMU table but a cont buffer */
+	
 	if (ret == -EINVAL) {
-		/* Call the non locking variant! */
+		
 		ret = __lock_buffer(instance, handle);
 	}
 
@@ -633,9 +579,9 @@ static int mc_unlock_handle(struct mc_instance *instance, uint32_t handle)
 	mutex_lock(&instance->lock);
 	ret = mc_free_mmu_table(instance, handle);
 
-	/* Not a MMU table, then it must be a buffer */
+	
 	if (ret == -EINVAL) {
-		/* Call the non locking variant! */
+		
 		ret = __free_buffer(instance, handle, true);
 	}
 	mutex_unlock(&instance->lock);
@@ -694,22 +640,22 @@ static int mc_fd_mmap(struct file *file, struct vm_area_struct *vmarea)
 	if (handle) {
 		mutex_lock(&ctx.bufs_lock);
 
-		/* search for the buffer list. */
+		
 		list_for_each_entry(buffer, &ctx.cont_bufs, list) {
-			/* Only allow mapping if the client owns it!*/
+			
 			if (buffer->handle == handle &&
 			    buffer->instance == instance) {
-				/* We shouldn't do remap with larger size */
+				
 				if (buffer->len > len)
 					break;
-				/* We can't allow mapping the buffer twice */
+				
 				if (!buffer->uaddr)
 					goto found;
 				else
 					break;
 				}
 		}
-		/* Nothing found return */
+		
 		mutex_unlock(&ctx.bufs_lock);
 		MCDRV_DBG_ERROR(mcd, "handle not found");
 		return -EINVAL;
@@ -717,18 +663,9 @@ static int mc_fd_mmap(struct file *file, struct vm_area_struct *vmarea)
 found:
 		buffer->uaddr = (void *)vmarea->vm_start;
 		vmarea->vm_flags |= VM_IO;
-		/*
-		 * Convert kernel address to user address. Kernel address begins
-		 * at PAGE_OFFSET, user address range is below PAGE_OFFSET.
-		 * Remapping the area is always done, so multiple mappings
-		 * of one region are possible. Now remap kernel address
-		 * space into user space
-		 */
 		ret = (int)remap_pfn_range(vmarea, vmarea->vm_start,
 				page_to_pfn(virt_to_page(buffer->addr)),
 				buffer->len, vmarea->vm_page_prot);
-		/* If the remap failed then don't mark this buffer as marked
-		 * since the unmaping will also fail */
 		if (ret)
 			buffer->uaddr = NULL;
 		mutex_unlock(&ctx.bufs_lock);
@@ -740,11 +677,6 @@ found:
 			return -EFAULT;
 
 		vmarea->vm_flags |= VM_IO;
-		/* Convert kernel address to user address. Kernel address begins
-		 * at PAGE_OFFSET, user address range is below PAGE_OFFSET.
-		 * Remapping the area is always done, so multiple mappings
-		 * of one region are possible. Now remap kernel address
-		 * space into user space */
 		ret = (int)remap_pfn_range(vmarea, vmarea->vm_start,
 				page_to_pfn(virt_to_page(ctx.mci_base.addr)),
 				len, vmarea->vm_page_prot);
@@ -768,14 +700,6 @@ static inline int ioctl_check_pointer(unsigned int cmd, int __user *uarg)
 	return 0;
 }
 
-/*
- * mc_fd_user_ioctl() - Will be called from user space as ioctl(..)
- * @file	pointer to file
- * @cmd		command
- * @arg		arguments
- *
- * Returns 0 for OK and an errno in case of error
- */
 static long mc_fd_user_ioctl(struct file *file, unsigned int cmd,
 	unsigned long arg)
 {
@@ -794,14 +718,6 @@ static long mc_fd_user_ioctl(struct file *file, unsigned int cmd,
 		ret = mc_free_buffer(instance, (uint32_t)arg);
 		break;
 
-	/* 32/64 bit interface compatiblity notice:
-	 * mc_ioctl_reg_wsm has been defined with the buffer parameter
-	 * as void* which means that the size and layout of the structure
-	 * are different between 32 and 64 bit variants.
-	 * However our 64 bit Linux driver must be able to service both
-	 * 32 and 64 bit clients so we have to allow both IOCTLs. Though
-	 * we have a bit of copy paste code we provide maximum backwards
-	 * compatiblity */
 	case MC_IO_REG_WSM:{
 		struct mc_ioctl_reg_wsm reg;
 		phys_addr_t phys = 0;
@@ -857,14 +773,11 @@ static long mc_fd_user_ioctl(struct file *file, unsigned int cmd,
 		if (copy_from_user(&map, uarg, sizeof(map)))
 			return -EFAULT;
 
-		/* Setup the WSM buffer structure! */
+		
 		if (mc_get_buffer(instance, &buffer, map.len))
 			return -EFAULT;
 
 		map.handle = buffer->handle;
-		/* Trick: to keep the same interface with the user space, store
-		   the handle in the physical address.
-		   It is given back with the offset when mmap() is called. */
 		map.phys_addr = buffer->handle << PAGE_SHIFT;
 		map.reused = 0;
 		if (copy_to_user(uarg, &map, sizeof(map)))
@@ -878,7 +791,7 @@ static long mc_fd_user_ioctl(struct file *file, unsigned int cmd,
 		ret = -ENOIOCTLCMD;
 		break;
 
-	} /* end switch(cmd) */
+	} 
 
 #ifdef MC_MEM_TRACES
 	mobicore_log_read();
@@ -1010,10 +923,10 @@ static long mc_fd_admin_ioctl(struct file *file, unsigned int cmd,
 		break;
 	}
 
-	/* The rest is handled commonly by user IOCTL */
+	
 	default:
 		ret = mc_fd_user_ioctl(file, cmd, arg);
-	} /* end switch(cmd) */
+	} 
 
 #ifdef MC_MEM_TRACES
 	mobicore_log_read();
@@ -1022,19 +935,6 @@ static long mc_fd_admin_ioctl(struct file *file, unsigned int cmd,
 	return (int)ret;
 }
 
-/*
- * mc_fd_read() - This will be called from user space as read(...)
- * @file:	file pointer
- * @buffer:	buffer where to copy to(userspace)
- * @buffer_len:	number of requested data
- * @pos:	not used
- *
- * The read function is blocking until a interrupt occurs. In that case the
- * event counter is copied into user space and the function is finished.
- *
- * If OK this function returns the number of copied data otherwise it returns
- * errno
- */
 static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
 			  loff_t *pos)
 {
@@ -1044,10 +944,10 @@ static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
 	if (WARN(!instance, "No instance data available"))
 		return -EFAULT;
 
-	/* avoid debug output on non-error, because this is call quite often */
+	
 	MCDRV_DBG_VERBOSE(mcd, "enter");
 
-	/* only the MobiCore Daemon is allowed to call this function */
+	
 	if (WARN_ON(!is_daemon(instance))) {
 		MCDRV_DBG_ERROR(mcd, "caller not MobiCore Daemon");
 		return -EPERM;
@@ -1069,13 +969,13 @@ static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
 				  ssiq_counter, ctx.evt_counter);
 
 		if (ssiq_counter != ctx.evt_counter) {
-			/* read data and exit loop without error */
+			
 			ctx.evt_counter = ssiq_counter;
 			ret = 0;
 			break;
 		}
 
-		/* end loop if non-blocking */
+		
 		if (file->f_flags & O_NONBLOCK) {
 			MCDRV_DBG_ERROR(mcd, "non-blocking read");
 			return -EAGAIN;
@@ -1087,7 +987,7 @@ static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
 		}
 	}
 
-	/* read data and exit loop */
+	
 	ret = copy_to_user(buffer, &ctx.evt_counter, sizeof(unsigned int));
 
 	if (ret != 0) {
@@ -1100,11 +1000,6 @@ static ssize_t mc_fd_read(struct file *file, char *buffer, size_t buffer_len,
 	return (ssize_t)ret;
 }
 
-/*
- * Initialize a new mobicore API instance object
- *
- * @return Instance or NULL if no allocation was possible.
- */
 struct mc_instance *mc_alloc_instance(void)
 {
 	struct mc_instance *instance;
@@ -1113,7 +1008,7 @@ struct mc_instance *mc_alloc_instance(void)
 	if (instance == NULL)
 		return NULL;
 
-	/* get a unique ID for this instance (PIDs are not unique) */
+	
 	instance->handle = atomic_inc_return(&ctx.instance_counter);
 
 	mutex_init(&instance->lock);
@@ -1126,24 +1021,24 @@ static ssize_t mc_fd_write(struct file *file, const char __user *buffer,
 			size_t buffer_len, loff_t *x)
 {
 	uint32_t cpu_new;
-	/* we only consider one digit */
+	
 	char buf[2];
 	struct mc_instance *instance = get_instance(file);
 
 	if (WARN(!instance, "No instance data available"))
 		return -EFAULT;
 
-	/* Invalid data, nothing to do */
+	
 	if (buffer_len < 1)
 		return -EINVAL;
 
-	/* Invalid data, nothing to do */
+	
 	if (copy_from_user(buf, buffer, min(sizeof(buf), buffer_len)))
 		return -EFAULT;
 
 	if (buf[0] == 'n') {
 		mc_nsiq();
-	/* If it's a digit then switch cores */
+	
 	} else if ((buf[0] >= '0') && (buf[0] <= '9')) {
 		cpu_new = buf[0] - '0';
 		if (cpu_new <= 8) {
@@ -1158,11 +1053,6 @@ static ssize_t mc_fd_write(struct file *file, const char __user *buffer,
 }
 #endif
 
-/*
- * Release a mobicore instance object and all objects related to it
- * @instance:	instance
- * Returns 0 if Ok or -E ERROR
- */
 int mc_release_instance(struct mc_instance *instance)
 {
 	struct mc_buffer *buffer, *tmp;
@@ -1174,14 +1064,10 @@ int mc_release_instance(struct mc_instance *instance)
 	mc_clear_mmu_tables(instance);
 
 	mutex_lock(&ctx.bufs_lock);
-	/* release all mapped data */
+	
 
-	/* Check if some buffers are orphaned. */
+	
 	list_for_each_entry_safe(buffer, tmp, &ctx.cont_bufs, list) {
-		/* It's safe here to only call free_buffer() without unmapping
-		 * because mmap() takes a refcount to the file's fd so only
-		 * time we end up here is when everything has been unmapped or
-		 * the process called exit() */
 		if (buffer->instance == instance) {
 			buffer->instance = NULL;
 			free_buffer(buffer);
@@ -1191,20 +1077,12 @@ int mc_release_instance(struct mc_instance *instance)
 
 	mutex_unlock(&instance->lock);
 
-	/* release instance context */
+	
 	kfree(instance);
 
 	return 0;
 }
 
-/*
- * mc_fd_user_open() - Will be called from user space as fd = open(...)
- * A set of internal instance data are created and initialized.
- *
- * @inode
- * @file
- * Returns 0 if OK or -ENOMEM if no allocation was possible.
- */
 static int mc_fd_user_open(struct inode *inode, struct file *file)
 {
 	struct mc_instance *instance;
@@ -1215,7 +1093,7 @@ static int mc_fd_user_open(struct inode *inode, struct file *file)
 	if (instance == NULL)
 		return -ENOMEM;
 
-	/* store instance data reference */
+	
 	file->private_data = instance;
 
 	return 0;
@@ -1225,15 +1103,11 @@ static int mc_fd_admin_open(struct inode *inode, struct file *file)
 {
 	struct mc_instance *instance;
 
-	/*
-	 * The daemon is already set so we can't allow anybody else to open
-	 * the admin interface.
-	 */
 	if (ctx.daemon_inst) {
 		MCDRV_DBG_ERROR(mcd, "Daemon is already connected");
 		return -EPERM;
 	}
-	/* Setup the usual variables */
+	
 	if (mc_fd_user_open(inode, file))
 		return -ENOMEM;
 	instance = get_instance(file);
@@ -1244,21 +1118,12 @@ static int mc_fd_admin_open(struct inode *inode, struct file *file)
 	ctx.daemon = current;
 	instance->admin = true;
 	init_completion(&ctx.isr_comp);
-	/* init ssiq event counter */
+	
 	ctx.evt_counter = atomic_read(&(ctx.isr_counter));
 
 	return 0;
 }
 
-/*
- * mc_fd_release() - This function will be called from user space as close(...)
- * The instance data are freed and the associated memory pages are unreserved.
- *
- * @inode
- * @file
- *
- * Returns 0
- */
 static int mc_fd_release(struct inode *inode, struct file *file)
 {
 	int ret = 0;
@@ -1267,7 +1132,7 @@ static int mc_fd_release(struct inode *inode, struct file *file)
 	if (WARN(!instance, "No instance data available"))
 		return -EFAULT;
 
-	/* check if daemon closes us. */
+	
 	if (is_daemon(instance)) {
 		MCDRV_DBG_WARN(mcd, "MobiCore Daemon died");
 		ctx.daemon_inst = NULL;
@@ -1276,26 +1141,17 @@ static int mc_fd_release(struct inode *inode, struct file *file)
 
 	ret = mc_release_instance(instance);
 
-	/*
-	 * ret is quite irrelevant here as most apps don't care about the
-	 * return value from close() and it's quite difficult to recover
-	 */
 	MCDRV_DBG_VERBOSE(mcd, "exit with %d/0x%08X", ret, ret);
 
 	return (int)ret;
 }
 
-/*
- * This function represents the interrupt function of the mcDrvModule.
- * It signals by incrementing of an event counter and the start of the read
- * waiting queue, the read function a interrupt has occurred.
- */
 static irqreturn_t mc_ssiq_isr(int intr, void *context)
 {
-	/* increment interrupt event counter */
+	
 	atomic_inc(&(ctx.isr_counter));
 
-	/* signal the daemon */
+	
 	complete(&ctx.isr_comp);
 #ifdef MC_MEM_TRACES
 	mobicore_log_read();
@@ -1303,7 +1159,6 @@ static irqreturn_t mc_ssiq_isr(int intr, void *context)
 	return IRQ_HANDLED;
 }
 
-/* function table structure of this device driver. */
 static const struct file_operations mc_admin_fops = {
 	.owner		= THIS_MODULE,
 	.open		= mc_fd_admin_open,
@@ -1316,7 +1171,6 @@ static const struct file_operations mc_admin_fops = {
 	.read		= mc_fd_read,
 };
 
-/* function table structure of this device driver. */
 static const struct file_operations mc_user_fops = {
 	.owner		= THIS_MODULE,
 	.open		= mc_fd_user_open,
@@ -1354,7 +1208,7 @@ static int create_devices(void)
 
 	MCDRV_DBG_VERBOSE(mcd, "%s: dev %d", "mobicore", MAJOR(mc_dev_admin));
 
-	/* First the ADMIN node */
+	
 	ret = cdev_add(&mc_admin_cdev,  mc_dev_admin, 1);
 	if (ret != 0) {
 		MCDRV_DBG_ERROR(mcd, "admin device register failed");
@@ -1364,7 +1218,7 @@ static int create_devices(void)
 	device_create(mc_device_class, NULL, mc_dev_admin, NULL,
 		      MC_ADMIN_DEVNODE);
 
-	/* Then the user node */
+	
 
 	ret = cdev_add(&mc_user_cdev, mc_dev_user, 1);
 	if (ret != 0) {
@@ -1389,19 +1243,11 @@ out:
 	return ret;
 }
 
-/*
- * This function is called the kernel during startup or by a insmod command.
- * This device is installed and registered as cdev, then interrupt and
- * queue handling is set up
- */
 static int __init mobicore_init(void)
 {
 	int ret = 0;
 	dev_set_name(mcd, "mcd");
 
-	/* Do not remove or change the following trace.
-	 * The string "MobiCore" is used to detect if <t-base is in of the image
-	 */
 	dev_info(mcd, "MobiCore Driver, Build: " __TIMESTAMP__ "\n");
 	dev_info(mcd, "MobiCore mcDrvModuleApi version is %i.%i\n",
 		 MCDRVMODULEAPI_VERSION_MAJOR,
@@ -1409,14 +1255,14 @@ static int __init mobicore_init(void)
 #ifdef MOBICORE_COMPONENT_BUILD_TAG
 	dev_info(mcd, "MobiCore %s\n", MOBICORE_COMPONENT_BUILD_TAG);
 #endif
-	/* Hardware does not support ARM TrustZone -> Cannot continue! */
+	
 	if (!has_security_extensions()) {
 		MCDRV_DBG_ERROR(mcd,
 				"Hardware doesn't support ARM TrustZone!");
 		return -ENODEV;
 	}
 
-	/* Running in secure mode -> Cannot load the driver! */
+	
 	if (is_secure_mode()) {
 		MCDRV_DBG_ERROR(mcd, "Running in secure MODE!");
 		return -ENODEV;
@@ -1428,10 +1274,10 @@ static int __init mobicore_init(void)
 
 	init_completion(&ctx.isr_comp);
 
-	/* initialize event counter for signaling of an IRQ to zero */
+	
 	atomic_set(&ctx.isr_counter, 0);
 
-	/* set up S-SIQ interrupt handler ************************/
+	
 	ret = request_irq(MC_INTR_SSIQ, mc_ssiq_isr, IRQF_TRIGGER_RISING,
 			MC_ADMIN_DEVNODE, &ctx);
 	if (ret != 0) {
@@ -1457,17 +1303,13 @@ static int __init mobicore_init(void)
 	ret = mc_pm_clock_initialize();
 #endif
 
-	/*
-	 * initialize unique number counters which we can use for
-	 * handles. We start with 1 instead of 0.
-	 */
 	atomic_set(&ctx.buffer_counter, 1);
 	atomic_set(&ctx.instance_counter, 1);
 
-	/* init list for contiguous buffers  */
+	
 	INIT_LIST_HEAD(&ctx.cont_bufs);
 
-	/* init lock for the buffers list */
+	
 	mutex_init(&ctx.bufs_lock);
 
 	memset(&ctx.mci_base, 0, sizeof(ctx.mci_base));
@@ -1486,9 +1328,6 @@ error:
 	return ret;
 }
 
-/*
- * This function removes this device driver from the Linux device manager .
- */
 static void __exit mobicore_exit(void)
 {
 	MCDRV_DBG_VERBOSE(mcd, "enter");
@@ -1552,7 +1391,7 @@ static int mcd_resume(struct platform_device *pdev)
 
 static struct of_device_id mcd_match[] = {
 	{
-		.compatible = "qcom,qcrypto",
+		.compatible = "qcom,mcd",
 	},
 	{}
 };

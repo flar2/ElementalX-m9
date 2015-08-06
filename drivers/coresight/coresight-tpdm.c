@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -650,7 +650,7 @@ static const struct attribute_group *tpdm_attr_grps[] = {
 
 static int tpdm_probe(struct platform_device *pdev)
 {
-	int ret;
+	int ret, i;
 	uint32_t pidr;
 	struct device *dev = &pdev->dev;
 	struct coresight_platform_data *pdata;
@@ -682,8 +682,27 @@ static int tpdm_probe(struct platform_device *pdev)
 
 	mutex_init(&drvdata->lock);
 
+	drvdata->clk = devm_clk_get(dev, "core_clk");
+	if (IS_ERR(drvdata->clk))
+		return PTR_ERR(drvdata->clk);
+
+	ret = clk_set_rate(drvdata->clk, CORESIGHT_CLK_RATE_TRACE);
+	if (ret)
+		return ret;
+
+	ret = clk_prepare_enable(drvdata->clk);
+	if (ret)
+		return ret;
+
 	pidr = tpdm_readl(drvdata, CORESIGHT_PERIPHIDR0);
-	bitmap_fill(drvdata->datasets, pidr);
+
+	clk_disable_unprepare(drvdata->clk);
+
+	for (i = 0; i < TPDM_DATASETS; i++) {
+		if (pidr & BIT(i))
+			__set_bit(i, drvdata->datasets);
+	}
+
 	if (test_bit(TPDM_DS_CMB, drvdata->datasets)) {
 		drvdata->cmb = devm_kzalloc(dev, sizeof(*drvdata->cmb),
 					    GFP_KERNEL);
@@ -692,14 +711,6 @@ static int tpdm_probe(struct platform_device *pdev)
 			return -ENOMEM;
 		}
 	}
-
-	drvdata->clk = devm_clk_get(dev, "core_clk");
-	if (IS_ERR(drvdata->clk))
-		return PTR_ERR(drvdata->clk);
-
-	ret = clk_set_rate(drvdata->clk, CORESIGHT_CLK_RATE_TRACE);
-	if (ret)
-		return ret;
 
 	desc = devm_kzalloc(dev, sizeof(*desc), GFP_KERNEL);
 	if (!desc)

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014 - 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -45,7 +45,7 @@
 #define DRV_NAME "msm8994-asoc-snd"
 
 #define MSM8994_BRINGUP	(0)	
-#define MSM8994_LDO_WR	(1)	
+#define MSM8994_LDO_WR	(0)	
 				
 #define SAMPLING_RATE_8KHZ      8000
 #define SAMPLING_RATE_16KHZ     16000
@@ -182,6 +182,7 @@ static int hph_en_ready = 0;
 #endif
 
 static int slim0_rx_sample_rate = SAMPLING_RATE_48KHZ;
+static int slim0_tx_sample_rate = SAMPLING_RATE_48KHZ;
 static int slim0_rx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int hdmi_rx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
@@ -1151,6 +1152,105 @@ static int msm_slim_0_rx_ch_put(struct snd_kcontrol *kcontrol,
 	pr_debug("%s: msm_slim_0_rx_ch = %d\n", __func__,
 		 msm_slim_0_rx_ch);
 	return 1;
+}
+
+static int slim0_tx_sample_rate_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int sample_rate_val = 0;
+
+	switch (slim0_tx_sample_rate) {
+	case SAMPLING_RATE_192KHZ:
+		sample_rate_val = 2;
+		break;
+	case SAMPLING_RATE_96KHZ:
+		sample_rate_val = 1;
+		break;
+	case SAMPLING_RATE_48KHZ:
+	default:
+		sample_rate_val = 0;
+		break;
+	}
+
+	ucontrol->value.integer.value[0] = sample_rate_val;
+	pr_debug("%s: slim0_tx_sample_rate = %d\n", __func__,
+				slim0_tx_sample_rate);
+
+	return 0;
+}
+
+static int slim0_tx_sample_rate_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int rc = 0;
+
+	pr_debug("%s: ucontrol value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 2:
+		slim0_tx_sample_rate = SAMPLING_RATE_192KHZ;
+		break;
+	case 1:
+		slim0_tx_sample_rate = SAMPLING_RATE_96KHZ;
+		break;
+	case 0:
+		slim0_tx_sample_rate = SAMPLING_RATE_48KHZ;
+		break;
+	default:
+		rc = -EINVAL;
+		pr_err("%s: invalid sample rate being passed\n", __func__);
+		break;
+	}
+
+	pr_debug("%s: slim0_tx_sample_rate = %d\n", __func__,
+			slim0_tx_sample_rate);
+
+	return rc;
+}
+
+static int slim0_tx_bit_format_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+
+	switch (slim0_tx_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_LE:
+		ucontrol->value.integer.value[0] = 1;
+		break;
+
+	case SNDRV_PCM_FORMAT_S16_LE:
+	default:
+		ucontrol->value.integer.value[0] = 0;
+		break;
+	}
+
+	pr_debug("%s: slim0_tx_bit_format = %d, ucontrol value = %ld\n",
+			 __func__, slim0_tx_bit_format,
+			ucontrol->value.integer.value[0]);
+
+	return 0;
+}
+
+static int slim0_tx_bit_format_put(struct snd_kcontrol *kcontrol,
+				   struct snd_ctl_elem_value *ucontrol)
+{
+	int rc = 0;
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 1:
+		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
+		break;
+	case 0:
+		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
+		break;
+	default:
+		pr_err("%s: invalid value %ld\n", __func__,
+		       ucontrol->value.integer.value[0]);
+		rc = -EINVAL;
+		break;
+	}
+
+	return rc;
 }
 
 static int msm_slim_0_tx_ch_get(struct snd_kcontrol *kcontrol,
@@ -2479,6 +2579,10 @@ static int msm_slim_0_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	pr_debug("%s()\n", __func__);
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   slim0_rx_bit_format);
+        if(htc_acoustic_query_feature(HTC_AUD_24BIT)) {
+                param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+                        SNDRV_PCM_FORMAT_S24_LE);
+        }
 	rate->min = rate->max = slim0_rx_sample_rate;
 	channels->min = channels->max = msm_slim_0_rx_ch;
 
@@ -2501,7 +2605,7 @@ static int msm_slim_0_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	pr_debug("%s()\n", __func__);
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   slim0_tx_bit_format);
-	rate->min = rate->max = 48000;
+	rate->min = rate->max = slim0_tx_sample_rate;
 	channels->min = channels->max = msm_slim_0_tx_ch;
 
 	return 0;
@@ -2623,6 +2727,10 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 			quat_mi2s_sample_rate_get, quat_mi2s_sample_rate_put),
 
 
+	SOC_ENUM_EXT("SLIM_0_TX Format", msm_snd_enum[4],
+			slim0_tx_bit_format_get, slim0_tx_bit_format_put),
+	SOC_ENUM_EXT("SLIM_0_TX SampleRate", msm_snd_enum[5],
+			slim0_tx_sample_rate_get, slim0_tx_sample_rate_put),
 
 };
 #ifdef USE_CODEC_MBHC

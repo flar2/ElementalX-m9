@@ -9,7 +9,8 @@ Required properties:
 			"qcom,mdss_dsi_pll_8916", "qcom,mdss_dsi_pll_8939",
 			"qcom,mdss_dsi_pll_8974", "qcom,mdss_dsi_pll_8994",
 			"qcom,mdss_dsi_pll_8994", "qcom,mdss_dsi_pll_8909",
-			"qcom,mdss_hdmi_pll", "qcom,mdss_hdmi_pll_8994"
+			"qcom,mdss_hdmi_pll", "qcom,mdss_hdmi_pll_8994",
+			"qcom,mdss_dsi_pll_8992", "qcom,mdss_hdmi_pll_8992"
 - cell-index:		Specifies the controller used
 - reg:			offset and length of the register set for the device.
 - reg-names :		names to refer to register sets related to this device
@@ -42,6 +43,9 @@ Optional properties:
 				-- qcom,supply-post-on-sleep: time to sleep (ms) after turning on
 				-- qcom,supply-pre-off-sleep: time to sleep (ms) before turning off
 				-- qcom,supply-post-off-sleep: time to sleep (ms) after turning off
+
+- linux,contiguous-region: Phandle to the continuous memory region reserved for
+		   dynamic refresh rate data.
 
 Example:
 	mdss_dsi0_pll: qcom,mdss_dsi_pll@fd922A00 {
@@ -81,5 +85,7 @@ Example:
 				qcom,supply-post-off-sleep = <0>;
 			};
 		};
+
+		linux,contiguous-region = <&dfps_data_mem>;
 	};
 

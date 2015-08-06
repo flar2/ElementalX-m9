@@ -103,6 +103,7 @@ do {                                            \
 #define PDATA(a)      (ts->pdata->a)
 
 #define RETRY_TIMES 3
+#define RETRY_TIMES_CONFIG 5
 #define SHIFT_BITS 10
 
 static u32 debug_mask = 0x00080000;
@@ -221,6 +222,7 @@ struct data {
 
 extern unsigned int get_tamper_sf(void);
 extern char *htc_get_bootmode(void);
+extern char *disp_vendor(void);
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void early_suspend(struct early_suspend *h);
 static void late_resume(struct early_suspend *h);
@@ -2267,7 +2269,10 @@ static void set_chip_mode(struct data *ts)
 			ts->glove_enable = 0;
 			pr_info("%s: disable glove mode", __func__);
 		}
+	}
 
+	if (ts->fw_config->support_cover) {
+		set_cover_mode(ts->client, ts->cover_mode);
 		if (ts->fw_config->filter_range != NULL) {
 			if (ts->cover_mode) {
 				set_edge_filter(ts->client, 2, ts->fw_config->filter_range);
@@ -2377,6 +2382,34 @@ static void collect_chip_data(struct data *ts)
 			ts->frame_rate[0] = ts->touch_config[4];
 			ts->frame_rate[1] = ts->touch_config[5];
 			pr_info_if(8, "(INIT): Frame Rate=(%d,%d)", ts->frame_rate[0], ts->frame_rate[1]);
+			if (ts->protocol_ver != 0) {
+				if (ts->protocol_ver <= 7) {
+					if (PDATA(coordinate_settings) & MAX1187X_SWAP_XY) {
+						PDATA(panel_min_x) = 0;
+						PDATA(panel_max_x) = ts->touch_config[28] & 0x7FFF;
+						PDATA(panel_min_y) = 0;
+						PDATA(panel_max_y) = ts->touch_config[27] & 0x7FFF;
+					} else {
+						PDATA(panel_min_x) = 0;
+						PDATA(panel_max_x) = ts->touch_config[27] & 0x7FFF;
+						PDATA(panel_min_y) = 0;
+						PDATA(panel_max_y) = ts->touch_config[28] & 0x7FFF;
+					}
+				} else {
+					if (PDATA(coordinate_settings) & MAX1187X_SWAP_XY) {
+						PDATA(panel_min_x) = 0;
+						PDATA(panel_max_x) = ts->touch_config[44] & 0x7FFF;
+						PDATA(panel_min_y) = 0;
+						PDATA(panel_max_y) = ts->touch_config[43] & 0x7FFF;
+					} else {
+						PDATA(panel_min_x) = 0;
+						PDATA(panel_max_x) = ts->touch_config[43] & 0x7FFF;
+						PDATA(panel_min_y) = 0;
+						PDATA(panel_max_y) = ts->touch_config[44] & 0x7FFF;
+					}
+				}
+				pr_info_if(8, "(INIT): Resolution=(%d,%d)", PDATA(panel_max_x), PDATA(panel_max_y));
+			}
 		}
 	}
 	else
@@ -2500,15 +2533,9 @@ u16 calculate_checksum(u16 *buf, u16 n)
 	return cs;
 }
 
-static void update_config(struct data *ts)
-{
+static u8 compare_Touch_Configuration(struct data *ts) {
 	int i, ret;
-	u16 reload_touch_config=0, reload_calib_table=0, reload_private_config=0;
-	u16 reload_lookup_x=0, reload_lookup_y=0, reload_imagefactor_table=0;
-	u16 mtpdata[]={0x0000, 0x0000, 0x0000};
-	u16 imagefactor_data[104];
 
-	
 	if (ts->max11871_Touch_Configuration_Data) {
 		for (i=0; i<RETRY_TIMES; i++) {
 			DISABLE_IRQ();
@@ -2523,18 +2550,27 @@ static void update_config(struct data *ts)
 					if (compare_u16_arrays(&ts->rx_report[2],
 						&ts->max11871_Touch_Configuration_Data[1], config_num[ts->config_protocol][0]+1)!=0) {
 						pr_info_if(8, "(Config): Touch Configuration Data mismatch");
-						reload_touch_config = 1;
+						ret = 1;
 					} else {
 						pr_info_if(8, "(Config): Touch Configuration Data okay");
 					}
 					release_report(ts);
-					break;
+					if (ret == 1)
+						return 1;
+					else
+						break;
 				}
 			}
 		}
 		if (i==RETRY_TIMES && ret!=0)
 			pr_err("Failed to receive touch config report");
 	}
+	return 0;
+}
+
+static u8 compare_Calibration_Table(struct data *ts) {
+	int i, ret;
+	u16 mtpdata[]={0x0000, 0x0000};
 
 	if (ts->max11871_Calibration_Table_Data) {
 		for (i=0; i<RETRY_TIMES; i++) {
@@ -2553,18 +2589,27 @@ static void update_config(struct data *ts)
 					if (compare_u16_arrays(&ts->rx_report[2],
 						&ts->max11871_Calibration_Table_Data[1], config_num[ts->config_protocol][1]+1)!=0) {
 						pr_info_if(8, "(Config): Calibration Table Data mismatch");
-						reload_calib_table = 1;
+						ret = 1;
 					} else {
 						pr_info_if(8, "(Config): Calibration Table Data okay");
 					}
 					release_report(ts);
-					break;
+					if (ret == 1)
+						return 1;
+					else
+						break;
 				}
 			}
 		}
 		if (i==RETRY_TIMES && ret!=0)
 			pr_err("Failed to receive calibration table report");
 	}
+	return 0;
+}
+
+static u8 compare_Private_Configuration(struct data *ts) {
+	int i, ret;
+	u16 mtpdata[]={0x0000, 0x0000};
 
 	if (ts->max11871_Private_Configuration_Data) {
 		for (i=0; i<RETRY_TIMES; i++) {
@@ -2583,18 +2628,27 @@ static void update_config(struct data *ts)
 					if (compare_u16_arrays(&ts->rx_report[2],
 						&ts->max11871_Private_Configuration_Data[1], config_num[ts->config_protocol][2]+1)!=0) {
 						pr_info_if(8, "(Config): Private Configuration Data mismatch");
-						reload_private_config = 1;
+						ret = 1;
 					} else {
 						pr_info_if(8, "(Config): Private Configuration Data okay");
 					}
 					release_report(ts);
-					break;
+					if (ret == 1)
+						return 1;
+					else
+						break;
 				}
 			}
 		}
 		if (i==RETRY_TIMES && ret!=0)
 			pr_err("Failed to receive private config report");
 	}
+	return 0;
+}
+
+static u8 compare_Lookup_Table_X(struct data *ts) {
+	int i, ret;
+	u16 mtpdata[]={0x0000, 0x0000, 0x0000};
 
 	if (ts->max11871_Lookup_Table_X_Data) {
 		for (i=0; i<RETRY_TIMES; i++) {
@@ -2614,18 +2668,27 @@ static void update_config(struct data *ts)
 					if (compare_u16_arrays(&ts->rx_report[3],
 						&ts->max11871_Lookup_Table_X_Data[3], config_num[ts->config_protocol][3])!=0) {
 						pr_info_if(8, "(Config): Lookup Table X Data mismatch");
-						reload_lookup_x = 1;
+						ret = 1;
 					} else {
 						pr_info_if(8, "(Config): Lookup Table X Data okay");
 					}
 					release_report(ts);
-					break;
+					if (ret == 1)
+						return 1;
+					else
+						break;
 				}
 			}
 		}
 		if (i==RETRY_TIMES && ret!=0)
 			pr_err("Failed to receive Lookup table X report");
 	}
+	return 0;
+}
+
+static u8 compare_Lookup_Table_Y(struct data *ts) {
+	int i, ret;
+	u16 mtpdata[]={0x0000, 0x0000, 0x0000};
 
 	if (ts->max11871_Lookup_Table_Y_Data) {
 		for (i=0; i<RETRY_TIMES; i++) {
@@ -2645,18 +2708,27 @@ static void update_config(struct data *ts)
 					if (compare_u16_arrays(&ts->rx_report[3],
 						&ts->max11871_Lookup_Table_Y_Data[3], config_num[ts->config_protocol][3])!=0) {
 						pr_info_if(8, "(Config): Lookup Table Y Data mismatch");
-						reload_lookup_y = 1;
+						ret = 1;
 					} else {
 						pr_info_if(8, "(Config): Lookup Table Y Data okay");
 					}
 					release_report(ts);
-					break;
+					if (ret == 1)
+						return 1;
+					else
+						break;
 				}
 			}
 		}
 		if (i==RETRY_TIMES && ret!=0)
 			pr_err("Failed to receive Lookup table Y report");
 	}
+	return 0;
+}
+
+static u8 compare_Image_Factor(struct data *ts) {
+	int i, ret;
+	u16 mtpdata[]={0x0000, 0x0000};
 
 	if (ts->max11871_Image_Factor_Table && config_num[ts->config_protocol][4]) {
 		for (i=0; i<RETRY_TIMES; i++) {
@@ -2675,109 +2747,168 @@ static void update_config(struct data *ts)
 					if (ts->rx_report[3] !=
 						calculate_checksum(ts->max11871_Image_Factor_Table, 460)) {
 						pr_info_if(8, "(Config): Image Factor Table mismatch");
-						reload_imagefactor_table = 1;
+						ret = 1;
 					} else {
 						pr_info_if(8, "(Config): Image Factor Table okay");
 					}
 					release_report(ts);
-					break;
+					if (ret == 1)
+						return 1;
+					else
+						break;
 				}
 			}
 		}
 		if (i==RETRY_TIMES && ret!=0)
 			pr_err("Failed to receive Image Factor Table report");
 	}
+	return 0;
+}
+
+static void update_config(struct data *ts)
+{
+	int i, ret;
+	u16 reload_touch_config=0, reload_calib_table=0, reload_private_config=0;
+	u16 reload_lookup_x=0, reload_lookup_y=0, reload_imagefactor_table=0;
+	u16 imagefactor_data[104];
+	u32 retry_config_update_delay = PDATA(retry_config_update_delay);
+
+
+	
+	reload_touch_config = compare_Touch_Configuration(ts);
+	reload_calib_table = compare_Calibration_Table(ts);
+	reload_private_config = compare_Private_Configuration(ts);
+	reload_lookup_x = compare_Lookup_Table_X(ts);
+	reload_lookup_y = compare_Lookup_Table_Y(ts);
+	reload_imagefactor_table = compare_Image_Factor(ts);
 
 	
 	
 	if (reload_touch_config) {
 		pr_info_if(8, "(Config): Update Configuration Table");
 		DISABLE_IRQ();
-		ret = send_mtp_command(ts, ts->max11871_Touch_Configuration_Data, config_num[ts->config_protocol][0]+2);
-		if(ret < 0)
-			pr_err("Failed to send Touch Config");
-		msleep(100);
+		for (i=0; i<RETRY_TIMES_CONFIG; i++) {
+			ret = send_mtp_command(ts, ts->max11871_Touch_Configuration_Data, config_num[ts->config_protocol][0]+2);
+			msleep(retry_config_update_delay + i*50);
+			if(ret < 0)
+				pr_err("Failed to send Touch Config");
+			else if (!compare_Touch_Configuration(ts))
+				break;
+		}
+		if (i==RETRY_TIMES_CONFIG)
+			pr_err("Fail to update Touch Config");
 		ENABLE_IRQ();
 	}
 	if (reload_calib_table) {
 		pr_info_if(8, "(Config): Update Calibration Table");
 		DISABLE_IRQ();
-		ret = send_mtp_command(ts, ts->max11871_Calibration_Table_Data, config_num[ts->config_protocol][1]+2);
-		if(ret < 0)
-			pr_err("Failed to send Calib Table");
-		msleep(100);
+		for (i=0; i<RETRY_TIMES_CONFIG; i++) {
+			ret = send_mtp_command(ts, ts->max11871_Calibration_Table_Data, config_num[ts->config_protocol][1]+2);
+			msleep(retry_config_update_delay + i*50);
+			if(ret < 0)
+				pr_err("Failed to send Calib Table");
+			else if (!compare_Calibration_Table(ts))
+					break;
+		}
+		if (i==RETRY_TIMES_CONFIG)
+			pr_err("Fail to update Calib Table");
 		ENABLE_IRQ();
 	}
 	if (reload_private_config) {
 		pr_info_if(8, "(Config): Update Private Configuration Table");
 		DISABLE_IRQ();
-		ret = send_mtp_command(ts, ts->max11871_Private_Configuration_Data, config_num[ts->config_protocol][2]+2);
-		if(ret < 0)
-			pr_err("Failed to send Private Config");
-		msleep(100);
+		for (i=0; i<RETRY_TIMES_CONFIG; i++) {
+			ret = send_mtp_command(ts, ts->max11871_Private_Configuration_Data, config_num[ts->config_protocol][2]+2);
+			msleep(retry_config_update_delay + i*50);
+			if(ret < 0)
+				pr_err("Failed to send Private Config");
+			else if (!compare_Private_Configuration(ts))
+				break;
+		}
+		if (i==RETRY_TIMES_CONFIG)
+			pr_err("Fail to update Private Config");
 		ENABLE_IRQ();
 	}
 	if (reload_lookup_x) {
 		pr_info_if(8, "(Config): Update Lookup Table X");
 		DISABLE_IRQ();
-		ret = send_mtp_command(ts, ts->max11871_Lookup_Table_X_Data, config_num[ts->config_protocol][3]+3);
-		if(ret < 0)
-			pr_err("Failed to send Lookup Table X");
-		msleep(100);
+		for (i=0; i<RETRY_TIMES_CONFIG; i++) {
+			ret = send_mtp_command(ts, ts->max11871_Lookup_Table_X_Data, config_num[ts->config_protocol][3]+3);
+			msleep(retry_config_update_delay + i*50);
+			if(ret < 0)
+				pr_err("Failed to send Lookup Table X");
+			else if (!compare_Lookup_Table_X(ts))
+				break;
+		}
+		if (i==RETRY_TIMES_CONFIG)
+			pr_err("Fail to update Lookup Table X");
 		ENABLE_IRQ();
 	}
 	if (reload_lookup_y) {
 		pr_info_if(8, "(Config): Update Lookup Table Y");
 		DISABLE_IRQ();
-		ret = send_mtp_command(ts, ts->max11871_Lookup_Table_Y_Data, config_num[ts->config_protocol][3]+3);
-		if(ret < 0)
-			pr_err("Failed to send Lookup Table Y");
-		msleep(100);
+		for (i=0; i<RETRY_TIMES_CONFIG; i++) {
+			ret = send_mtp_command(ts, ts->max11871_Lookup_Table_Y_Data, config_num[ts->config_protocol][3]+3);
+			msleep(retry_config_update_delay + i*50);
+			if(ret < 0)
+				pr_err("Failed to send Lookup Table Y");
+			else if (!compare_Lookup_Table_Y(ts))
+				break;
+		}
+		if (i==RETRY_TIMES_CONFIG)
+			pr_err("Fail to update Lookup Table Y");
 		ENABLE_IRQ();
 	}
 	if (reload_imagefactor_table && config_num[ts->config_protocol][4]) {
 		pr_info_if(8, "(Config): Update Image Factor Table");
 		DISABLE_IRQ();
-		
-		imagefactor_data[0] = 0x0046;
-		imagefactor_data[1] = 0x003E;
-		imagefactor_data[2] = 0x0000;
-		memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table, 60 << 1);
-		imagefactor_data[63] = calculate_checksum(imagefactor_data+2,61);
-		send_mtp_command(ts, imagefactor_data, 64);
-		msleep(100);
-		
-		imagefactor_data[0] = 0x0046;
-		imagefactor_data[1] = 0x0066;
-		imagefactor_data[2] = 0x003C;
-		memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+60, 100 << 1);
-		imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
-		send_mtp_command(ts, imagefactor_data, 104);
-		msleep(100);
-		
-		imagefactor_data[0] = 0x0046;
-		imagefactor_data[1] = 0x0066;
-		imagefactor_data[2] = 0x00A0;
-		memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+160, 100 << 1);
-		imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
-		send_mtp_command(ts, imagefactor_data, 104);
-		msleep(100);
-		
-		imagefactor_data[0] = 0x0046;
-		imagefactor_data[1] = 0x0066;
-		imagefactor_data[2] = 0x0104;
-		memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+260, 100 << 1);
-		imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
-		send_mtp_command(ts, imagefactor_data, 104);
-		msleep(100);
-		
-		imagefactor_data[0] = 0x0046;
-		imagefactor_data[1] = 0x0066;
-		imagefactor_data[2] = 0x8168;
-		memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+360, 100 << 1);
-		imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
-		send_mtp_command(ts, imagefactor_data, 104);
-		msleep(100);
+		for (i=0; i<RETRY_TIMES_CONFIG; i++) {
+			
+			imagefactor_data[0] = 0x0046;
+			imagefactor_data[1] = 0x003E;
+			imagefactor_data[2] = 0x0000;
+			memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table, 60 << 1);
+			imagefactor_data[63] = calculate_checksum(imagefactor_data+2,61);
+			send_mtp_command(ts, imagefactor_data, 64);
+			msleep(100);
+			
+			imagefactor_data[0] = 0x0046;
+			imagefactor_data[1] = 0x0066;
+			imagefactor_data[2] = 0x003C;
+			memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+60, 100 << 1);
+			imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
+			send_mtp_command(ts, imagefactor_data, 104);
+			msleep(100);
+			
+			imagefactor_data[0] = 0x0046;
+			imagefactor_data[1] = 0x0066;
+			imagefactor_data[2] = 0x00A0;
+			memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+160, 100 << 1);
+			imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
+			send_mtp_command(ts, imagefactor_data, 104);
+			msleep(100);
+			
+			imagefactor_data[0] = 0x0046;
+			imagefactor_data[1] = 0x0066;
+			imagefactor_data[2] = 0x0104;
+			memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+260, 100 << 1);
+			imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
+			send_mtp_command(ts, imagefactor_data, 104);
+			msleep(100);
+			
+			imagefactor_data[0] = 0x0046;
+			imagefactor_data[1] = 0x0066;
+			imagefactor_data[2] = 0x8168;
+			memcpy(imagefactor_data+3, ts->max11871_Image_Factor_Table+360, 100 << 1);
+			imagefactor_data[103] = calculate_checksum(imagefactor_data+2,101);
+			send_mtp_command(ts, imagefactor_data, 104);
+
+			msleep(retry_config_update_delay + i*50);
+			if (!compare_Image_Factor(ts))
+				break;
+		}
+		if (i==RETRY_TIMES_CONFIG)
+			pr_err("Fail to update Image Factor Table");
 		ENABLE_IRQ();
 	}
 	if (reload_touch_config || reload_calib_table || reload_private_config ||
@@ -2892,6 +3023,13 @@ static void check_fw_and_config(struct data *ts)
 				ts->fw_config++;
 				continue;
 			}
+			if(PDATA(disp_panel_check) && PDATA(disp_panel)
+					&& ts->fw_config->disp_panel) {
+				if(!strstr(PDATA(disp_panel), ts->fw_config->disp_panel)) {
+					ts->fw_config++;
+					continue;
+				}
+			}
 			if(PDATA(tw_mask) && ts->fw_config->vendor_pin) {
 				if(ts->fw_config->vendor_pin != ts->vendor_pin) {
 					ts->fw_config++;
@@ -2972,23 +3110,28 @@ static int hallsensor_status_handler_func(struct notifier_block *this,
 	if ((pole == HALL_POLE_S) && ts->fw_config->support_cover) {
 		if (pole_value == HALL_FAR) {
 			ts->cover_mode = 0;
-			if ((ts->glove_setting & 0x01) == 0)
-				ts->glove_enable = 0;
-			else
-				ts->glove_enable = 1;
+			if (ts->fw_config->support_glove) {
+				if ((ts->glove_setting & 0x01) == 0)
+					ts->glove_enable = 0;
+				else
+					ts->glove_enable = 1;
+			}
 			if (PDATA(hall_block_touch_time) > 1)
 				max1187x_handle_block_touch(ts, 0);
 		}
 		else {
 			ts->cover_mode = 1;
-			ts->glove_enable = 1;
+			if (ts->fw_config->support_glove)
+				ts->glove_enable = 1;
 			if (PDATA(hall_block_touch_time) > 1)
 				max1187x_handle_block_touch(ts, 1);
 		}
 
 		if (!ts->i2c_to_mcu) {
-			set_glove_mode(ts->client, ts->glove_enable);
-			pr_info("%s: glove_enable = %d", __func__, ts->glove_enable);
+			if (ts->fw_config->support_glove) {
+				set_glove_mode(ts->client, ts->glove_enable);
+				pr_info("%s: glove_enable = %d", __func__, ts->glove_enable);
+			}
 			set_cover_mode(ts->client, ts->cover_mode);
 			if (ts->fw_config->filter_range != NULL) {
 				if (ts->cover_mode) {
@@ -3110,6 +3253,7 @@ static int parse_config(struct device *dev, struct max1187x_pdata *pdata)
 	int len = 0;
 	u16 tmp_buf[80];
 	u32 range[4];
+	const char *disp_panel;
 
 	pr_info("(PROBE): %s", __func__);
 	if (devnode == NULL) {
@@ -3157,6 +3301,11 @@ static int parse_config(struct device *dev, struct max1187x_pdata *pdata)
 			fw_config[i].eng_id = data;
 		else
 			fw_config[i].eng_id = 0;
+
+		if (of_property_read_string(pp, "disp_panel", &disp_panel))
+			memset(fw_config[i].disp_panel, 0, ARRAY_SIZE(fw_config[i].disp_panel));
+		else
+			scnprintf(fw_config[i].disp_panel, ARRAY_SIZE(fw_config[i].disp_panel), disp_panel);
 
 		prop = of_find_property(pp, "filter_range", NULL);
 		if (prop) {
@@ -3491,6 +3640,13 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 		pr_info("hall_block_touch_time = %d", pdata->hall_block_touch_time);
 
 	
+	if (of_property_read_u32(devnode, "retry_config_update_delay",
+		&pdata->retry_config_update_delay)) {
+		pdata->retry_config_update_delay = 100;
+	}
+	pr_info("parse retry_config_update_delay = %d", pdata->retry_config_update_delay);
+
+	
 	if (of_property_read_u32(devnode, "eng_id", &pdata->eng_id) == 0) {
 		pr_info("(INIT) eng_id = %d", pdata->eng_id);
 	} else if (of_property_read_u32(devnode, "eng_id_mask", &pdata->eng_id_mask) == 0) {
@@ -3499,6 +3655,17 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 	} else {
 		pdata->eng_id = 0;
 	}
+
+	
+	if (of_property_read_bool(devnode, "disp_panel_check")) {
+		scnprintf(pdata->disp_panel, ARRAY_SIZE(pdata->disp_panel), disp_vendor());
+		pr_info("(INIT) parse disp_panel = %s", pdata->disp_panel);
+		if (pdata->disp_panel)
+			pdata->disp_panel_check = true;
+		else
+			pdata->disp_panel_check = false;
+	} else
+		pdata->disp_panel_check = false;
 
 	if (parse_config(dev, pdata)) {
 		pr_err("Failed to parse config\n");
@@ -4049,7 +4216,7 @@ static void off_mode_suspend(struct i2c_client *client)
 {
 	char data[] = {0x00, 0x00, 0x03, 0x11, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00};
 	int ret;
-	pr_info("(PROBE): Offmode charging. Set touch chip to sleep mode and skip touch driver probe");
+	pr_info("(PROBE): Set touch chip to sleep mode and skip touch driver probe");
 	do {ret = i2c_master_send(client, data, 10);
 	} while (ret == -EAGAIN);
 	if(ret <= 0)
@@ -4087,7 +4254,9 @@ static int probe(struct i2c_client *client, const struct i2c_device_id *id)
 		goto err_chip_exist;
 	}
 
-	if (strcmp(htc_get_bootmode(), "offmode_charging") == 0) {
+	if ((strcmp(htc_get_bootmode(), "offmode_charging") == 0)
+		|| (strcmp(htc_get_bootmode(), "recovery") == 0)) {
+		pr_info("(PROBE): %s mode", htc_get_bootmode());
 		off_mode_suspend(client);
 		goto err_off_mode;
 	}
@@ -4447,6 +4616,7 @@ static void early_suspend(struct early_suspend *h)
 static void late_resume(struct early_suspend *h)
 {
 	u16 data[] = {0x0020, 0x0001, 0x0002};
+	u16 data1[] = {0x0034, 0x0001, 0x0000};
 	struct data *ts;
 	ts = container_of(h, struct data, early_suspend);
 
@@ -4460,6 +4630,10 @@ static void late_resume(struct early_suspend *h)
 
 	(void)send_mtp_command(ts, data, NWORDS(data));
 	pr_info("max1187x_%s: wake up", __func__);
+
+	
+	(void)send_mtp_command(ts, data1, NWORDS(data1));
+	pr_info("max1187x_%s: reset baseline", __func__);
 
 	(void)change_touch_rpt(ts->client, PDATA(report_mode));
 	pr_info("max1187x_%s: change report type:%d", __func__, PDATA(report_mode));
@@ -4532,6 +4706,7 @@ static void early_suspend(struct device *dev)
 static void late_resume(struct device *dev)
 {
 	u16 data[] = {0x0020, 0x0001, 0x0002};
+	u16 data1[] = {0x0034, 0x0001, 0x0000};
 	struct data *ts = dev_get_drvdata(dev);
 
 	pr_info("max1187x_%s", __func__);
@@ -4544,6 +4719,10 @@ static void late_resume(struct device *dev)
 
 	(void)send_mtp_command(ts, data, NWORDS(data));
 	pr_info("max1187x_%s: wake up", __func__);
+
+	
+	(void)send_mtp_command(ts, data1, NWORDS(data1));
+	pr_info("max1187x_%s: reset baseline", __func__);
 
 	(void)change_touch_rpt(ts->client, PDATA(report_mode));
 	pr_info("max1187x_%s: change report type:%d", __func__, PDATA(report_mode));

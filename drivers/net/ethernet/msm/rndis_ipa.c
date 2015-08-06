@@ -36,7 +36,7 @@
 #define IPV4_HDR_NAME "rndis_eth_ipv4"
 #define IPV6_HDR_NAME "rndis_eth_ipv6"
 #define IPA_TO_USB_CLIENT IPA_CLIENT_USB_CONS
-#define INACTIVITY_MSEC_DELAY 1000
+#define INACTIVITY_MSEC_DELAY 100
 #define DEFAULT_OUTSTANDING_HIGH 64
 #define DEFAULT_OUTSTANDING_LOW 32
 #define DEBUGFS_TEMP_BUF_SIZE 4
@@ -85,26 +85,6 @@
 #define RNDIS_IPA_LOG_EXIT()  RNDIS_IPA_DEBUG("end\n")
 
 
-/**
- * enum rndis_ipa_state - specify the current driver internal state
- *  which is guarded by a state machine.
- *
- * The driver internal state changes due to its external API usage.
- * The driver saves its internal state to guard from caller illegal
- * call sequence.
- * states:
- * UNLOADED is the first state which is the default one and is also the state
- *  after the driver gets unloaded(cleanup).
- * INITIALIZED is the driver state once it finished registering
- *  the network device and all internal data struct were initialized
- * CONNECTED is the driver state once the USB pipes were connected to IPA
- * UP is the driver state after the interface mode was set to UP but the
- *  pipes are not connected yet - this state is meta-stable state.
- * CONNECTED_AND_UP is the driver state when the pipe were connected and
- *  the interface got UP request from the network stack. this is the driver
- *   idle operation state which allows it to transmit/receive data.
- * INVALID is a state which is not allowed.
- */
 enum rndis_ipa_state {
 	RNDIS_IPA_UNLOADED          = 0,
 	RNDIS_IPA_INITIALIZED       = 1,
@@ -114,11 +94,6 @@ enum rndis_ipa_state {
 	RNDIS_IPA_INVALID           = 5,
 };
 
-/**
- * enum rndis_ipa_operation - enumerations used to describe the API operation
- *
- * Those enums are used as input for the driver state machine.
- */
 enum rndis_ipa_operation {
 	RNDIS_IPA_INITIALIZE,
 	RNDIS_IPA_CONNECT,
@@ -132,10 +107,6 @@ enum rndis_ipa_operation {
 	RNDIS_IPA_DEBUG("Driver state: %s\n",\
 	rndis_ipa_state_string(ctx->state));
 
-/**
- * struct rndis_loopback_pipe - hold all information needed for
- *  pipe loopback logic
- */
 struct rndis_loopback_pipe {
 	struct sps_pipe          *ipa_sps;
 	struct ipa_sps_params ipa_sps_connect;
@@ -156,45 +127,6 @@ struct rndis_loopback_pipe {
 	struct ipa_ep_cfg *ipa_ep_cfg;
 };
 
-/**
- * struct rndis_ipa_dev - main driver context parameters
- *
- * @net: network interface struct implemented by this driver
- * @directory: debugfs directory for various debugging switches
- * @tx_filter: flag that enable/disable Tx path to continue to IPA
- * @tx_dropped: number of filtered out Tx packets
- * @tx_dump_enable: dump all Tx packets
- * @rx_filter: flag that enable/disable Rx path to continue to IPA
- * @rx_dropped: number of filtered out Rx packets
- * @rx_dump_enable: dump all Rx packets
- * @icmp_filter: allow all ICMP packet to pass through the filters
- * @rm_enable: flag that enable/disable Resource manager request prior to Tx
- * @loopback_enable:  flag that enable/disable USB stub loopback
- * @deaggregation_enable: enable/disable IPA HW deaggregation logic
- * @during_xmit_error: flags that indicate that the driver is in a middle
- *  of error handling in Tx path
- * @usb_to_ipa_loopback_pipe: usb to ipa (Rx) pipe representation for loopback
- * @ipa_to_usb_loopback_pipe: ipa to usb (Tx) pipe representation for loopback
- * @bam_dma_hdl: handle representing bam-dma, used for loopback logic
- * @directory: holds all debug flags used by the driver to allow cleanup
- *  for driver unload
- * @eth_ipv4_hdr_hdl: saved handle for ipv4 header-insertion table
- * @eth_ipv6_hdr_hdl: saved handle for ipv6 header-insertion table
- * @usb_to_ipa_hdl: save handle for IPA pipe operations
- * @ipa_to_usb_hdl: save handle for IPA pipe operations
- * @outstanding_pkts: number of packets sent to IPA without TX complete ACKed
- * @outstanding_high: number of outstanding packets allowed
- * @outstanding_low: number of outstanding packets which shall cause
- *  to netdev queue start (after stopped due to outstanding_high reached)
- * @error_msec_sleep_time: number of msec for sleeping in case of Tx error
- * @state: current state of the driver
- * @host_ethaddr: holds the tethered PC ethernet address
- * @device_ethaddr: holds the device ethernet address
- * @device_ready_notify: callback supplied by USB core driver
- * This callback shall be called by the Netdev once the Netdev internal
- * state is changed to RNDIS_IPA_CONNECTED_AND_UP
- * @xmit_error_delayed_work: work item for cases where IPA driver Tx fails
- */
 struct rndis_ipa_dev {
 	struct net_device *net;
 	u32 tx_filter;
@@ -227,14 +159,6 @@ struct rndis_ipa_dev {
 	struct delayed_work xmit_error_delayed_work;
 };
 
-/**
- * rndis_pkt_hdr - RNDIS_IPA representation of REMOTE_NDIS_PACKET_MSG
- * @msg_type: for REMOTE_NDIS_PACKET_MSG this value should be 1
- * @msg_len:  total message length in bytes, including RNDIS header an payload
- * @data_ofst: offset in bytes from start of the data_ofst to payload
- * @data_len: payload size in bytes
- * @zeroes: OOB place holder - not used for RNDIS_IPA.
- */
 struct rndis_pkt_hdr {
 	__le32	msg_type;
 	__le32	msg_len;
@@ -472,7 +396,7 @@ static struct ipa_ep_cfg usb_to_ipa_ep_cfg_deaggr_en = {
 		.deaggr_hdr_len = sizeof(struct rndis_pkt_hdr),
 		.packet_offset_valid = true,
 		.packet_offset_location = 8,
-		.max_packet_len = 8192, /* Will be overridden*/
+		.max_packet_len = 8192, 
 	},
 	.route = {
 		.rt_tbl_hdl = RNDIS_IPA_DFLT_RT_HDL,
@@ -483,15 +407,6 @@ static struct ipa_ep_cfg usb_to_ipa_ep_cfg_deaggr_en = {
 };
 
 
-/**
- * rndis_template_hdr - RNDIS template structure for RNDIS_IPA SW insertion
- * @msg_type: set for REMOTE_NDIS_PACKET_MSG (0x00000001)
- *  this value will be used for all data packets
- * @msg_len:  will add the skb length to get final size
- * @data_ofst: this field value will not be changed
- * @data_len: set as skb length to get final size
- * @zeroes: make sure all OOB data is not used
- */
 struct rndis_pkt_hdr rndis_template_hdr = {
 	.msg_type = RNDIS_IPA_PKT_TYPE,
 	.msg_len = sizeof(struct rndis_pkt_hdr),
@@ -500,32 +415,6 @@ struct rndis_pkt_hdr rndis_template_hdr = {
 	.zeroes = {0},
 };
 
-/**
- * rndis_ipa_init() - create network device and initialize internal
- *  data structures
- * @params: in/out parameters required for initialization,
- *  see "struct ipa_usb_init_params" for more details
- *
- * Shall be called prior to pipe connection.
- * Detailed description:
- *  - allocate the network device
- *  - set default values for driver internal switches and stash them inside
- *     the netdev private field
- *  - set needed headroom for RNDIS header
- *  - create debugfs folder and files
- *  - create IPA resource manager client
- *  - set the ethernet address for the netdev to be added on SW Tx path
- *  - add header insertion rules for IPA driver (based on host/device Ethernet
- *     addresses given in input params and on RNDIS data template struct)
- *  - register tx/rx properties to IPA driver (will be later used
- *    by IPA configuration manager to configure rest of the IPA rules)
- *  - set the carrier state to "off" (until connect is called)
- *  - register the network device
- *  - set the out parameters
- *  - change driver internal state to INITIALIZED
- *
- * Returns negative errno, or zero on success
- */
 int rndis_ipa_init(struct ipa_usb_init_params *params)
 {
 	int result = 0;
@@ -663,33 +552,6 @@ fail_alloc_etherdev:
 }
 EXPORT_SYMBOL(rndis_ipa_init);
 
-/**
- * rndis_ipa_pipe_connect_notify() - notify rndis_ipa Netdev that the USB pipes
- *  were connected
- * @usb_to_ipa_hdl: handle from IPA driver client for USB->IPA
- * @ipa_to_usb_hdl: handle from IPA driver client for IPA->USB
- * @private: same value that was set by init(), this parameter holds the
- *  network device pointer.
- * @max_transfer_byte_size: RNDIS protocol specific, the maximum size that
- *  the host expect
- * @max_packet_number: RNDIS protocol specific, the maximum packet number
- *  that the host expects
- *
- * Once USB driver finishes the pipe connection between IPA core
- * and USB core this method shall be called in order to
- * allow the driver to complete the data path configurations.
- * Detailed description:
- *  - configure the IPA end-points register
- *  - notify the Linux kernel for "carrier_on"
- *  - change the driver internal state
- *
- *  After this function is done the driver state changes to "Connected"  or
- *  Connected and Up.
- *  This API is expected to be called after initialization() or
- *  after a call to disconnect().
- *
- * Returns negative errno, or zero on success
- */
 int rndis_ipa_pipe_connect_notify(u32 usb_to_ipa_hdl,
 			u32 ipa_to_usb_hdl,
 			u32 max_xfer_size_bytes_to_dev,
@@ -788,18 +650,6 @@ fail_create_rm:
 }
 EXPORT_SYMBOL(rndis_ipa_pipe_connect_notify);
 
-/**
- * rndis_ipa_open() - notify Linux network stack to start sending packets
- * @net: the network interface supplied by the network stack
- *
- * Linux uses this API to notify the driver that the network interface
- * transitions to the up state.
- * The driver will instruct the Linux network stack to start
- * delivering data packets.
- * The driver internal state shall be changed to Up or Connected and Up
- *
- * Returns negative errno, or zero on success
- */
 static int rndis_ipa_open(struct net_device *net)
 {
 	struct rndis_ipa_dev *rndis_ipa_ctx;
@@ -831,35 +681,6 @@ static int rndis_ipa_open(struct net_device *net)
 	return 0;
 }
 
-/**
- * rndis_ipa_start_xmit() - send data from APPs to USB core via IPA core
- *  using SW path (Tx data path)
- * Tx path for this Netdev is Apps-processor->IPA->USB
- * @skb: packet received from Linux network stack destined for tethered PC
- * @net: the network device being used to send this packet (rndis0)
- *
- * Several conditions needed in order to send the packet to IPA:
- * - Transmit queue for the network driver is currently
- *   in "started" state
- * - The driver internal state is in Connected and Up state.
- * - Filters Tx switch are turned off
- * - The IPA resource manager state for the driver producer client
- *   is "Granted" which implies that all the resources in the dependency
- *   graph are valid for data flow.
- * - outstanding high boundary was not reached.
- *
- * In case the outstanding packets high boundary is reached, the driver will
- * stop the send queue until enough packets are processed by
- * the IPA core (based on calls to rndis_ipa_tx_complete_notify).
- *
- * In case all of the conditions are met, the network driver shall:
- *  - encapsulate the Ethernet packet with RNDIS header (REMOTE_NDIS_PACKET_MSG)
- *  - send the packet by using IPA Driver SW path (IP_PACKET_INIT)
- *  - Netdev status fields shall be updated based on the current Tx packet
- *
- * Returns NETDEV_TX_BUSY if retry should be made later,
- * or NETDEV_TX_OK on success.
- */
 static netdev_tx_t rndis_ipa_start_xmit(struct sk_buff *skb,
 					struct net_device *net)
 {
@@ -934,20 +755,6 @@ resource_busy:
 	return status;
 }
 
-/**
- * rndis_ipa_tx_complete_notify() - notification for Netdev that the
- *  last packet was successfully sent
- * @private: driver context stashed by IPA driver upon pipe connect
- * @evt: event type (expected to be write-done event)
- * @data: data provided with event (this is actually the skb that
- *  holds the sent packet)
- *
- * This function will be called on interrupt bottom halve deferred context.
- * outstanding packets counter shall be decremented.
- * Network stack send queue will be re-started in case low outstanding
- * boundary is reached and queue was stopped before.
- * At the end the skb shall be freed.
- */
 static void rndis_ipa_tx_complete_notify(void *private,
 		enum ipa_dp_evt_type evt,
 		unsigned long data)
@@ -1002,20 +809,6 @@ static void rndis_ipa_tx_timeout(struct net_device *net)
 	net->stats.tx_errors++;
 }
 
-/**
- * rndis_ipa_rm_notify() - callback supplied to IPA resource manager
- *   for grant/release events
- * user_data: the driver context supplied to IPA resource manager during call
- *  to ipa_rm_create_resource().
- * event: the event notified to us by IPA resource manager (Release/Grant)
- * data: reserved field supplied by IPA resource manager
- *
- * This callback shall be called based on resource request/release sent
- * to the IPA resource manager.
- * In case the queue was stopped during EINPROGRESS for Tx path and the
- * event received is Grant then the queue shall be restarted.
- * In case the event notified is a release notification the netdev discard it.
- */
 static void rndis_ipa_rm_notify(void *user_data, enum ipa_rm_event event,
 		unsigned long data)
 {
@@ -1045,41 +838,6 @@ static void rndis_ipa_rm_notify(void *user_data, enum ipa_rm_event event,
 	RNDIS_IPA_LOG_EXIT();
 }
 
-/**
- * rndis_ipa_packet_receive_notify() - Rx notify for packet sent from
- *  tethered PC (USB->IPA).
- *  is USB->IPA->Apps-processor
- * @private: driver context
- * @evt: event type
- * @data: data provided with event
- *
- * Once IPA driver receives a packet from USB client this callback will be
- * called from bottom-half interrupt handling context (ipa Rx workqueue).
-   *
- * Packets that shall be sent to Apps processor may be of two types:
- * 1) Packets that are destined for Apps (e.g: WEBSERVER running on Apps)
- * 2) Exception packets that need special handling (based on IPA core
- *    configuration, e.g: new TCP session or any other packets that IPA core
- *    can't handle)
- * If the next conditions are met, the packet shall be sent up to the
- * Linux network stack:
- *  - Driver internal state is Connected and Up
- *  - Notification received from IPA driver meets the expected type
- *    for Rx packet
- *  -Filters Rx switch are turned off
- *
- * Prior to the sending to the network stack:
- *  - Netdev struct shall be stashed to the skb as required by the network stack
- *  - Ethernet header shall be removed (skb->data shall point to the Ethernet
- *     payload, Ethernet still stashed under MAC header).
- *  - The skb->pkt_protocol shall be set based on the ethernet destination
- *     address, Can be Broadcast, Multicast or Other-Host, The later
- *     pkt-types packets shall be dropped in case the Netdev is not
- *     in  promisc mode.
- *   - Set the skb protocol field based on the EtherType field
- *
- * Netdev status fields shall be updated based on the current Rx packet
- */
 static void rndis_ipa_packet_receive_notify(void *private,
 		enum ipa_dp_evt_type evt,
 		unsigned long data)
@@ -1119,25 +877,15 @@ static void rndis_ipa_packet_receive_notify(void *private,
 		return;
 	}
 
-	result = netif_rx(skb);
+	result = netif_rx_ni(skb);
 	if (result)
-		RNDIS_IPA_ERROR("fail on netif_rx\n");
+		RNDIS_IPA_ERROR("fail on netif_rx_ni\n");
 	rndis_ipa_ctx->net->stats.rx_packets++;
 	rndis_ipa_ctx->net->stats.rx_bytes += skb->len;
 
 	return;
 }
 
-/** rndis_ipa_stop() - notify the network interface to stop
- *   sending/receiving data
- *  @net: the network device being stopped.
- *
- * This API is used by Linux network stack to notify the network driver that
- * its state was changed to "down"
- * The driver will stop the "send" queue and change its internal
- * state to "Connected".
- * The Netdev shall be returned to be "Up" after rndis_ipa_open().
- */
 static int rndis_ipa_stop(struct net_device *net)
 {
 	struct rndis_ipa_dev *rndis_ipa_ctx = netdev_priv(net);
@@ -1162,21 +910,6 @@ static int rndis_ipa_stop(struct net_device *net)
 	return 0;
 }
 
-/** rndis_ipa_disconnect() - notify rndis_ipa Netdev that the USB pipes
- *   were disconnected
- * @private: same value that was set by init(), this  parameter holds the
- *  network device pointer.
- *
- * USB shall notify the Netdev after disconnecting the pipe.
- * - The internal driver state shall returned to its previous
- *   state (Up or Initialized).
- * - Linux network stack shall be informed for carrier off to notify
- *   user space for pipe disconnect
- * - send queue shall be stopped
- * During the transition between the pipe disconnection to
- * the Netdev notification packets
- * are expected to be dropped by IPA driver or IPA core.
- */
 int rndis_ipa_pipe_disconnect_notify(void *private)
 {
 	struct rndis_ipa_dev *rndis_ipa_ctx = private;
@@ -1234,28 +967,6 @@ int rndis_ipa_pipe_disconnect_notify(void *private)
 }
 EXPORT_SYMBOL(rndis_ipa_pipe_disconnect_notify);
 
-/**
- * rndis_ipa_cleanup() - unregister the network interface driver and free
- *  internal data structs.
- * @private: same value that was set by init(), this
- *   parameter holds the network device pointer.
- *
- * This function shall be called once the network interface is not
- * needed anymore, e.g: when the USB composition does not support it.
- * This function shall be called after the pipes were disconnected.
- * Detailed description:
- *  - remove header-insertion headers from IPA core
- *  - delete the driver dependency defined for IPA resource manager and
- *   destroy the producer resource.
- *  -  remove the debugfs entries
- *  - deregister the network interface from Linux network stack
- *  - free all internal data structs
- *
- * It is assumed that no packets shall be sent through HW bridging
- * during cleanup to avoid packets trying to add an header that is
- * removed during cleanup (IPA configuration manager should have
- * removed them at this point)
- */
 void rndis_ipa_cleanup(void *private)
 {
 	struct rndis_ipa_dev *rndis_ipa_ctx = private;
@@ -1385,26 +1096,6 @@ static void rndis_ipa_xmit_error_aftercare_wq(struct work_struct *work)
 	RNDIS_IPA_LOG_EXIT();
 }
 
-/**
- * rndis_ipa_prepare_header_insertion() - prepare the header insertion request
- *  for IPA driver
- * eth_type: the Ethernet type for this header-insertion header
- * hdr_name: string that shall represent this header in IPA data base
- * add_hdr: output for caller to be used with ipa_add_hdr() to configure
- *  the IPA core
- * dst_mac: tethered PC MAC (Ethernet) address to be added to packets
- *  for IPA->USB pipe
- * src_mac: device MAC (Ethernet) address to be added to packets
- *  for IPA->USB pipe
- *
- * This function shall build the header-insertion block request for a
- * single Ethernet+RNDIS header)
- * this header shall be inserted for packets processed by IPA
- * and destined for USB client.
- * This header shall be used for HW bridging for packets destined for
- *  tethered PC.
- * For SW data-path, this header won't be used.
- */
 static void rndis_ipa_prepare_header_insertion(int eth_type,
 		const char *hdr_name, struct ipa_hdr_add *add_hdr,
 		const void *dst_mac, const void *src_mac)
@@ -1426,21 +1117,6 @@ static void rndis_ipa_prepare_header_insertion(int eth_type,
 	add_hdr->type = IPA_HDR_L2_ETHERNET_II;
 }
 
-/**
- * rndis_ipa_hdrs_cfg() - configure header insertion block in IPA core
- *  to allow HW bridging
- * @rndis_ipa_ctx: main driver context
- * @dst_mac: destination MAC address (tethered PC)
- * @src_mac: source MAC address (MDM device)
- *
- * This function shall add 2 headers.
- * One header for Ipv4 and one header for Ipv6.
- * Both headers shall contain Ethernet header and RNDIS header, the only
- * difference shall be in the EtherTye field.
- * Headers will be committed to HW
- *
- * Returns negative errno, or zero on success
- */
 static int rndis_ipa_hdrs_cfg(struct rndis_ipa_dev *rndis_ipa_ctx,
 		const void *dst_mac, const void *src_mac)
 {
@@ -1496,14 +1172,6 @@ fail_mem:
 	return result;
 }
 
-/**
- * rndis_ipa_hdrs_destroy() - remove the IPA core configuration done for
- *  the driver data path bridging.
- * @rndis_ipa_ctx: the driver context
- *
- *  Revert the work done on rndis_ipa_hdrs_cfg(), which is,
- * remove 2 headers for Ethernet+RNDIS.
- */
 static int rndis_ipa_hdrs_destroy(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
 	struct ipa_ioc_del_hdr *del_hdr;
@@ -1542,28 +1210,6 @@ static struct net_device_stats *rndis_ipa_get_stats(struct net_device *net)
 }
 
 
-/**
- * rndis_ipa_register_properties() - set Tx/Rx properties needed
- *  by IPA configuration manager
- * @netdev_name: a string with the name of the network interface device
- *
- * Register Tx/Rx properties to allow user space configuration (IPA
- * Configuration Manager):
- *
- * - Two Tx properties (IPA->USB): specify the header names and pipe number
- *   that shall be used by user space for header-addition configuration
- *   for ipv4/ipv6 packets flowing from IPA to USB for HW bridging data.
- *   That header-addition header is added by the Netdev and used by user
- *   space to close the the HW bridge by adding filtering and routing rules
- *   that point to this header.
- *
- * - Two Rx properties (USB->IPA): these properties shall be used by user space
- *   to configure the IPA core to identify the packets destined
- *   for Apps-processor by configuring the unicast rules destined for
- *   the Netdev IP address.
- *   This rules shall be added based on the attribute mask supplied at
- *   this function, that is, always hit rule.
- */
 static int rndis_ipa_register_properties(char *netdev_name)
 {
 	struct ipa_tx_intf tx_properties = {0};
@@ -1617,12 +1263,6 @@ static int rndis_ipa_register_properties(char *netdev_name)
 	return result;
 }
 
-/**
- * rndis_ipa_deregister_properties() - remove the 2 Tx and 2 Rx properties
- * @netdev_name: a string with the name of the network interface device
- *
- * This function revert the work done on rndis_ipa_register_properties().
- */
 static int  rndis_ipa_deregister_properties(char *netdev_name)
 {
 	int result;
@@ -1639,28 +1279,6 @@ static int  rndis_ipa_deregister_properties(char *netdev_name)
 	return 0;
 }
 
-/**
- * rndis_ipa_create_rm_resource() -creates the resource representing
- *  this Netdev and supply notification callback for resource event
- *  such as Grant/Release
- * @rndis_ipa_ctx: this driver context
- *
- * In order make sure all needed resources are available during packet
- * transmit this Netdev shall use Request/Release mechanism of
- * the IPA resource manager.
- * This mechanism shall iterate over a dependency graph and make sure
- * all dependent entities are ready to for packet Tx
- * transfer (Apps->IPA->USB).
- * In this function the resource representing the Netdev is created
- * in addition to the basic dependency between the Netdev and the USB client.
- * Hence, USB client, is a dependency for the Netdev and may be notified in
- * case of packet transmit from this Netdev to tethered Host.
- * As implied from the "may" in the above sentence there is a scenario where
- * the USB is not notified. This is done thanks to the IPA resource manager
- * inactivity timer.
- * The inactivity timer allow the Release requests to be delayed in order
- * prevent ping-pong with the USB and other dependencies.
- */
 static int rndis_ipa_create_rm_resource(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
 	struct ipa_rm_create_params create_params = {0};
@@ -1717,16 +1335,6 @@ fail_rm_create:
 	return result;
 }
 
-/**
- * rndis_ipa_destroy_rm_resource() - delete the dependency and destroy
- * the resource done on rndis_ipa_create_rm_resource()
- * @rndis_ipa_ctx: this driver context
- *
- * This function shall delete the dependency create between
- * the Netdev to the USB.
- * In addition the inactivity time shall be destroy and the resource shall
- * be deleted.
- */
 static int rndis_ipa_destory_rm_resource(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
 	int result;
@@ -1774,19 +1382,6 @@ bail:
 	return result;
 }
 
-/**
- * resource_request() - request for the Netdev resource
- * @rndis_ipa_ctx: main driver context
- *
- * This function shall send the IPA resource manager inactivity time a request
- * to Grant the Netdev producer.
- * In case the resource is already Granted the function shall return immediately
- * and "pet" the inactivity timer.
- * In case the resource was not already Granted this function shall
- * return EINPROGRESS and the Netdev shall stop the send queue until
- * the IPA resource manager notify it that the resource is
- * granted (done in a differ context)
- */
 static int resource_request(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
 	int result = 0;
@@ -1799,15 +1394,6 @@ out:
 	return result;
 }
 
-/**
- * resource_release() - release the Netdev resource
- * @rndis_ipa_ctx: main driver context
- *
- * start the inactivity timer count down.by using the IPA resource
- * manager inactivity time.
- * The actual resource release shall occur only if no request shall be done
- * during the INACTIVITY_MSEC_DELAY.
- */
 static void resource_release(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
 	if (!rm_enabled(rndis_ipa_ctx))
@@ -1817,21 +1403,12 @@ out:
 	return;
 }
 
-/**
- * rndis_encapsulate_skb() - encapsulate the given Ethernet skb with
- *  an RNDIS header
- * @skb: packet to be encapsulated with the RNDIS header
- *
- * Shall use a template header for RNDIS and update it with the given
- * skb values.
- * Ethernet is expected to be already encapsulate the packet.
- */
 static struct sk_buff *rndis_encapsulate_skb(struct sk_buff *skb)
 {
 	struct rndis_pkt_hdr *rndis_hdr;
 	int payload_byte_len = skb->len;
 
-	/* if there is no room in this skb, allocate a new one */
+	
 	if (unlikely(skb_headroom(skb) < sizeof(rndis_template_hdr))) {
 		struct sk_buff *new_skb = skb_copy_expand(skb,
 			sizeof(rndis_template_hdr), 0, GFP_ATOMIC);
@@ -1844,7 +1421,7 @@ static struct sk_buff *rndis_encapsulate_skb(struct sk_buff *skb)
 		skb = new_skb;
 	}
 
-	/* make room at the head of the SKB to put the RNDIS header */
+	
 	rndis_hdr = (struct rndis_pkt_hdr *)skb_push(skb,
 					sizeof(rndis_template_hdr));
 
@@ -1855,12 +1432,6 @@ static struct sk_buff *rndis_encapsulate_skb(struct sk_buff *skb)
 	return skb;
 }
 
-/**
- * rx_filter() - logic that decide if the current skb is to be filtered out
- * @skb: skb that may be sent up to the network stack
- *
- * This function shall do Rx packet filtering on the Netdev level.
- */
 static bool rx_filter(struct sk_buff *skb)
 {
 	struct rndis_ipa_dev *rndis_ipa_ctx = netdev_priv(skb->dev);
@@ -1868,14 +1439,6 @@ static bool rx_filter(struct sk_buff *skb)
 	return rndis_ipa_ctx->rx_filter;
 }
 
-/**
- * tx_filter() - logic that decide if the current skb is to be filtered out
- * @skb: skb that may be sent to the USB core
- *
- * This function shall do Tx packet filtering on the Netdev level.
- * ICMP filter bypass is possible to allow only ICMP packet to be
- * sent (pings and etc)
- */
 
 static bool tx_filter(struct sk_buff *skb)
 {
@@ -1894,43 +1457,11 @@ static bool tx_filter(struct sk_buff *skb)
 	return true;
 }
 
-/**
- * rm_enabled() - allow the use of resource manager Request/Release to
- *  be bypassed
- * @rndis_ipa_ctx: main driver context
- *
- * By disabling the resource manager flag the Request for the Netdev resource
- * shall be bypassed and the packet shall be sent.
- * accordingly, Release request shall be bypass as well.
- */
 static bool rm_enabled(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
 	return rndis_ipa_ctx->rm_enable;
 }
 
-/**
- * rndis_ipa_ep_registers_cfg() - configure the USB endpoints
- * @usb_to_ipa_hdl: handle received from ipa_connect which represents
- *  the USB to IPA end-point
- * @ipa_to_usb_hdl: handle received from ipa_connect which represents
- *  the IPA to USB end-point
- * @max_xfer_size_bytes_to_dev: the maximum size, in bytes, that the device
- *  expects to receive from the host. supplied on REMOTE_NDIS_INITIALIZE_CMPLT.
- * @max_xfer_size_bytes_to_host: the maximum size, in bytes, that the host
- *  expects to receive from the device. supplied on REMOTE_NDIS_INITIALIZE_MSG.
- * @mtu: the netdev MTU size, in bytes
- *
- * USB to IPA pipe:
- *  - de-aggregation
- *  - Remove Ethernet header
- *  - Remove RNDIS header
- *  - SRC NAT
- *  - Default routing(0)
- * IPA to USB Pipe:
- *  - aggregation
- *  - Add Ethernet header
- *  - Add RNDIS header
- */
 static int rndis_ipa_ep_registers_cfg(u32 usb_to_ipa_hdl,
 		u32 ipa_to_usb_hdl,
 		u32 max_xfer_size_bytes_to_dev,
@@ -1990,12 +1521,6 @@ static int rndis_ipa_ep_registers_cfg(u32 usb_to_ipa_hdl,
 	return 0;
 }
 
-/**
- * rndis_ipa_set_device_ethernet_addr() - set device Ethernet address
- * @dev_ethaddr: device Ethernet address
- *
- * Returns 0 for success, negative otherwise
- */
 static int rndis_ipa_set_device_ethernet_addr(u8 *dev_ethaddr,
 		u8 device_ethaddr[])
 {
@@ -2006,17 +1531,6 @@ static int rndis_ipa_set_device_ethernet_addr(u8 *dev_ethaddr,
 	return 0;
 }
 
-/** rndis_ipa_next_state - return the next state of the driver
- * @current_state: the current state of the driver
- * @operation: an enum which represent the operation being made on the driver
- *  by its API.
- *
- * This function implements the driver internal state machine.
- * Its decisions are based on the driver current state and the operation
- * being made.
- * In case the operation is invalid this state machine will return
- * the value RNDIS_IPA_INVALID to inform the caller for a forbidden sequence.
- */
 static enum rndis_ipa_state rndis_ipa_next_state(
 		enum rndis_ipa_state current_state,
 		enum rndis_ipa_operation operation)
@@ -2071,10 +1585,6 @@ static enum rndis_ipa_state rndis_ipa_next_state(
 	return next_state;
 }
 
-/**
- * rndis_ipa_state_string - return the state string representation
- * @state: enum which describe the state
- */
 static const char *rndis_ipa_state_string(enum rndis_ipa_state state)
 {
 	switch (state) {
@@ -2112,9 +1622,6 @@ static void rndis_ipa_dump_skb(struct sk_buff *skb)
 		skb->len);
 }
 
-/**
- * Creates the root folder for the driver
- */
 static int rndis_ipa_debugfs_init(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
 	const mode_t flags_read_write = S_IRUGO | S_IWUGO;
@@ -2477,11 +1984,6 @@ static ssize_t rndis_ipa_debugfs_enable_write(struct file *file,
 	return count;
 }
 
-/**
- * Connects IPA->BAMDMA
- * This shall simulate the path from IPA to USB
- * Allowing the driver TX path
- */
 static int rndis_ipa_loopback_pipe_create(
 		struct rndis_ipa_dev *rndis_ipa_ctx,
 		struct rndis_loopback_pipe *loopback_pipe)
@@ -2490,10 +1992,6 @@ static int rndis_ipa_loopback_pipe_create(
 
 	RNDIS_IPA_LOG_ENTRY();
 
-	/* SPS pipe has two side handshake
-	 * This is the first handshake of IPA->BAMDMA,
-	 * This is the IPA side
-	 */
 	loopback_pipe->ipa_connect_params.client = loopback_pipe->ipa_client;
 	loopback_pipe->ipa_connect_params.client_bam_hdl =
 			rndis_ipa_ctx->bam_dma_hdl;
@@ -2506,7 +2004,7 @@ static int rndis_ipa_loopback_pipe_create(
 	loopback_pipe->ipa_connect_params.ipa_ep_cfg =
 		*(loopback_pipe->ipa_ep_cfg);
 
-	/* loopback_pipe->ipa_sps_connect is out param */
+	
 	retval = ipa_connect(&loopback_pipe->ipa_connect_params,
 			&loopback_pipe->ipa_sps_connect,
 			&loopback_pipe->ipa_drv_ep_hdl);
@@ -2517,10 +2015,6 @@ static int rndis_ipa_loopback_pipe_create(
 	RNDIS_IPA_DEBUG("ipa_connect() succeeded, ipa_drv_ep_hdl=%d",
 			loopback_pipe->ipa_drv_ep_hdl);
 
-	/* SPS pipe has two side handshake
-	 * This is the second handshake of IPA->BAMDMA,
-	 * This is the BAMDMA side
-	 */
 	loopback_pipe->dma_sps = sps_alloc_endpoint();
 	if (!loopback_pipe->dma_sps) {
 		RNDIS_IPA_ERROR("sps_alloc_endpoint() failed ");
@@ -2535,10 +2029,10 @@ static int rndis_ipa_loopback_pipe_create(
 		goto fail_get_cfg;
 	}
 
-	/* Start setting the non IPA ep for SPS driver*/
+	
 	loopback_pipe->dma_connect.mode = loopback_pipe->mode;
 
-	/* SPS_MODE_DEST: DMA end point is the dest (consumer) IPA->DMA */
+	
 	if (loopback_pipe->mode == SPS_MODE_DEST) {
 
 		loopback_pipe->dma_connect.source =
@@ -2550,7 +2044,7 @@ static int rndis_ipa_loopback_pipe_create(
 		loopback_pipe->dma_connect.dest_pipe_index =
 				loopback_pipe->peer_pipe_index;
 
-	/* SPS_MODE_SRC: DMA end point is the source (producer) DMA->IPA */
+	
 	} else {
 
 		loopback_pipe->dma_connect.source =
@@ -2567,7 +2061,7 @@ static int rndis_ipa_loopback_pipe_create(
 	loopback_pipe->dma_connect.desc = loopback_pipe->ipa_sps_connect.desc;
 	loopback_pipe->dma_connect.data = loopback_pipe->ipa_sps_connect.data;
 	loopback_pipe->dma_connect.event_thresh = 0x10;
-	/* BAM-to-BAM */
+	
 	loopback_pipe->dma_connect.options = SPS_O_AUTO_ENABLE;
 
 	RNDIS_IPA_DEBUG("doing sps_connect() with - ");
@@ -2605,15 +2099,8 @@ static void rndis_ipa_destroy_loopback_pipe(
 	sps_free_endpoint(loopback_pipe->dma_sps);
 }
 
-/**
- * rndis_ipa_create_loopback() - create a BAM-DMA loopback
- *  in order to replace the USB core
- */
 static int rndis_ipa_create_loopback(struct rndis_ipa_dev *rndis_ipa_ctx)
 {
-	/* The BAM handle should be use as
-	 * source/destination in the sps_connect()
-	 */
 	int retval;
 
 	RNDIS_IPA_LOG_ENTRY();
@@ -2625,7 +2112,7 @@ static int rndis_ipa_create_loopback(struct rndis_ipa_dev *rndis_ipa_ctx)
 		return -ENODEV;
 	}
 
-	/* Get BAM handle instead of USB handle */
+	
 	rndis_ipa_ctx->bam_dma_hdl = sps_dma_get_bam_handle();
 	if (!rndis_ipa_ctx->bam_dma_hdl) {
 		RNDIS_IPA_ERROR("sps_dma_get_bam_handle() failed");
@@ -2634,12 +2121,12 @@ static int rndis_ipa_create_loopback(struct rndis_ipa_dev *rndis_ipa_ctx)
 	RNDIS_IPA_DEBUG("sps_dma_get_bam_handle() succeeded (0x%x)",
 			rndis_ipa_ctx->bam_dma_hdl);
 
-	/* IPA<-BAMDMA, NetDev Rx path (BAMDMA is the USB stub) */
+	
 	rndis_ipa_ctx->usb_to_ipa_loopback_pipe.ipa_client =
 	IPA_CLIENT_USB_PROD;
 	rndis_ipa_ctx->usb_to_ipa_loopback_pipe.peer_pipe_index =
 		FROM_USB_TO_IPA_BAMDMA;
-	/*DMA EP mode*/
+	
 	rndis_ipa_ctx->usb_to_ipa_loopback_pipe.mode = SPS_MODE_SRC;
 	rndis_ipa_ctx->usb_to_ipa_loopback_pipe.ipa_ep_cfg =
 		&usb_to_ipa_ep_cfg_deaggr_en;
@@ -2654,10 +2141,10 @@ static int rndis_ipa_create_loopback(struct rndis_ipa_dev *rndis_ipa_ctx)
 	}
 	RNDIS_IPA_DEBUG("IPA->BAMDAM pipe successfully connected (TX path)");
 
-	/* IPA->BAMDMA, NetDev Tx path (BAMDMA is the USB stub)*/
+	
 	rndis_ipa_ctx->ipa_to_usb_loopback_pipe.ipa_client =
 		IPA_CLIENT_USB_CONS;
-	/*DMA EP mode*/
+	
 	rndis_ipa_ctx->ipa_to_usb_loopback_pipe.mode = SPS_MODE_DEST;
 	rndis_ipa_ctx->ipa_to_usb_loopback_pipe.ipa_ep_cfg = &ipa_to_usb_ep_cfg;
 	rndis_ipa_ctx->ipa_to_usb_loopback_pipe.peer_pipe_index =
@@ -2696,16 +2183,6 @@ static void rndis_ipa_destroy_loopback(struct rndis_ipa_dev *rndis_ipa_ctx)
 		RNDIS_IPA_ERROR("fail to disable BAM-DMA clocks");
 }
 
-/**
- * rndis_ipa_setup_loopback() - create/destroy a loopback on IPA HW
- *  (as USB pipes loopback) and notify RNDIS_IPA netdev for pipe connected
- * @enable: flag that determines if the loopback should be created or destroyed
- * @rndis_ipa_ctx: driver main context
- *
- * This function is the main loopback logic.
- * It shall create/destory the loopback by using BAM-DMA and notify
- * the netdev accordingly.
- */
 static int rndis_ipa_setup_loopback(bool enable,
 		struct rndis_ipa_dev *rndis_ipa_ctx)
 {

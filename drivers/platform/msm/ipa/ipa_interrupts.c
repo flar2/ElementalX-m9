@@ -32,6 +32,9 @@ static struct ipa_interrupt_info ipa_interrupt_to_cb[IPA_IRQ_MAX];
 static struct workqueue_struct *ipa_interrupt_wq;
 static u32 ipa_ee;
 
+static void ipa_interrupt_defer(struct work_struct *work);
+static DECLARE_WORK(ipa_interrupt_defer_work, ipa_interrupt_defer);
+
 static void deferred_interrupt_work(struct work_struct *work)
 {
 	struct ipa_interrupt_work_wrap *work_data =
@@ -122,35 +125,61 @@ fail_alloc_work:
 	return res;
 }
 
-static irqreturn_t ipa_isr(int irq, void *ctxt)
+static void ipa_process_interrupts(void)
 {
 	u32 reg;
-	u32 bmsk = 1;
+	u32 bmsk;
 	u32 i = 0;
 	u32 en;
 
 	en = ipa_read_reg(ipa_ctx->mmio, IPA_IRQ_EN_EE_n_ADDR(ipa_ee));
 	reg = ipa_read_reg(ipa_ctx->mmio, IPA_IRQ_STTS_EE_n_ADDR(ipa_ee));
-	for (i = 0; i < IPA_IRQ_MAX; i++) {
-		if (en & reg & bmsk)
-			handle_interrupt(i);
-		bmsk = bmsk << 1;
+	while (en & reg) {
+		bmsk = 1;
+		for (i = 0; i < IPA_IRQ_MAX; i++) {
+			if (en & reg & bmsk)
+				handle_interrupt(i);
+			bmsk = bmsk << 1;
+		}
+		ipa_write_reg(ipa_ctx->mmio,
+				IPA_IRQ_CLR_EE_n_ADDR(ipa_ee), reg);
+		reg = ipa_read_reg(ipa_ctx->mmio,
+				IPA_IRQ_STTS_EE_n_ADDR(ipa_ee));
 	}
-	ipa_write_reg(ipa_ctx->mmio, IPA_IRQ_CLR_EE_n_ADDR(ipa_ee), reg);
+}
 
+static void ipa_interrupt_defer(struct work_struct *work)
+{
+	IPADBG("processing interrupts in wq\n");
+	ipa_inc_client_enable_clks();
+	ipa_process_interrupts();
+	ipa_dec_client_disable_clks();
+	IPADBG("Done\n");
+}
+
+static irqreturn_t ipa_isr(int irq, void *ctxt)
+{
+	unsigned long flags;
+
+	
+	if (ipa_active_clients_trylock(&flags) == 0) {
+		IPADBG("defer interrupt processing\n");
+		queue_work(ipa_ctx->power_mgmt_wq, &ipa_interrupt_defer_work);
+		return IRQ_HANDLED;
+	}
+
+	if (ipa_ctx->ipa_active_clients.cnt == 0) {
+		IPADBG("defer interrupt processing\n");
+		queue_work(ipa_ctx->power_mgmt_wq, &ipa_interrupt_defer_work);
+		goto bail;
+	}
+
+	ipa_process_interrupts();
+
+bail:
+	ipa_active_clients_trylock_unlock(&flags);
 	return IRQ_HANDLED;
 }
-/**
-* ipa_add_interrupt_handler() - Adds handler to an interrupt type
-* @interrupt:		Interrupt type
-* @handler:		The handler to be added
-* @deferred_flag:	whether the handler processing should be deferred in
-*			a workqueue
-* @private_data:	the client's private data
-*
-* Adds handler to an interrupt type and enable the specific bit
-* in IRQ_EN register, associated interrupt in IRQ_STTS register will be enabled
-*/
 int ipa_add_interrupt_handler(enum ipa_irq_type interrupt,
 		ipa_irq_handler_t handler,
 		bool deferred_flag,
@@ -178,12 +207,6 @@ int ipa_add_interrupt_handler(enum ipa_irq_type interrupt,
 }
 EXPORT_SYMBOL(ipa_add_interrupt_handler);
 
-/**
-* ipa_remove_interrupt_handler() - Removes handler to an interrupt type
-* @interrupt:		Interrupt type
-*
-* Removes the handler and disable the specific bit in IRQ_EN register
-*/
 int ipa_remove_interrupt_handler(enum ipa_irq_type interrupt)
 {
 	u32 val;
@@ -205,17 +228,6 @@ int ipa_remove_interrupt_handler(enum ipa_irq_type interrupt)
 }
 EXPORT_SYMBOL(ipa_remove_interrupt_handler);
 
-/**
-* ipa_interrupts_init() - Initialize the IPA interrupts framework
-* @ipa_irq:	The interrupt number to allocate
-* @ee:		Execution environment
-* @ipa_dev:	The basic device structure representing the IPA driver
-*
-* - Initialize the ipa_interrupt_to_cb array
-* - Clear interrupts status
-* - Register the ipa interrupt handler - ipa_isr
-* - Enable apps processor wakeup by IPA interrupts
-*/
 int ipa_interrupts_init(u32 ipa_irq, u32 ee, struct device *ipa_dev)
 {
 	int idx;
@@ -236,11 +248,11 @@ int ipa_interrupts_init(u32 ipa_irq, u32 ee, struct device *ipa_dev)
 		return -ENOMEM;
 	}
 
-	/*Clearing interrupts status*/
+	
 	ipa_write_reg(ipa_ctx->mmio, IPA_IRQ_CLR_EE_n_ADDR(ipa_ee), reg);
 
 	res = request_irq(ipa_irq, (irq_handler_t) ipa_isr,
-				IRQF_TRIGGER_HIGH, "ipa", ipa_dev);
+				IRQF_TRIGGER_RISING, "ipa", ipa_dev);
 	if (res) {
 		IPAERR("fail to register IPA IRQ handler irq=%d\n", ipa_irq);
 		return -ENODEV;

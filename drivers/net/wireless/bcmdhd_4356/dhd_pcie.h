@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_pcie.h 518189 2014-11-30 14:35:13Z $
+ * $Id: dhd_pcie.h 546977 2015-04-07 06:34:52Z $
  */
 
 
@@ -178,6 +178,8 @@ typedef struct dhd_bus {
 	unsigned long *delete_flow_map;
 	struct sk_buff_head orphan_list;
 #endif 
+	uint32 d0_inform_cnt;
+	uint32 d0_inform_in_use_cnt;
 	uint8 force_suspend;
 } dhd_bus_t;
 

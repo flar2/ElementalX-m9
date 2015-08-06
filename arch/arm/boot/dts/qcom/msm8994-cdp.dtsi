@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -340,12 +340,6 @@
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
-};
-
-&dsi_jdi_1080_vid {
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
-	qcom,mdss-dsi-bl-min-level = <1>;
-	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,cont-splash-enabled;
 };
 
@@ -359,6 +353,7 @@
 &labibb {
 	status = "ok";
 	qpnp,qpnp-labibb-mode = "lcd";
+	qcom,qpnp-ibb-discharge-resistor = <32>;
 };
 
 &dsi_dual_sharp_video_0 {
@@ -366,10 +361,16 @@
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,cont-splash-enabled;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
+	qcom,mdss-dsi-min-refresh-rate = <30>;
 };
 
 &dsi_dual_sharp_video_1 {
 	qcom,cont-splash-enabled;
+	qcom,mdss-dsi-pan-enable-dynamic-fps;
+	qcom,mdss-dsi-pan-fps-update = "dfps_immediate_porch_mode_vfp";
+	qcom,mdss-dsi-min-refresh-rate = <30>;
 };
 
 &dsi_dual_jdi_video_0 {

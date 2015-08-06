@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,6 +21,7 @@ struct pil_priv;
 /**
  * struct pil_desc - PIL descriptor
  * @name: string used for pil_get()
+ * @fw_name: firmware name
  * @dev: parent device
  * @ops: callback functions
  * @owner: module the descriptor belongs to
@@ -34,9 +35,11 @@ struct pil_priv;
  * This defaults to ioremap if not specified.
  * @unmap_fw_mem: Custom function used to undo mapping by map_fw_mem.
  * This defaults to iounmap if not specified.
+ * @shutdown_fail: Set if PIL op for shutting down subsystem fails.
  */
 struct pil_desc {
 	const char *name;
+	const char *fw_name;
 	struct device *dev;
 	const struct pil_reset_ops *ops;
 	struct module *owner;
@@ -49,6 +52,7 @@ struct pil_desc {
 	void * (*map_fw_mem)(phys_addr_t phys, size_t size, void *data);
 	void (*unmap_fw_mem)(void *virt, size_t size, void *data);
 	void *map_data;
+	bool shutdown_fail;
 };
 
 /**
@@ -92,6 +96,7 @@ struct pil_reset_ops {
 extern int pil_desc_init(struct pil_desc *desc);
 extern int pil_boot(struct pil_desc *desc);
 extern void pil_shutdown(struct pil_desc *desc);
+extern void pil_free_memory(struct pil_desc *desc);
 extern void pil_desc_release(struct pil_desc *desc);
 extern phys_addr_t pil_get_entry_addr(struct pil_desc *desc);
 extern int pil_do_ramdump(struct pil_desc *desc, void *ramdump_dev);
@@ -99,6 +104,7 @@ extern int pil_do_ramdump(struct pil_desc *desc, void *ramdump_dev);
 static inline int pil_desc_init(struct pil_desc *desc) { return 0; }
 static inline int pil_boot(struct pil_desc *desc) { return 0; }
 static inline void pil_shutdown(struct pil_desc *desc) { }
+static inline void pil_free_memory(struct pil_desc *desc) { }
 static inline void pil_desc_release(struct pil_desc *desc) { }
 static inline phys_addr_t pil_get_entry_addr(struct pil_desc *desc)
 {

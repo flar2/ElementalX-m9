@@ -118,7 +118,7 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 	cpumask_set_cpu(cpu, mm_cpumask(mm));
 
 	set_my_cpu_offset(per_cpu_offset(smp_processor_id()));
-	printk("CPU%u: Booted secondary processor\n", cpu);
+	pr_debug("CPU%u: Booted secondary processor\n", cpu);
 
 	cpu_set_reserved_ttbr0();
 	flush_tlb_all();
@@ -189,7 +189,7 @@ void __cpu_die(unsigned int cpu)
 		pr_crit("CPU%u: cpu didn't die\n", cpu);
 		return;
 	}
-	pr_notice("CPU%u: shutdown\n", cpu);
+	pr_debug("CPU%u: shutdown\n", cpu);
 
 	if (!op_cpu_kill(cpu))
 		pr_warn("CPU%d may not have shut down cleanly\n", cpu);
@@ -444,7 +444,11 @@ static DEFINE_RAW_SPINLOCK(backtrace_lock);
 
 static unsigned long backtrace_flag;
 
+#if defined(CONFIG_HTC_DEBUG_WATCHDOG)
+static void smp_send_all_cpu_backtrace(unsigned int backtrace_timeout)
+#else
 static void smp_send_all_cpu_backtrace(void)
+#endif
 {
 	unsigned int this_cpu = smp_processor_id();
 	int i;
@@ -463,11 +467,21 @@ static void smp_send_all_cpu_backtrace(void)
 		smp_cross_call_common(&backtrace_mask, IPI_CPU_BACKTRACE);
 
 	
-	for (i = 0; i < 10 * 1000; i++) {
+#if defined(CONFIG_HTC_DEBUG_WATCHDOG)
+	for (i = 0; i < backtrace_timeout * 1000; i++)
+#else
+	for (i = 0; i < 10 * 1000; i++)
+#endif
+	{
 		if (cpumask_empty(&backtrace_mask))
 			break;
 		mdelay(1);
 	}
+
+#if defined(CONFIG_HTC_DEBUG_WATCHDOG)
+	if(i == backtrace_timeout)
+		pr_info( " dump cpu backtrace timeout \n");
+#endif
 
 	clear_bit(0, &backtrace_flag);
 	smp_mb__after_atomic();
@@ -487,7 +501,11 @@ static void ipi_cpu_backtrace(unsigned int cpu, struct pt_regs *regs)
 #ifdef CONFIG_SMP
 void arch_trigger_all_cpu_backtrace(void)
 {
+#if defined(CONFIG_HTC_DEBUG_WATCHDOG)
+	smp_send_all_cpu_backtrace(10);
+#else
 	smp_send_all_cpu_backtrace();
+#endif
 }
 #else
 void arch_trigger_all_cpu_backtrace(void)
@@ -496,6 +514,13 @@ void arch_trigger_all_cpu_backtrace(void)
 }
 #endif
 
+#if defined(CONFIG_HTC_DEBUG_WATCHDOG)
+void arch_trigger_different_cpu_backtrace_dump_timeout(unsigned int time_out)
+{
+	pr_info(" dump cpu backtrace with timeout %u sec \n", time_out);
+	smp_send_all_cpu_backtrace(time_out);
+}
+#endif
 
 void handle_IPI(int ipinr, struct pt_regs *regs)
 {

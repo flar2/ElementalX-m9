@@ -26,6 +26,7 @@ Required properties:
 	"qcom,coresight-hwevent" for coresight hardware event devices
 	"arm,coresight-fuse" for coresight fuse v1 device,
 	"arm,coresight-fuse-v2" for coresight fuse v2 device,
+	"arm,coresight-fuse-v3" for coresight fuse v3 device,
 	"qcom,coresight-audio-etm" for coresight audio etm trace device,
 	"qcom,coresight-modem-etm" for coresight modem etm trace device,
 	"qcom,coresight-wcn-etm" for coresight wireless etm trace device,
@@ -193,9 +194,20 @@ Optional properties:
 			    funnel component.
 -qcom,tmc-flush-powerdown : boolean, indicating trace data needs to be flushed before
 			    powering down CPU. Used for TMC component.
--qcom,cmb-elem-size: specifies the CMB element size supported by each monitor
-		     connected to the aggregator on each port. Should be specified
-		     in pairs (port, cmb element size).
+- qcom,bc-elem-size : specifies the BC element size supported by each monitor
+		      connected to the aggregator on each port. Should be specified
+		      in pairs (port, bc element size).
+- qcom,tc-elem-size : specifies the TC element size supported by each monitor
+		      connected to the aggregator on each port. Should be specified
+		      in pairs (port, tc element size).
+- qcom,dsb-elem-size : specifies the DSB element size supported by each monitor
+		       connected to the aggregator on each port. Should be specified
+		       in pairs (port, dsb element size).
+- qcom,cmb-elem-size : specifies the CMB element size supported by each monitor
+		       connected to the aggregator on each port. Should be specified
+		       in pairs (port, cmb element size).
+- qcom,tpda-atid : specifies the ATID for TPDA.
+-qcom,inst-id : QMI instance id for remote ETMs.
 Examples:
 
 1. Sinks

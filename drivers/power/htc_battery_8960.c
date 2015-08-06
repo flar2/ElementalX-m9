@@ -1837,7 +1837,10 @@ static void batt_update_info_from_gauge(void)
 	if (htc_battery_cell_get_cur_cell())
 		htc_batt_info.rep.full_bat = htc_battery_cell_get_cur_cell()->capacity;
 #else
-		htc_batt_info.rep.full_bat = 2840;
+	
+	if (htc_batt_info.igauge->get_battery_capacity)
+		htc_batt_info.igauge->get_battery_capacity(
+				&htc_batt_info.rep.full_bat);
 #endif
 
 	htc_batt_info.igauge->get_battery_soc(
@@ -1977,6 +1980,7 @@ static void adjust_store_level(int *store_level, int drop_raw, int drop_ui, int 
 #define ONE_MINUTES_MS					(1000 * (60 + 10))
 #define FOURTY_MINUTES_MS				(1000 * (2400 + 10))
 #define SIXTY_MINUTES_MS				(1000 * (3600 + 10))
+#define DEMO_GAP_WA						6
 static void batt_level_adjust(unsigned long time_since_last_update_ms)
 {
 	static int first = 1;
@@ -2167,6 +2171,21 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 						, store_level, prev_level, dropping_level
 						, htc_batt_info.rep.level);
 			}
+
+			if (store_level >= 2 && prev_level <= 10) {
+				dropping_level = prev_level - htc_batt_info.rep.level;
+				if((dropping_level == 1) || (dropping_level == 0)) {
+					store_level = store_level - (2 - dropping_level);
+					htc_batt_info.rep.level = htc_batt_info.rep.level -
+						(2 - dropping_level);
+				}
+				pr_info("[BATT] remap: UI level <= 10%% "
+						"and allow drop 2%% maximum, "
+						"store_level:%d%%, dropping_level:%d%%, "
+						"prev_level:%d%%, level:%d%%.\n"
+						, store_level, dropping_level, prev_level
+						, htc_batt_info.rep.level);
+			}
 		}
 		if ((htc_batt_info.rep.level == 0) && (prev_level > 1)) {
 			htc_batt_info.rep.level = 1;
@@ -2225,8 +2244,10 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 				
 				if (0 < htc_batt_info.rep.full_level_dis_batt_chg &&
 						htc_batt_info.rep.full_level_dis_batt_chg < 100) {
-					if(htc_batt_info.rep.level >
-							htc_batt_info.rep.full_level_dis_batt_chg) {
+					if((htc_batt_info.rep.level >
+							htc_batt_info.rep.full_level_dis_batt_chg) &&
+							(htc_batt_info.rep.level <
+							(htc_batt_info.rep.full_level_dis_batt_chg + DEMO_GAP_WA))) {
 						pr_info("[BATT] block current_level=%d at "
 								"full_level_dis_batt_chg=%d\n",
 								htc_batt_info.rep.level,
@@ -2734,8 +2755,12 @@ static void batt_worker(struct work_struct *work)
 								htc_batt_info.rep.charging_enabled);
 
 	
-	if (prev_safety_timer_disable_flag != safety_timer_disable_flag)
-		htc_batt_info.icharger->set_safety_timer_disable(safety_timer_disable_flag);
+	if (htc_batt_info.icharger && htc_batt_info.icharger->set_safety_timer_disable) {
+		if (prev_safety_timer_disable_flag != safety_timer_disable_flag) {
+			htc_batt_info.icharger->set_safety_timer_disable(safety_timer_disable_flag);
+		}
+		prev_safety_timer_disable_flag = safety_timer_disable_flag;
+	}
 
 	
 	if(qb_mode_enter)
@@ -3459,6 +3484,7 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.igauge.is_battery_temp_fault = pmi8994_is_batt_temperature_fault,
 	.igauge.is_battery_full = pmi8994_is_batt_full,
 	.igauge.get_battery_id = pmi8994_fg_get_batt_id,
+	.igauge.get_battery_capacity = pmi8994_fg_get_batt_capacity,
 	.igauge.get_battery_id_mv = pmi8994_fg_get_batt_id_ohm,
 	.igauge.get_attr_text = pmi8994_gauge_get_attr_text,
 	.igauge.store_battery_gauge_data = pmi8994_fg_store_battery_gauge_data_emmc,

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,6 +15,105 @@
 #include "msm8909-camera-sensor-mtp.dtsi"
 
 &soc {
+	/*
+	 * DT node to add support for SMB135x charger and integrate
+	 * with VM-BMS.
+	 */
+	i2c@78b8000 {
+		smb1357_otg_vreg: smb1357-charger@57 {
+			compatible = "qcom,smb1357-charger";
+			reg = <0x57>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <58 8>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&smb_int_default>;
+
+			qcom,bmd-algo-disabled;
+			qcom,float-voltage-mv = <4200>;
+			qcom,charging-timeout = <1536>;
+			qcom,recharge-thresh-mv = <100>;
+			regulator-name = "smb1357_otg_vreg";
+			qcom,soft-vfloat-comp-disabled;
+			qcom,thermal-mitigation = <1500 700 600 0>;
+
+			qcom,bms-psy-name = "bms";
+
+			/*
+			 * Disable SMB1357 based charging termination as BMS
+			 * controls charging.
+			 */
+			qcom,iterm-disabled;
+
+			/*
+			 * Disable charge inhibit feature to start chargin on
+			 * charger insertion independent of battery voltage.
+			 */
+			qcom,inhibit-disabled;
+
+			/* BMS is controlling charging/re-charge */
+			qcom,bms-controlled-charging;
+
+			/*
+			 * To enable charger node:
+			 * set status = "ok" and
+			 * add 'qcom,use-external-charger' to pm8909_chg node
+			 */
+			status = "disabled";
+		};
+	};
+
+	/*
+	 * DT node to add support for SMB358 charger and integrate
+	 * with VM-BMS.
+	 */
+	i2c@78b8000 {
+		smb358_otg_vreg: smb358-charger@57 {
+			compatible = "qcom,smb358-charger";
+			reg = <0x57>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <58 8>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&smb_int_default>;
+
+			qcom,float-voltage-mv = <4200>;
+			qcom,recharge-mv = <100>;
+			regulator-name = "smb358_otg_vreg";
+			qcom,thermal-mitigation = <1500 700 600 0>;
+			qcom,fastchg-current-max-ma = <1500>;
+
+			qcom,disable-apsd;
+			qcom,bms-psy-name = "bms";
+			qcom,bms-controlled-charging;
+			qcom,iterm-disabled;
+			qcom,chg-inhibit-disabled;
+			/*
+			 * In some of designs, the battery thermistor
+			 * is only connected to the PMIC THERM pin.
+			 * In this condition, we should define 'qcom,using-pmic-therm'.
+			 */
+			qcom,using-pmic-therm;
+			qcom,hot-bat-decidegc = <550>;
+			qcom,cold-bat-decidegc = <0>;
+			qcom,bat-present-decidegc = <200>;
+			/*
+			 * Below preperties are used for enable JEITA
+			 */
+			qcom,warm-bat-decidegc = <450>;
+			qcom,cool-bat-decidegc = <100>;
+			qcom,warm-bat-ma = <350>;
+			qcom,cool-bat-ma = <350>;
+			qcom,warm-bat-mv = <4100>;
+			qcom,cool-bat-mv = <4100>;
+
+			/*
+			 * To enable charger node:
+			 * set status = "ok" and
+			 * add 'qcom,use-external-charger' to pm8909_chg node
+			 */
+			status = "disabled";
+		};
+	};
+
 	i2c@78b9000 { /* BLSP1 QUP5 */
 		synaptics@20 {
 			compatible = "synaptics,dsx";
@@ -100,7 +199,7 @@
 		};
 	};
 
-	sound {
+	audio_codec_mtp: sound {
 		compatible = "qcom,msm8x16-audio-codec";
 		qcom,model = "msm8909-snd-card";
 		qcom,msm-snd-card-id = <0>;
@@ -111,7 +210,6 @@
 		qcom,msm-mbhc-gnd-swh = <0>;
 		qcom,msm-hs-micbias-type = "internal";
 		qcom,msm-micbias1-ext-cap;
-		qcom,msm-micbias2-ext-cap;
 		qcom,audio-routing =
 			"RX_BIAS", "MCLK",
 			"SPK_RX_BIAS", "MCLK",
@@ -167,14 +265,9 @@
 };
 
 &blsp1_uart1 {
-	status = "ok";
+	status = "disabled";
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart_console_sleep>;
-};
-
-&pm8909_chg {
-	status = "ok";
-	qcom,charging-disabled;
 };
 
 / {
@@ -183,39 +276,6 @@
 		qcom,vref-batt-therm = <1800000>;
 
 		#include "batterydata-palladium.dtsi"
-	};
-};
-
-&pm8909_bms {
-	status = "ok";
-	qcom,battery-data = <&mtp_batterydata>;
-};
-
-&spmi_bus {
-	qcom,pm8909@0 {
-		qcom,leds@a300 {
-			status = "okay";
-			qcom,led_mpp_4 {
-				label = "mpp";
-				linux,name = "button-backlight";
-				linux,default-trigger = "none";
-				qcom,default-state = "off";
-				qcom,max-current = <40>;
-				qcom,current-setting = <5>;
-				qcom,id = <6>;
-				qcom,mode = "manual";
-				qcom,source-sel = <1>;
-				qcom,mode-ctrl = <0x60>;
-			};
-		};
-	};
-
-	qcom,pm8909@1 {
-		qcom,vibrator@c000 {
-			status = "okay";
-			qcom,vib-timeout-ms = <15000>;
-			qcom,vib-vtg-level-mV = <3100>;
-		};
 	};
 };
 
@@ -394,65 +454,22 @@
 	};
 };
 
-&pm8909_gpios {
-	gpio@c000 { /* GPIO 1 */
-		/* Battery UICC Alarm */
-		status = "disabled";
-	};
-
-	gpio@c100 { /* GPIO 2 */
-		/* NFC_CLK_REQ */
-		qcom,mode = <0>; /* QPNP_PIN_MODE_DIG_IN */
-		qcom,pull = <5>; /* QPNP_PIN_PULL_NO */
-		qcom,vin-sel = <2>; /* QPNP_PIN_VIN2 */
-		qcom,src-sel = <2>; /* QPNP_PIN_SEL_FUNC_1 */
-		qcom,master-en = <1>;
-	};
-
-	gpio@c200 { /* GPIO 3 */
-		/* External regulator control for WTR */
-		status = "disabled";
-	};
-
-	gpio@c300 { /* GPIO 4 */
-		/* External regulator control for APC */
-		status = "disabled";
-	};
-};
-
-&pm8909_mpps {
-	mpp@a000 { /* MPP 1 */
-		/* VDD_PX */
-		status = "disabled";
-	};
-
-	mpp@a100 { /* MPP 2 */
-		/* Backlight PWM */
-		qcom,mode = <1>;		/* Digital output */
-		qcom,invert = <0>;		/* Disable invert */
-		qcom,src-sel = <4>;		/* DTEST1 */
-		qcom,vin-sel = <0>;		/* VPH_PWR */
-		qcom,master-en = <1>;		/* Enable MPP */
-	};
-
-	mpp@a200 { /* MPP 3 */
-		/* VREF DAC */
-		status = "disabled";
-	};
-
-	mpp@a300 { /* MPP 4 */
-		/* HR LED */
-		status = "disabled";
-	};
-};
-
 #include "dsi-panel-hx8394d-720p-video.dtsi"
+#include "dsi-panel-hx8394d-qhd-video.dtsi"
 
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
 };
 
 &dsi_hx8394d_720_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
+	qcom,mdss-dsi-bl-pmic-bank-select = <0>;
+	qcom,mdss-dsi-pwm-gpio = <&pm8909_mpps 2 0>;
+	qcom,cont-splash-enabled;
+};
+
+&dsi_hx8394d_qhd_vid {
 	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
 	qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
 	qcom,mdss-dsi-bl-pmic-bank-select = <0>;

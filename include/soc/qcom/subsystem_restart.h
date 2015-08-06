@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,6 +37,7 @@ struct module;
 
 struct subsys_desc {
 	const char *name;
+	char fw_name[256];
 	const char *depends_on;
 	struct device *dev;
 	struct module *owner;
@@ -45,10 +46,12 @@ struct subsys_desc {
 	int (*powerup)(const struct subsys_desc *desc);
 	void (*crash_shutdown)(const struct subsys_desc *desc);
 	int (*ramdump)(int, const struct subsys_desc *desc);
+	void (*free_memory)(const struct subsys_desc *desc);
 	irqreturn_t (*err_fatal_handler) (int irq, void *dev_id);
 	irqreturn_t (*stop_ack_handler) (int irq, void *dev_id);
 	irqreturn_t (*wdog_bite_handler) (int irq, void *dev_id);
 	int is_not_loadable;
+	int err_fatal_gpio;
 	unsigned int err_fatal_irq;
 	unsigned int err_ready_irq;
 	unsigned int stop_ack_irq;
@@ -60,6 +63,7 @@ struct subsys_desc {
 	int ssctl_instance_id;
 	u32 sysmon_pid;
 	int sysmon_shutdown_ret;
+	bool system_debug;
 };
 
 struct notif_data {
@@ -86,6 +90,7 @@ extern int subsystem_restart(const char *name);
 extern int subsystem_crashed(const char *name);
 
 extern void *subsystem_get(const char *name);
+extern void *subsystem_get_with_fwname(const char *name, const char *fw_name);
 extern void subsystem_put(void *subsystem);
 
 extern struct subsys_device *subsys_register(struct subsys_desc *desc);
@@ -139,6 +144,11 @@ static inline int subsystem_crashed(const char *name)
 
 static inline void *subsystem_get(const char *name)
 {
+	return NULL;
+}
+
+static inline void *subsystem_get_with_fwname(const char *name,
+				const char *fw_name) {
 	return NULL;
 }
 

@@ -478,6 +478,7 @@ exit:
 	return;
 }
 
+
 static void cpufreq_interactive_idle_end(void)
 {
 	struct cpufreq_interactive_cpuinfo *pcpu =

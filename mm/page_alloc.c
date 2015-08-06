@@ -406,12 +406,6 @@ static inline void rmv_page_order(struct page *page)
 	set_page_private(page, 0);
 }
 
-static inline unsigned long
-__find_buddy_index(unsigned long page_idx, unsigned int order)
-{
-	return page_idx ^ (1 << order);
-}
-
 static inline int page_is_buddy(struct page *page, struct page *buddy,
 								int order)
 {
@@ -442,6 +436,7 @@ static inline void __free_one_page(struct page *page,
 	unsigned long combined_idx;
 	unsigned long uninitialized_var(buddy_idx);
 	struct page *buddy = NULL;
+	int max_order = MAX_ORDER;
 
 	VM_BUG_ON(!zone_is_initialized(zone));
 
@@ -450,15 +445,18 @@ static inline void __free_one_page(struct page *page,
 			return;
 
 	VM_BUG_ON(migratetype == -1);
-	if (!is_migrate_isolate(migratetype))
+	if (is_migrate_isolate(migratetype)) {
+		max_order = min(MAX_ORDER, pageblock_order + 1);
+	} else {
 		__mod_zone_freepage_state(zone, 1 << order, migratetype);
+	}
 
-	page_idx = page_to_pfn(page) & ((1 << MAX_ORDER) - 1);
+	page_idx = page_to_pfn(page) & ((1 << max_order) - 1);
 
 	VM_BUG_ON(page_idx & ((1 << order) - 1));
 	VM_BUG_ON(bad_range(zone, page));
 
-	while (order < MAX_ORDER-1) {
+	while (order < max_order - 1) {
 		buddy_idx = __find_buddy_index(page_idx, order);
 		buddy = page + (buddy_idx - page_idx);
 		if (!page_is_buddy(page, buddy, order))
@@ -851,16 +849,12 @@ static void change_pageblock_range(struct page *pageblock_page,
 }
 
 static inline struct page *
-__rmqueue_fallback(struct zone *zone, int order, int start_migratetype)
+__rmqueue_fallback_order(struct zone *zone, int order, int start_migratetype, int current_order)
 {
 	struct free_area * area;
-	int current_order;
 	struct page *page;
 	int migratetype, i;
 
-	
-	for (current_order = MAX_ORDER-1; current_order >= order;
-						--current_order) {
 		for (i = 0;; i++) {
 			migratetype = fallbacks[start_migratetype][i];
 
@@ -912,6 +906,28 @@ __rmqueue_fallback(struct zone *zone, int order, int start_migratetype)
 
 			return page;
 		}
+
+	return NULL;
+}
+
+static inline struct page *
+__rmqueue_fallback(struct zone *zone, int order, int start_migratetype)
+{
+	int current_order;
+	struct page *page;
+
+	
+	for (current_order = MAX_ORDER-1; current_order >= max(PAGE_ALLOC_COSTLY_ORDER+1, order); --current_order) {
+		page = __rmqueue_fallback_order(zone, order, start_migratetype, current_order);
+		if (page)
+			return page;
+	}
+
+	
+	for (current_order = order; current_order <= PAGE_ALLOC_COSTLY_ORDER; ++current_order) {
+		page = __rmqueue_fallback_order(zone, order, start_migratetype, current_order);
+		if (page)
+			return page;
 	}
 
 	return NULL;
@@ -1172,7 +1188,7 @@ void split_page(struct page *page, unsigned int order)
 }
 EXPORT_SYMBOL_GPL(split_page);
 
-static int __isolate_free_page(struct page *page, unsigned int order)
+int __isolate_free_page(struct page *page, unsigned int order)
 {
 	unsigned long watermark;
 	struct zone *zone;

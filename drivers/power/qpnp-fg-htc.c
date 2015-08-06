@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,7 +36,12 @@
 #include <linux/async.h>
 #include <linux/power/htc_gauge.h>
 #include <linux/qpnp/qpnp-fg.h>
+#include <linux/of_fdt.h>
+#include <linux/libfdt_env.h>
+#include <linux/libfdt.h>
 #endif
+
+#define FG_ROOM_TEMP  270
 
 #define _FG_MASK(BITS, POS) \
 	((unsigned char)(((1 << (BITS)) - 1) << (POS)))
@@ -95,6 +100,7 @@
 #define FG_STORE_MAGIC_OFFSET       3104    
 #define FG_STORE_SOC_OFFSET         3108    
 #define FG_STORE_CURRTIME_OFFSET    3120    
+#define FG_STORE_TEMP_OFFSET		3140    
 
 enum {
 	FG_SPMI_DEBUG_WRITES		= BIT(0), 
@@ -128,6 +134,7 @@ enum fg_mem_setting_index {
 	FG_MEM_BCL_LM_THRESHOLD,
 	FG_MEM_BCL_MH_THRESHOLD,
 	FG_MEM_TERM_CURRENT,
+	FG_MEM_CHG_TERM_CURRENT,
 	FG_MEM_VBAT_EST_DIFF,
 	FG_MEM_BATT_LOW,
 	FG_MEM_SETTING_MAX,
@@ -163,7 +170,8 @@ static struct fg_mem_setting settings[FG_MEM_SETTING_MAX] = {
 	SETTING(RESUME_SOC,      0x45C,   1,      0),
 	SETTING(BCL_LM_THRESHOLD, 0x47C,   2,      50),
 	SETTING(BCL_MH_THRESHOLD, 0x47C,   3,      752),
-	SETTING(TERM_CURRENT,	 0x40C,   2,      250),
+	SETTING(TERM_CURRENT,	 0x40C,   2,      284),
+	SETTING(CHG_TERM_CURRENT, 0x4F8,   2,      50),
 	SETTING(VBAT_EST_DIFF,	 0x000,   0,      150),
 	SETTING(BATT_LOW,	 0x458,   0,	  4200),
 };
@@ -267,6 +275,7 @@ struct fg_chip {
 	u16			mem_base;
 	u16			vbat_adc_addr;
 	u16			ibat_adc_addr;
+	u16			tp_rev_addr;
 	atomic_t		memif_user_cnt;
 	struct fg_irq		soc_irq[FG_SOC_IRQ_COUNT];
 	struct fg_irq		batt_irq[FG_BATT_IRQ_COUNT];
@@ -297,6 +306,7 @@ struct fg_chip {
 	u8			thermal_coefficients[THERMAL_COEFF_N_BYTES];
 	bool			use_thermal_coefficients;
 	int 				chg_status;
+	u32			cc_cv_threshold_mv;
 	unsigned int		batt_profile_len;
 	const char		*batt_type;
 	unsigned long		last_sram_update_time;
@@ -304,6 +314,8 @@ struct fg_chip {
 	int				store_batt_data_soc_thre;
 	int				batt_stored_magic_num;
 	int				batt_stored_soc;
+	int 			batt_stored_temperature;
+	unsigned int    TEMP_DIFF_BELOW_RT;
 	unsigned int	batt_stored_update_time;
 
 	
@@ -314,6 +326,7 @@ static struct fg_chip *the_chip;
 struct pm8941_battery_data_store {
 	int           store_soc;
 	unsigned long store_currtime_s;
+	int           store_temperature;
 };
 static struct pm8941_battery_data_store store_emmc;
 
@@ -323,6 +336,15 @@ static struct pm8941_battery_data_store store_emmc;
 #define MAX_LINE_LENGTH  (ADDR_LEN + (ITEMS_PER_LINE * CHARS_PER_ITEM) + 1)
 #define MAX_REG_PER_TRANSACTION	(8)
 
+#define DT_ROOT_VALUE 0
+enum device_project {
+       DEVICE_PROJ_INVALID = 0,
+       DEVICE_PROJ_HIMA,
+       DEVICE_PROJ_B3,
+       DEVICE_PROJ_MAX,
+};
+static enum device_project project_name;
+
 static const char *DFS_ROOT_NAME	= "fg_memif";
 static const mode_t DFS_MODE = S_IRUSR | S_IWUSR;
 static const char *default_batt_type	= "Unknown Battery";
@@ -330,6 +352,7 @@ static const char *missing_batt_type	= "Disconnected Battery";
 int fg_probe_flag = 0;
 
 static int consistent_flag = false;
+static int htc_batt_capacity;
 
 extern int get_partition_num_by_name(char *name);
 
@@ -646,7 +669,7 @@ static int fg_sub_mem_read(struct fg_chip *chip, u8 *val, u16 address, int len,
 {
 	int rc, total_len;
 	u8 *rd_data = val;
-	bool otp;
+	bool otp = false;
 	char str[DEBUG_PRINT_BUFFER_SIZE];
 
 	if (address < RAM_OFFSET)
@@ -1353,33 +1376,6 @@ static void update_jeita_setting(struct work_struct *work)
 		pr_err("failed to update JEITA setting rc=%d\n", rc);
 }
 
-static u8 batt_to_setpoint(int vbatt)
-{
-	int val;
-	
-	val = (vbatt - 2500) * 512 / 1000;
-	return DIV_ROUND_CLOSEST(val, 5);
-}
-
-#define FG_ALG_SYSCTL_1	0x4B0
-#define SYSCTL_OFFSET		1
-#define AUTO_RCHG_BIT		BIT(1)
-
-static int fg_set_auto_recharge(struct fg_chip *chip)
-{
-	int rc;
-
-	rc = fg_mem_masked_write(chip, FG_ALG_SYSCTL_1, AUTO_RCHG_BIT,
-			0, SYSCTL_OFFSET);
-
-	if (rc)
-		pr_err("write failed rc=%d\n", rc);
-	else
-		pr_info("setting auto recharge\n");
-
-	return rc;
-}
-
 static int fg_set_resume_soc(struct fg_chip *chip, u8 threshold)
 {
 	u16 address;
@@ -1533,6 +1529,7 @@ int emmc_misc_write(int val, int offset)
 	return 1;
 }
 
+
 #define SYS_BATT_STS_MASK					FG_MASK(7, 5)
 #define SYS_BATT_STS_SHIFT					5
 int pmi8994_fg_get_system_status(int *result)
@@ -1576,7 +1573,7 @@ int pmi8994_fg_get_batt_soc(int *result)
 	int state_of_charge;
 	struct timespec xtime;
 	unsigned long currtime_ms, currtime_s;
-
+    int  curr_tmp = 0;
 	xtime = CURRENT_TIME;
 	currtime_ms = xtime.tv_sec * MSEC_PER_SEC + xtime.tv_nsec / NSEC_PER_MSEC;
 	currtime_s = currtime_ms / MSEC_PER_SEC;
@@ -1585,20 +1582,24 @@ int pmi8994_fg_get_batt_soc(int *result)
 		pr_err("called before init\n");
 		return -EINVAL;
 	}
+
+	
+	pmi8994_fg_get_batt_temperature(&curr_tmp);
 	state_of_charge = *result = get_prop_capacity(the_chip);
 
 	if (the_chip->store_batt_data_soc_thre > 0
 			&& state_of_charge <= the_chip->store_batt_data_soc_thre) {
 		store_emmc.store_currtime_s = currtime_s;
+		store_emmc.store_temperature = curr_tmp;
 	}
 
 	pr_info("curr_soc=%d,stored_soc:%d,store_batt_data_soc_thre:%d,"
 			"currtime_s:%lu,stored_time:%u,"
-			"consistent=%d\n",
+			"consistent=%d current temperature = %d\n",
 			state_of_charge, the_chip->batt_stored_soc,
 			the_chip->store_batt_data_soc_thre,
 			currtime_s, the_chip->batt_stored_update_time,
-			consistent_flag);
+			consistent_flag, curr_tmp);
 
 	return 0;
 }
@@ -1637,6 +1638,17 @@ int pmi8994_fg_get_batt_id(int *result)
         *result = htc_batt_id;
 
         return 0;
+}
+
+int pmi8994_fg_get_batt_capacity(int *result)
+{
+	if(!the_chip) {
+		pr_err("called before init\n");
+		return -EINVAL;
+	}
+	*result = htc_batt_capacity;
+
+	return 0;
 }
 
 int pmi8994_gauge_get_attr_text(char *buf, int size)
@@ -1698,9 +1710,10 @@ int pmi8994_fg_store_battery_gauge_data_emmc(void)
 		emmc_misc_write(FG_STORE_MAGIC_NUM, FG_STORE_MAGIC_OFFSET);
 		emmc_misc_write(store_emmc.store_soc, FG_STORE_SOC_OFFSET);
 		emmc_misc_write(store_emmc.store_currtime_s, FG_STORE_CURRTIME_OFFSET);
+		emmc_misc_write(store_emmc.store_temperature, FG_STORE_TEMP_OFFSET);
 
-		pr_info("Stored soc=%d,currtime_s=%lu\n",
-			store_emmc.store_soc, store_emmc.store_currtime_s);
+		pr_info("Stored soc=%d,currtime_s=%lu, stored_temp=%d\n",
+			store_emmc.store_soc, store_emmc.store_currtime_s, store_emmc.store_temperature);
 	}
 
 	return 0;
@@ -2016,6 +2029,7 @@ do {									\
 				" property rc = %d\n", rc);		\
 } while (0)
 
+
 #define OF_READ_SETTING(type, qpnp_dt_property, retval, optional)	\
 do {									\
 	if (retval)							\
@@ -2036,7 +2050,8 @@ static struct device_node *htc_battery_probe(struct device_node *node, int id_ra
 {
 	struct device_node *last_node, *cur_node;
 	int rc = 0;
-	int id_raw_min, id_raw_max, batt_id;
+	int id_raw_min, id_raw_max, batt_id, batt_capacity;
+	const char *battery_type;
 
 	pr_info("Battery profile checking\n");
 
@@ -2052,6 +2067,32 @@ static struct device_node *htc_battery_probe(struct device_node *node, int id_ra
 		            &batt_id);
 		    if (rc)
 		        pr_err("htc,batt_id missing in dt\n");
+
+			
+			rc = of_property_read_string(cur_node, "qcom,battery-type", &battery_type);
+			if (rc) {
+				pr_err("qcom,battery-type missing in dt\n");
+				continue; 
+			} else {
+				if (fg_debug_mask & FG_STATUS)
+					pr_info("battery_type(%s) project_name(%d) batt_id(%d)",
+							battery_type, project_name, batt_id);
+
+				if (strstr(battery_type, "hima") && (project_name == DEVICE_PROJ_HIMA))
+					pr_info("Hima profile checking with id%d\n", batt_id);
+				else if (strstr(battery_type, "b3") && (project_name == DEVICE_PROJ_B3))
+					pr_info("B3 profile checking with id%d\n", batt_id);
+				else if (strstr(battery_type, "unknown"))
+					pr_info("unknown profile checking with id%d\n", batt_id);
+				else
+					continue; 
+			}
+
+			rc = of_property_read_u32(cur_node,
+		            "qcom,nom-batt-capacity-mah",
+		            &batt_capacity);
+			if (rc)
+				pr_err("qcom,nom-batt-capacity-mah missing in dt\n");
 
 		    rc = of_property_read_u32(cur_node,
 		            "htc,id_raw_min",
@@ -2071,11 +2112,13 @@ static struct device_node *htc_battery_probe(struct device_node *node, int id_ra
 			if (!rc) {
 				if ((id_raw_min <= htc_batt_id_ohm) && (htc_batt_id_ohm <= id_raw_max)) {
 					htc_batt_id = batt_id;
-					pr_info("The current ID = %d\n", htc_batt_id);
+					htc_batt_capacity = batt_capacity;
+					pr_info("The current ID = %d, capacity = %d\n", htc_batt_id, htc_batt_capacity);
 					return cur_node;
 				} else if ((batt_id == 255) && ((id_raw_min > htc_batt_id_ohm) || (htc_batt_id_ohm > id_raw_max))) {
 					htc_batt_id = batt_id;
-					pr_info("The current ID = %d\n", htc_batt_id);
+					htc_batt_capacity = batt_capacity;
+					pr_info("The current ID = %d, capacity = %d\n", htc_batt_id, htc_batt_capacity);
 					return cur_node;
 				}
 			}
@@ -2086,8 +2129,7 @@ static struct device_node *htc_battery_probe(struct device_node *node, int id_ra
 	return NULL;
 }
 
-#define V_PREDICTED_ADDR		0x540
-#define V_CURRENT_PREDICTED_OFFSET	0
+
 
 int pmi8994_fg_check_consistent(void)
 {
@@ -2121,21 +2163,101 @@ int pmi8994_fg_check_consistent(void)
 			&& the_chip->store_batt_data_soc_thre > 0 && batt_temp >= 0
 			&& ((curr_soc > the_chip->batt_stored_soc) ||
 			(the_chip->batt_stored_soc - curr_soc > 1))
+			&& (!((the_chip->batt_stored_temperature < FG_ROOM_TEMP) && (batt_temp - the_chip->batt_stored_temperature >  the_chip->TEMP_DIFF_BELOW_RT)))
 			&& (currtime_s - the_chip->batt_stored_update_time) < 3600 ) {
 		consistent_flag = true;
 		rc = 1;
 	}
 
 	pr_info("curr_soc=%d,stored_soc:%d,store_batt_data_soc_thre:%d,"
-			"boot_currtime_s:%lu,stored_time:%u,batt_temp:%d,"
-			"consistent=%d\n",
+			"boot_currtime_s:%lu,stored_time:%u,batt_temp:%d,last_stored_temp = %d temp_change = %d"
+			" consistent=%d\n",
 			curr_soc, the_chip->batt_stored_soc,
 			the_chip->store_batt_data_soc_thre,
-			currtime_s, the_chip->batt_stored_update_time, batt_temp,
+			currtime_s, the_chip->batt_stored_update_time, batt_temp, 
+			the_chip->batt_stored_temperature,( batt_temp - the_chip->batt_stored_temperature ),
 			consistent_flag);
 	return rc;
 }
 
+static enum device_project check_device_project(void)
+{
+	const char *machine_name;
+	enum device_project proj = DEVICE_PROJ_INVALID;
+
+	if(initial_boot_params) {
+		machine_name = fdt_getprop(initial_boot_params, DT_ROOT_VALUE, "model", NULL);
+		if (machine_name) {
+			pr_info("Machine Name: %s (checked in fg driver)\n", machine_name);
+			if (strstr(machine_name, "HIMA"))
+				proj = DEVICE_PROJ_HIMA;
+			else if (strstr(machine_name, "B3"))
+				proj = DEVICE_PROJ_B3;
+			else
+				proj = DEVICE_PROJ_HIMA;
+		}
+		else
+			pr_info("Machine Name not found (checked in fg driver)\n");
+	}
+	else
+		pr_err("initial_boot_params is NULL\n");
+
+	return proj;
+}
+
+#define MICROUNITS_TO_ADC_RAW(units)	\
+			div64_s64(units * LSB_16B_DENMTR, LSB_16B_NUMRTR)
+static int update_chg_iterm(struct fg_chip *chip)
+{
+	u8 data[2];
+	u16 converted_current_raw;
+	s64 current_ma = -settings[FG_MEM_CHG_TERM_CURRENT].value;
+
+	converted_current_raw = (s16)MICROUNITS_TO_ADC_RAW(current_ma * 1000);
+	data[0] = cpu_to_le16(converted_current_raw) & 0xFF;
+	data[1] = cpu_to_le16(converted_current_raw) >> 8;
+
+	if (fg_debug_mask & FG_STATUS)
+		pr_info("current = %lld, converted_raw = %04x, data = %02x %02x\n",
+			current_ma, converted_current_raw, data[0], data[1]);
+	return fg_mem_write(chip, data,
+			settings[FG_MEM_CHG_TERM_CURRENT].address,
+			2, settings[FG_MEM_CHG_TERM_CURRENT].offset, 0);
+}
+
+static void batt_to_setpoint_adc(int vbatt_mv, u8 *data)
+{
+	int val;
+	
+	val = DIV_ROUND_CLOSEST(vbatt_mv * 32768, 5000);
+	data[0] = val & 0xFF;
+	data[1] = val >> 8;
+	return;
+}
+
+#define CC_CV_SETPOINT_REG	0x4F8
+#define CC_CV_SETPOINT_OFFSET	0
+static void update_cc_cv_setpoint(struct fg_chip *chip)
+{
+	int rc;
+	u8 tmp[2];
+
+	if (!chip->cc_cv_threshold_mv)
+		return;
+	batt_to_setpoint_adc(chip->cc_cv_threshold_mv, tmp);
+	rc = fg_mem_write(chip, tmp, CC_CV_SETPOINT_REG, 2,
+				CC_CV_SETPOINT_OFFSET, 0);
+	if (rc) {
+		pr_err("failed to write CC_CV_VOLT rc=%d\n", rc);
+		return;
+	}
+	if (fg_debug_mask & FG_STATUS)
+		pr_info("Wrote %x %x to address %x for CC_CV setpoint\n",
+			tmp[0], tmp[1], CC_CV_SETPOINT_REG);
+}
+
+#define V_PREDICTED_ADDR		0x540
+#define V_CURRENT_PREDICTED_OFFSET	0
 #define LOW_LATENCY	BIT(6)
 #define PROFILE_LOAD_TIMEOUT_MS		5000
 #define BATT_PROFILE_OFFSET		0x4C0
@@ -2144,6 +2266,8 @@ int pmi8994_fg_check_consistent(void)
 #define FIRST_EST_DONE_BIT		BIT(5)
 #define MAX_TRIES_FIRST_EST		3
 #define FIRST_EST_WAIT_MS		2000
+#define FG_PROFILE_LEN			128
+#define PROFILE_COMPARE_LEN		32
 static int fg_batt_profile_init(struct fg_chip *chip)
 {
 	int rc = 0, ret;
@@ -2151,7 +2275,7 @@ static int fg_batt_profile_init(struct fg_chip *chip)
 	struct device_node *node = chip->spmi->dev.of_node;
 	struct device_node *batt_node;
 	const char *data;
-	bool tried_again = false, vbat_in_range;
+	bool tried_again = false, vbat_in_range, profiles_same;
 	u8 reg = 0;
 
 	pr_info("fg battery profile init...\n");
@@ -2170,6 +2294,11 @@ wait:
 		goto no_profile;
 	}
 
+	
+	project_name = check_device_project();
+	if (project_name == DEVICE_PROJ_INVALID)
+		pr_err("Unable to get project name\n");
+
 	batt_node = htc_battery_probe(node, fg_data[FG_DATA_BATT_ID].value);
 	if (!batt_node) {
 		pr_err("No available batterydata, using OTP defaults\n");
@@ -2182,6 +2311,12 @@ wait:
 		pr_err("no battery profile loaded\n");
 		rc = 0;
 		goto no_profile;
+	}
+
+	if (len != FG_PROFILE_LEN) {
+		pr_err("battery profile incorrect size: %d\n", len);
+		rc = -EINVAL;
+		goto fail;
 	}
 
 	chip->batt_profile = devm_kzalloc(chip->dev,
@@ -2214,8 +2349,10 @@ wait:
 				fg_data[FG_DATA_VOLTAGE].value,
 				settings[FG_MEM_VBAT_EST_DIFF].value * 1000,
 				vbat_in_range);
+	profiles_same = memcmp(chip->batt_profile, data,
+					PROFILE_COMPARE_LEN) == 0;
 	if ((reg & PROFILE_INTEGRITY_BIT) && vbat_in_range
-			&& memcmp(chip->batt_profile, data, len - 4) == 0) {
+			&& profiles_same) {
 		if (fg_debug_mask & FG_STATUS)
 			pr_info("Battery profiles same, using default\n");
 		if (fg_est_dump)
@@ -2226,6 +2363,8 @@ wait:
 		pr_info("Vbat out of range: v_current_pred: %d, v:%d\n",
 				fg_data[FG_DATA_CPRED_VOLTAGE].value,
 				fg_data[FG_DATA_VOLTAGE].value);
+	if ((fg_debug_mask & FG_STATUS) && !profiles_same)
+		pr_info("profiles differ\n");
 	if (fg_debug_mask & FG_STATUS) {
 		pr_info("Using new profile\n");
 		print_hex_dump(KERN_INFO, "FG: loaded profile: ",
@@ -2363,6 +2502,8 @@ done:
 	chip->profile_loaded = true;
 	chip->battery_missing = is_battery_missing(chip);
 	fg_probe_flag = 1;
+	update_chg_iterm(chip);
+	update_cc_cv_setpoint(chip);
 	
 	
 	
@@ -2424,8 +2565,6 @@ static void update_bcl_thresholds(struct fg_chip *chip)
 			data[lm_offset], data[mh_offset]);
 }
 
-#define MICROUNITS_TO_ADC_RAW(units)	\
-			div64_s64(units * LSB_16B_DENMTR, LSB_16B_NUMRTR)
 static int update_iterm(struct fg_chip *chip)
 {
 	u8 data[2];
@@ -2457,6 +2596,7 @@ static int fg_of_init(struct fg_chip *chip)
 	OF_READ_SETTING(FG_MEM_BCL_MH_THRESHOLD, "bcl-mh-threshold-ma",
 		rc, 1);
 	OF_READ_SETTING(FG_MEM_TERM_CURRENT, "fg-iterm-ma", rc, 1);
+	OF_READ_SETTING(FG_MEM_CHG_TERM_CURRENT, "fg-chg-iterm-ma", rc, 1);
 	data = of_get_property(chip->spmi->dev.of_node,
 			"qcom,thermal-coefficients", &len);
 	if (data && len == THERMAL_COEFF_N_BYTES) {
@@ -2466,12 +2606,17 @@ static int fg_of_init(struct fg_chip *chip)
 	OF_READ_SETTING(FG_MEM_RESUME_SOC, "resume-soc", rc, 1);
 	OF_READ_SETTING(FG_MEM_VBAT_EST_DIFF, "vbat-estimate-diff-mv", rc, 1);
 	OF_READ_SETTING(FG_MEM_BATT_LOW, "fg-vbatt-low-threshold", rc, 1);
+	OF_PROP_READ(chip, chip->cc_cv_threshold_mv, "fg-cc-cv-threshold-mv", rc, 1);
 
 	OF_PROP_READ(chip, chip->store_batt_data_soc_thre, "store-batt-data-soc-thre", rc, 1);
 	OF_PROP_READ(chip, chip->batt_stored_magic_num, "stored-batt-magic-num", rc, 1);
 	OF_PROP_READ(chip, chip->batt_stored_soc, "stored-batt-soc", rc, 1);
 	OF_PROP_READ(chip, chip->batt_stored_update_time, "stored-batt-update-time", rc, 1);
+	OF_PROP_READ(chip, chip->batt_stored_temperature,"stored-batt-temperature", rc, 1);
+	OF_PROP_READ(chip, chip->TEMP_DIFF_BELOW_RT, "stored-batt-temp-diff", rc, 1);
 
+	pr_info("stored-batt-soc=%d, stored-batt-update-time=%ul, stored-batt-temperature=%d, stored-batt-temp-diff=%d\n"
+			,chip->batt_stored_soc, chip->batt_stored_update_time, chip->batt_stored_temperature, chip->TEMP_DIFF_BELOW_RT );
 	
 	chip->use_otp_profile = of_property_read_bool(
 			chip->spmi->dev.of_node,
@@ -2523,7 +2668,8 @@ static int fg_init_irqs(struct fg_chip *chip)
 		}
 
 		if ((resource->start == chip->vbat_adc_addr) ||
-				(resource->start == chip->ibat_adc_addr))
+				(resource->start == chip->ibat_adc_addr) ||
+				(resource->start == chip->tp_rev_addr))
 			continue;
 
 		rc = fg_read(chip, &subtype,
@@ -3066,6 +3212,55 @@ static int soc_to_setpoint(int soc)
 	return DIV_ROUND_CLOSEST(soc * 255, 100);
 }
 
+#define EXTERNAL_SENSE_OFFSET_REG      0x41C
+#define EXT_OFFSET_TRIM_REG            0xF8
+#define SEC_ACCESS_REG                 0xD0
+#define SEC_ACCESS_UNLOCK              0xA5
+#define BCL_TRIM_REV_FIXED             12
+static int bcl_trim_workaround(struct fg_chip *chip)
+{
+	u8 reg, rc;
+
+	if (chip->tp_rev_addr == 0)
+		return 0;
+
+	rc = fg_read(chip, &reg, chip->tp_rev_addr, 1);
+	if (rc) {
+		pr_err("Failed to read tp reg, rc = %d\n", rc);
+		return rc;
+	}
+	if (reg >= BCL_TRIM_REV_FIXED) {
+		if (fg_debug_mask & FG_STATUS)
+		pr_info("workaround not applied, tp_rev = %d\n", reg);
+		return 0;
+	}
+
+	rc = fg_mem_read(chip, &reg, EXTERNAL_SENSE_OFFSET_REG, 1, 2, 0);
+	if (rc) {
+		pr_err("Failed to read ext sense offset trim, rc = %d\n", rc);
+		return rc;
+	}
+	rc = fg_masked_write(chip, chip->soc_base + SEC_ACCESS_REG,
+		SEC_ACCESS_UNLOCK, SEC_ACCESS_UNLOCK, 1);
+
+	rc |= fg_masked_write(chip, chip->soc_base + EXT_OFFSET_TRIM_REG,
+		0xFF, reg, 1);
+	if (rc) {
+		pr_err("Failed to write ext sense offset trim, rc = %d\n", rc);
+		return rc;
+	}
+	return 0;
+}
+
+static u8 batt_to_setpoint_8b(int vbatt)
+{
+	int val;
+	
+	val = (vbatt - 2500) * 512 / 1000;
+	return DIV_ROUND_CLOSEST(val, 5);
+}
+
+#define FG_ALG_SYSCTL_1	0x4B0
 #define SOC_CNFG	0x450
 #define SOC_DELTA_OFFSET	3
 #define DELTA_SOC_PERCENT	1
@@ -3085,12 +3280,6 @@ static int fg_hw_init(struct fg_chip *chip)
 	update_iterm(chip);
 	if (0)
 		update_bcl_thresholds(chip);
-
-	rc = fg_set_auto_recharge(chip);
-	if (rc) {
-		pr_err("Couldn't set auto recharge in FG\n");
-		return rc;
-	}
 
 	rc = fg_mem_masked_write(chip, EXTERNAL_SENSE_SELECT,
 			PATCH_NEG_CURRENT_BIT,
@@ -3122,8 +3311,14 @@ static int fg_hw_init(struct fg_chip *chip)
 		}
 	}
 
+	rc = bcl_trim_workaround(chip);
+	if (rc) {
+		pr_err("failed to redo bcl trim rc=%d\n", rc);
+		return rc;
+	}
+
 	rc = fg_mem_masked_write(chip, settings[FG_MEM_BATT_LOW].address, 0xFF,
-			batt_to_setpoint(settings[FG_MEM_BATT_LOW].value),
+			batt_to_setpoint_8b(settings[FG_MEM_BATT_LOW].value),
 			settings[FG_MEM_BATT_LOW].offset);
 	if (rc) {
 		pr_err("failed to write Vbatt_low rc=%d\n", rc);
@@ -3238,6 +3433,10 @@ static int fg_probe(struct spmi_device *spmi)
 					spmi_resource->of_node->name) == 0) {
 			chip->ibat_adc_addr = resource->start;
 			continue;
+		} else if (strcmp("qcom,revid-tp-rev",
+					spmi_resource->of_node->name) == 0) {
+				chip->tp_rev_addr = resource->start;
+				continue;
 		}
 
 		rc = fg_read(chip, &subtype,

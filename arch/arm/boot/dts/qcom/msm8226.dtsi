@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,6 +11,7 @@
  */
 
 #include "skeleton.dtsi"
+#include <dt-bindings/clock/msm-clocks-a7.h>
 
 / {
 	model = "Qualcomm Technologies, Inc. MSM 8226";
@@ -197,6 +198,14 @@
 			<0x800D0 0x00000010>,
 			<0x800D4 0x00000010>,
 			<0x800D8 0x00000707>;
+		qcom,qdss-presets = <0xfc325000 0x1000>,
+			<0xfc326000 0x1000>,
+			<0xfc321000 0x1000>,
+			<0xfc322000 0x1000>,
+			<0xfc323000 0x1000>,
+			<0xfc302000 0x1000>,
+			<0xfa180000 0x1000>,
+			<0xfa181000 0x1000>;
 		qcom,max-hw-load = <352800>; /* 720p @ 30 + 1080p @ 30 */
 		qcom,vidc-iommu-domains {
 			qcom,domain-ns {
@@ -473,6 +482,7 @@
 			qcom,cdc-micbias2-cfilt-sel = <0x1>;
 			qcom,cdc-micbias3-cfilt-sel = <0x2>;
 
+			qcom,cdc-dmic-sample-rate = <4800000>;
 			qcom,cdc-mclk-clk-rate = <9600000>;
 			qcom,cdc-slim-ifd = "tapan-slim-ifd";
 			qcom,cdc-slim-ifd-elemental-addr = [00 00 E0 00 17 02];
@@ -1008,7 +1018,7 @@
 		vdd_sr2_dig-supply = <&pm8226_s1_corner_ao>;
 	};
 
-	qcom,clock-a7@f9011050 {
+	clock_cpu: qcom,clock-a7@f9011050 {
 		compatible = "qcom,clock-a7-8226";
 		reg = <0xf9011050 0x8>;
 		reg-names = "rcg-base";
@@ -1020,6 +1030,7 @@
 			<1190400000 3>;
 
 		cpu-vdd-supply = <&apc_vreg_corner>;
+		#clock-cells = <1>;
 	};
 
 	cpubw: qcom,cpubw {
@@ -1049,9 +1060,15 @@
 		};
 	};
 
-	qcom,msm-cpufreq@0 {
+	qcom,msm-cpufreq {
 		reg = <0 4>;
 		compatible = "qcom,msm-cpufreq";
+		clocks = <&clock_cpu  clk_a7ssmux>,
+			 <&clock_cpu  clk_a7ssmux>,
+			 <&clock_cpu  clk_a7ssmux>,
+			 <&clock_cpu  clk_a7ssmux>;
+		clock-names = "cpu0_clk", "cpu1_clk",
+				"cpu2_clk", "cpu3_clk";
 		qcom,cpufreq-table =
 			<  300000 >,
 			<  384000 >,
@@ -1418,6 +1435,39 @@
 		reg = <0xfc380000 0x00100000>;
 		reg-names = "bimc";
 	};
+
+	qcom,ipc_router {
+		compatible = "qcom,ipc_router";
+		qcom,node-id = <1>;
+	};
+
+	qcom,ipc_router_modem_xprt {
+		compatible = "qcom,ipc_router_smd_xprt";
+		qcom,ch-name = "IPCRTR";
+		qcom,xprt-remote = "modem";
+		qcom,xprt-linkid = <1>;
+		qcom,xprt-version = <1>;
+		qcom,fragmented-data;
+	};
+
+	qcom,ipc_router_q6_xprt {
+		compatible = "qcom,ipc_router_smd_xprt";
+		qcom,ch-name = "IPCRTR";
+		qcom,xprt-remote = "adsp";
+		qcom,xprt-linkid = <1>;
+		qcom,xprt-version = <1>;
+		qcom,fragmented-data;
+	};
+
+	qcom,ipc_router_wcnss_xprt {
+		compatible = "qcom,ipc_router_smd_xprt";
+		qcom,ch-name = "IPCRTR";
+		qcom,xprt-remote = "wcnss";
+		qcom,xprt-linkid = <1>;
+		qcom,xprt-version = <1>;
+		qcom,fragmented-data;
+	};
+
 };
 
 &gdsc_venus {

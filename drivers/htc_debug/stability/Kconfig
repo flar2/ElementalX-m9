@@ -79,6 +79,26 @@ config HTC_DEBUG_DYING_PROCS
 	  This option enables the recording of latest 10 killed processes in
 	  /proc/dying_processes
 
+config HTC_WFE_DISABLE
+       default n
+       bool "Disable WFE instruction to avoid CPU issue"
+       help
+         Disable ARM wfe instruction which might cause CPU hang and trigger
+         watchdog reset.
+
+config HTC_EARLY_RTB
+       bool "HTC debug feature for enabling RTB before driver is initial"
+       default y
+       depends on MSM_RTB && HTC_DEBUG && OF && OF_ADDRESS
+       help
+         This option enables the RTB mechanism before RTB driver is brought up.
+         The RTB Log buffer start-address and buffer-size is defined by device-tree.
+
+config HTC_DEBUG_RESTART_TIMER
+       bool "add a timer in restart flow"
+       default y
+       depends on HTC_DEBUG
+
 config HTC_DEBUG_PAGE_USER_TRACE
 	bool "Record call trace of page user in page structure"
 	depends on PAGE_POISONING
@@ -90,10 +110,3 @@ config HTC_DEBUG_PAGE_USER_TRACE
 config HTC_DEBUG_PAGE_ENTRIES_NR
 	int
 	default 4
-
-config HTC_WFE_DISABLE
-       default n
-       bool "Disable WFE instruction to avoid CPU issue"
-       help
-         Disable ARM wfe instruction which might cause CPU hang and trigger
-         watchdog reset.

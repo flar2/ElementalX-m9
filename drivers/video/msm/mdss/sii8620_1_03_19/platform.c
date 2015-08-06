@@ -63,6 +63,7 @@
 #define GPIO_EXP_ADDR				0x40
 
 #define RESET_PULSE_WIDTH			1	
+#define MHL_ISR_TIMEOUT 	(5 * HZ)
 
 #define GPIO_EXP_INPUT_REGS_OFFSET		0x80
 #define GPIO_EXP_OUTPUT_REGS_OFFSET		0x88
@@ -1450,6 +1451,22 @@ static int mhl_get_gpio_dt_data(struct device *dev)
 	return 0;
 }
 
+static int mhl_get_swing_para_dt_data(struct device *dev)
+{
+	struct device_node *of_node = dev->of_node;
+	int rc = 0;
+	u32 tmp;
+
+	drv_info.mhl_coc_swing = 0;
+	rc = of_property_read_u32(of_node, "mhl-coc-swing", &tmp);
+	if (rc) {
+		pr_err("get mhl-coc-swing failed rc = %d\n", rc);
+	} else
+		drv_info.mhl_coc_swing = tmp;
+
+	return 0;
+}
+
 static int mhl_get_dt_data(struct device *dev)
 {
 	int rc = 0;
@@ -1485,6 +1502,8 @@ static int mhl_get_dt_data(struct device *dev)
 		return -EINVAL;
 	}
 
+	rc = mhl_get_swing_para_dt_data(dev);
+
 	
 	hdmi_tx_node = of_parse_phandle(of_node, "qcom,hdmi-tx-map", 0);
 	if (!hdmi_tx_node) {
@@ -1508,6 +1527,16 @@ int si_8620_pm_resume(struct device *dev);
 void si_wakeup_mhl(bool b_enableOTG5V)
 {
 	int rc;
+	struct device *dev = NULL;
+	struct mhl_dev_context *dev_context;
+
+	if (use_spi)
+		dev = &spi_dev->dev;
+	else
+		dev = &device_addresses[0].client->dev;
+
+	dev_context = dev_get_drvdata(dev);
+
 	pr_info("%s, b_enableOTG5V == %d\n", __func__, b_enableOTG5V);
 
 	gb_enableOTG5V = b_enableOTG5V;
@@ -1527,6 +1556,10 @@ void si_wakeup_mhl(bool b_enableOTG5V)
 
 	gpio_set_value_cansleep(drv_info.dpdn_pin, 1);
 	gpio_set_value_cansleep(drv_info.dpdn_pin_, 1);
+
+	dev_context->fake_cable_out = true;
+	queue_delayed_work(dev_context->wq, &dev_context->irq_timeout_work,
+				MHL_ISR_TIMEOUT);
 }
 
 int si_8620_pm_suspend(struct device *dev);
@@ -1569,6 +1602,28 @@ void enable_hdmi(int enable)
 		mhl_remove_notify_cable_detect();
 	}
 #endif
+}
+
+static void irq_timeout_handler(struct work_struct *w)
+{
+	struct device *dev = NULL;
+	struct mhl_dev_context *dev_context;
+	struct drv_hw_context *hw_context;
+
+	if (use_spi)
+		dev = &spi_dev->dev;
+	else
+		dev = &device_addresses[0].client->dev;
+
+	dev_context = dev_get_drvdata(dev);
+	hw_context = (struct drv_hw_context *)&dev_context->drv_context;
+
+	if (!dev_context || !hw_context)
+		return;
+
+	pr_info("[MHL]%s:fake_cable_out:%d\n", __func__, dev_context->fake_cable_out);
+	if (dev_context->fake_cable_out)
+		enable_hdmi(false);
 }
 
 void set_hev_vic(uint8_t write_burst_vic)
@@ -1687,6 +1742,7 @@ static int __devinit si_8620_mhl_tx_i2c_probe(struct i2c_client *client,
 	if (ret) {
 		pr_err("%s(): mhl_tx_init failed, error code %d\n",
 			__func__, ret);
+		goto done;
 	}
 
 	if (use_spi)
@@ -1700,6 +1756,9 @@ static int __devinit si_8620_mhl_tx_i2c_probe(struct i2c_client *client,
 	INIT_WORK(&dev_context->mhl_notifier_work, send_mhl_connect_notify);
 	INIT_WORK(&dev_context->mhl_disconnect_notifier_work, hdmi_offline_notify);
 #endif
+	dev_context->fake_cable_out = false;
+	INIT_DELAYED_WORK(&dev_context->irq_timeout_work, irq_timeout_handler);
+
 	si_suspend_mhl();
 done:
 	if (ret != 0) {

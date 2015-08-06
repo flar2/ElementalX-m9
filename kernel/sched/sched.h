@@ -197,6 +197,15 @@ struct cfs_bandwidth { };
 
 #endif	
 
+#ifdef CONFIG_SCHED_HMP
+
+struct hmp_sched_stats {
+	int nr_big_tasks, nr_small_tasks;
+	u64 cumulative_runnable_avg;
+};
+
+#endif
+
 struct cfs_rq {
 	struct load_weight load;
 	unsigned int nr_running, h_nr_running;
@@ -238,6 +247,11 @@ struct cfs_rq {
 	struct task_group *tg;	
 
 #ifdef CONFIG_CFS_BANDWIDTH
+
+#ifdef CONFIG_SCHED_HMP
+	struct hmp_sched_stats hmp_stats;
+#endif
+
 	int runtime_enabled;
 	u64 runtime_expires;
 	s64 runtime_remaining;
@@ -382,7 +396,8 @@ struct rq {
 	unsigned int cur_freq, max_freq, min_freq, max_possible_freq;
 	struct cpumask freq_domain_cpumask;
 
-	u64 cumulative_runnable_avg;
+	struct hmp_sched_stats hmp_stats;
+
 	int efficiency; 
 	int load_scale_factor;
 	int capacity;
@@ -392,6 +407,7 @@ struct rq {
 	u32 mostly_idle_load;
 	int mostly_idle_nr_run;
 	int mostly_idle_freq;
+	unsigned long hmp_flags;
 
 	u64 cur_irqload;
 	u64 avg_irqload;
@@ -412,11 +428,6 @@ struct rq {
 	int budget;
 	int load_history_index;
 	u64 load_last_update_timestamp;
-
-#ifdef CONFIG_SCHED_HMP
-	int nr_small_tasks, nr_big_tasks;
-	unsigned long hmp_flags;
-#endif
 
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 	u64 prev_irq_time;
@@ -567,6 +578,7 @@ extern struct mutex policy_mutex;
 extern unsigned int sched_ravg_window;
 extern unsigned int sched_use_pelt;
 extern unsigned int sched_disable_window_stats;
+extern unsigned int sched_enable_hmp;
 extern unsigned int max_possible_freq;
 extern unsigned int min_max_freq;
 extern unsigned int pct_task_load(struct task_struct *p);
@@ -585,7 +597,8 @@ extern unsigned int sched_init_task_load_pelt;
 extern unsigned int sched_init_task_load_windows;
 extern unsigned int sched_heavy_task;
 
-extern void fixup_nr_big_small_task(int cpu);
+extern void reset_cpu_hmp_stats(int cpu, int reset_cra);
+extern void fixup_nr_big_small_task(int cpu, int reset_stats);
 u64 scale_load_to_cpu(u64 load, int cpu);
 unsigned int max_task_load(void);
 extern void sched_account_irqtime(int cpu, struct task_struct *curr,
@@ -599,24 +612,35 @@ static inline int capacity(struct rq *rq)
 }
 
 static inline void
-inc_cumulative_runnable_avg(struct rq *rq, struct task_struct *p)
+inc_cumulative_runnable_avg(struct hmp_sched_stats *stats,
+				 struct task_struct *p)
 {
-	if (sched_use_pelt)
-		rq->cumulative_runnable_avg +=
-				p->se.avg.runnable_avg_sum_scaled;
-	else if (!sched_disable_window_stats)
-		rq->cumulative_runnable_avg += p->ravg.demand;
+	u32 task_load;
+
+	if (!sched_enable_hmp || sched_disable_window_stats)
+		return;
+
+	task_load = sched_use_pelt ? p->se.avg.runnable_avg_sum_scaled :
+			(sched_disable_window_stats ? 0 : p->ravg.demand);
+
+	stats->cumulative_runnable_avg += task_load;
 }
 
 static inline void
-dec_cumulative_runnable_avg(struct rq *rq, struct task_struct *p)
+dec_cumulative_runnable_avg(struct hmp_sched_stats *stats,
+				 struct task_struct *p)
 {
-	if (sched_use_pelt)
-		rq->cumulative_runnable_avg -=
-				p->se.avg.runnable_avg_sum_scaled;
-	else if (!sched_disable_window_stats)
-		rq->cumulative_runnable_avg -= p->ravg.demand;
-	BUG_ON((s64)rq->cumulative_runnable_avg < 0);
+	u32 task_load;
+
+	if (!sched_enable_hmp || sched_disable_window_stats)
+		return;
+
+	task_load = sched_use_pelt ? p->se.avg.runnable_avg_sum_scaled :
+			(sched_disable_window_stats ? 0 : p->ravg.demand);
+
+	stats->cumulative_runnable_avg -= task_load;
+
+	BUG_ON((s64)stats->cumulative_runnable_avg < 0);
 }
 
 #define pct_to_real(tunable)	\
@@ -646,6 +670,8 @@ static inline int sched_cpu_high_irqload(int cpu)
 
 #else	
 
+struct hmp_sched_stats;
+
 static inline unsigned int nr_eligible_big_tasks(int cpu)
 {
 	return 0;
@@ -658,13 +684,13 @@ static inline int capacity(struct rq *rq)
 	return SCHED_LOAD_SCALE;
 }
 
-static inline void
-inc_cumulative_runnable_avg(struct rq *rq, struct task_struct *p)
+static inline void inc_cumulative_runnable_avg(struct hmp_sched_stats *stats,
+		 struct task_struct *p)
 {
 }
 
-static inline void
-dec_cumulative_runnable_avg(struct rq *rq, struct task_struct *p)
+static inline void dec_cumulative_runnable_avg(struct hmp_sched_stats *stats,
+		 struct task_struct *p)
 {
 }
 
@@ -740,15 +766,10 @@ static inline void clear_reserved(int cpu)
 	clear_bit(CPU_RESERVED, &rq->hmp_flags);
 }
 
-extern unsigned int sched_enable_hmp;
-extern unsigned int sched_enable_power_aware;
-
 int mostly_idle_cpu(int cpu);
 extern void check_for_migration(struct rq *rq, struct task_struct *p);
 extern void pre_big_small_task_count_change(const struct cpumask *cpus);
 extern void post_big_small_task_count_change(const struct cpumask *cpus);
-extern void inc_nr_big_small_task(struct rq *rq, struct task_struct *p);
-extern void dec_nr_big_small_task(struct rq *rq, struct task_struct *p);
 extern void set_hmp_defaults(void);
 extern unsigned int power_cost_at_freq(int cpu, unsigned int freq);
 extern void reset_all_window_stats(u64 window_start, unsigned int window_size);
@@ -764,14 +785,6 @@ static inline void check_for_migration(struct rq *rq, struct task_struct *p) { }
 static inline void pre_big_small_task_count_change(void) { }
 static inline void post_big_small_task_count_change(void) { }
 static inline void set_hmp_defaults(void) { }
-
-static inline void inc_nr_big_small_task(struct rq *rq, struct task_struct *p)
-{
-}
-
-static inline void dec_nr_big_small_task(struct rq *rq, struct task_struct *p)
-{
-}
 
 static inline void clear_reserved(int cpu) { }
 
@@ -1073,6 +1086,10 @@ struct sched_class {
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	void (*task_move_group) (struct task_struct *p, int on_rq);
+#endif
+#ifdef CONFIG_SCHED_HMP
+	void (*inc_hmp_sched_stats)(struct rq *rq, struct task_struct *p);
+	void (*dec_hmp_sched_stats)(struct rq *rq, struct task_struct *p);
 #endif
 };
 

@@ -60,6 +60,22 @@ static int usb_autobot_mode(void)
                 return 0;
 }
 
+static void setup_usb_mirrorlink(int mirrorlink)
+{
+        if (mirrorlink)
+                _android_dev->mirrorlink_mode = 1;
+        else
+                _android_dev->mirrorlink_mode = 0;
+}
+
+static int usb_mirrorlink_mode(void)
+{
+        if (_android_dev->mirrorlink_mode)
+                return 1;
+        else
+                return 0;
+}
+
 void android_switch_htc_mode(void)
 {
 	htc_usb_enable_function("adb,mass_storage,serial,projector", 1);

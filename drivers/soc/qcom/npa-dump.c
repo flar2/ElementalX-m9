@@ -27,7 +27,7 @@
 #include <soc/qcom/rpm-smd.h>
 
 #define RESOURCE_NAME_MAX	64
-#define MISC_RESOURCE		0x6373696D /* = misc */
+#define MISC_RESOURCE		0x6373696D 
 
 struct npa_ver_header {
 	u32 ver;
@@ -51,7 +51,7 @@ struct npa_res_client {
 static u8 rpm_data[8];
 
 static struct msm_rpm_kvp kvp = {
-	.key = 0x706D7564, /*  = dump */
+	.key = 0x706D7564, 
 	.data = &rpm_data[0],
 	.length = sizeof(rpm_data),
 };
@@ -76,19 +76,8 @@ static int npa_file_read(struct seq_file *m, void *unused)
 	if (ret)
 		return ret;
 
-	/**
-	 * | Version (uint32) | Timestamp (uint64) | NPA Dump Size (uint32) |
-	 * | Resource Name (char[variable]) | Unit (char[4]) |
-	 *      Active Max (uint32) | Active State (uint32) |
-	 *      Request State (uint32) |
-	 *  | Client Name (char[4]) | Type (char[4]) | Request State (uint32) |
-	 *  | Client Name (char[4]) | Type (char[4]) | Request State (uint32) |
-	 *   ...
-	 *  | Client Name (char[4]) | Type (char[4]) | Request State (uint32) |
-	 *  | NULL (uint32) |
-	 */
 
-	/* Header */
+	
 	memcpy_fromio(&ver, pos, sizeof(ver));
 	ts = ver.timestamp[0] | ver.timestamp[1] << sizeof(u32);
 	seq_printf(m, "Version = %u Timestamp = 0x%llx Size = %u\n",
@@ -99,10 +88,6 @@ static int npa_file_read(struct seq_file *m, void *unused)
 		i = 0;
 		p = pos;
 		memset(name, 0, RESOURCE_NAME_MAX);
-		/**
-		 * Read the resource name (null terminated),
-		 * aligned on a 4 byte boundary.
-		 */
 		do {
 			name[i] = readb_relaxed(p++);
 			if (i % 4 == 0)
@@ -119,7 +104,7 @@ static int npa_file_read(struct seq_file *m, void *unused)
 			res.active_state, res.request_state);
 		pos += sizeof(res);
 
-		/* Read the clients */
+		
 		while (*pos) {
 			memcpy_fromio(&client, pos, sizeof(client));
 			seq_printf(m,
@@ -128,7 +113,7 @@ static int npa_file_read(struct seq_file *m, void *unused)
 			pos += sizeof(client);
 		}
 
-		/* Skip the NULL terminator for the resource */
+		
 		pos += sizeof(u32);
 	}
 
@@ -155,16 +140,18 @@ static int npa_dump_probe(struct platform_device *pdev)
 	struct resource *res;
 	void __iomem *npa_base, *rpm_base;
 	struct dentry *dent;
-	int ret;
+	int ret = 0;
 
-	/* Get the location of the NPA log's start address offset */
+	
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	rpm_base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(rpm_base))
 		return PTR_ERR(rpm_base);
 
-	/* Offset the log's start address from the RPM phys address */
+	
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if(!res) return -EINVAL;
+
 	npa_base = devm_ioremap(&pdev->dev,
 				res->start + readl_relaxed(rpm_base),
 				resource_size(res));

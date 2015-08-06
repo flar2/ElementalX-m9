@@ -53,7 +53,7 @@ int pn544_htc_check_rfskuid(int in_is_alive){
 int pn544_htc_get_bootmode(void) {
 	char sbootmode[30] = "default";
 #if NFC_GET_BOOTMODE
-	strcpy(sbootmode,htc_get_bootmode());
+	strncpy(sbootmode,htc_get_bootmode(),sizeof(sbootmode));
 #endif  
 	if (strcmp(sbootmode, "offmode_charging") == 0) {
 		I("%s: Check bootmode done NFC_BOOT_MODE_OFF_MODE_CHARGING\n",__func__);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -439,7 +439,7 @@ static int msm_iommu_sec_ptbl_init(void)
 	return 0;
 
 fail_mem:
-	dma_free_coherent(&dev, psize[0], cpu_addr, paddr);
+	dma_free_attrs(&dev, psize[0], cpu_addr, paddr, &attrs);
 fail:
 	return ret;
 }
@@ -651,7 +651,7 @@ static int msm_iommu_sec_ptbl_unmap(struct msm_iommu_drvdata *iommu_drvdata,
 	return ret;
 }
 
-static int msm_iommu_domain_init(struct iommu_domain *domain, int flags)
+static int msm_iommu_domain_init(struct iommu_domain *domain)
 {
 	struct msm_iommu_priv *priv;
 

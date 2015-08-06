@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,6 +12,7 @@
 
 #include "skeleton64.dtsi"
 #include <dt-bindings/clock/msm-clocks-8916.h>
+#include <dt-bindings/clock/msm-clocks-a7.h>
 
 / {
 	model = "Qualcomm Technologies, Inc. MSM8916";
@@ -297,7 +298,7 @@
 		qcom,sensor-id = <0 1 2 4 5>;
 	};
 
-	qcom,clock-a7@0b011050 {
+	clock_cpu: qcom,clock-a7@0b011050 {
 		compatible = "qcom,clock-a53-8916";
 		reg = <0x0b011050 0x8>,
 		      <0x0005c004 0x8>;
@@ -327,6 +328,7 @@
 			<  998400000 5>,
 			< 1094400000 6>,
 			< 1152000000 7>;
+		#clock-cells = <1>;
 	};
 
 	cpubw: qcom,cpubw {
@@ -359,9 +361,15 @@
 		};
 	};
 
-	qcom,msm-cpufreq@0 {
+	qcom,msm-cpufreq {
 		reg = <0 4>;
 		compatible = "qcom,msm-cpufreq";
+		clocks = <&clock_cpu  clk_a7ssmux>,
+			 <&clock_cpu  clk_a7ssmux>,
+			 <&clock_cpu  clk_a7ssmux>,
+			 <&clock_cpu  clk_a7ssmux>;
+		clock-names = "cpu0_clk", "cpu1_clk",
+				"cpu2_clk", "cpu3_clk";
 		qcom,cpufreq-table =
 			 <  200000 >,
 			 <  400000 >,
@@ -526,7 +534,7 @@
 	};
 
 	jtag_fuse: jtagfuse@5e01c {
-		compatible = "qcom,jtag-fuse";
+		compatible = "qcom,jtag-fuse-v2";
 		reg = <0x5e01c 0x8>;
 		reg-names = "fuse-base";
 	};
@@ -671,12 +679,13 @@
 		qcom,bam-pipe-pair = <2>;
 		qcom,ce-hw-instance = <0>;
 		qcom,ce-device = <0>;
+		qcom,clk-mgmt-sus-res;
 		qcom,msm-bus,name = "qcrypto-noc";
 		qcom,msm-bus,num-cases = <2>;
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 				<55 512 0 0>,
-				<55 512 3936000 393600>;
+				<55 512 393600 800000>; /* 49.2MHz & 100MHz */
 		clocks = <&clock_gcc clk_crypto_clk_src>,
 			 <&clock_gcc clk_gcc_crypto_clk>,
 			 <&clock_gcc clk_gcc_crypto_ahb_clk>,
@@ -706,7 +715,7 @@
 		qcom,msm-bus,num-paths = <1>;
 		qcom,msm-bus,vectors-KBps =
 				<55 512 0 0>,
-				<55 512 3936000 393600>;
+				<55 512 393600 800000>; /* 49.2MHz & 100MHz */
 		clocks = <&clock_gcc clk_crypto_clk_src>,
 			 <&clock_gcc clk_gcc_crypto_clk>,
 			 <&clock_gcc clk_gcc_crypto_ahb_clk>,
@@ -1347,7 +1356,7 @@
                 interrupt-names = "spi_irq", "spi_bam_irq";
                 interrupts = <0 97 0>, <0 238 0>;
                 spi-max-frequency = <50000000>;
-                pinctrl-names = "default", "sleep";
+                pinctrl-names = "spi_default", "spi_sleep";
                 pinctrl-0 = <&spi0_default &spi0_cs0_active>;
 		pinctrl-1 = <&spi0_sleep &spi0_cs0_sleep>;
 		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
@@ -1568,11 +1577,11 @@
 		qcom,core-limit-temp = <80>;
 		qcom,core-temp-hysteresis = <10>;
 		qcom,core-control-mask = <0xe>;
-		qcom,hotplug-temp = <82>;
+		qcom,hotplug-temp = <94>;
 		qcom,hotplug-temp-hysteresis = <15>;
 		qcom,cpu-sensors = "tsens_tz_sensor5", "tsens_tz_sensor5",
 				"tsens_tz_sensor4", "tsens_tz_sensor4";
-		qcom,freq-mitigation-temp = <82>;
+		qcom,freq-mitigation-temp = <94>;
 		qcom,freq-mitigation-temp-hysteresis = <10>;
 		qcom,freq-mitigation-value = <400000>;
 		qcom,freq-mitigation-control-mask = <0x01>;
@@ -1659,6 +1668,7 @@
 		clock-names = "core_clk", "iface_clk", "bus_clk";
 		qcom,clock-configs = <0x1 0x0 0x0>;
 		qcom,sw-power-collapse;
+		qcom,enable-minimum-voting;
 		qcom,load-freq-tbl = <352800 228570000 0xffffffff>,
 			<352800 228570000 0x55555555>,
 			<244800 160000000 0xffffffff>,
@@ -1669,6 +1679,12 @@
 		qcom,reg-presets = <0xE0020 0x05555556>,
 			<0xE0024 0x05555556>,
 			<0x80124 0x00000003>;
+		qcom,qdss-presets = <0x826000 0x1000>,
+			<0x827000 0x1000>,
+			<0x822000 0x1000>,
+			<0x803000 0x1000>,
+			<0x9180000 0x1000>,
+			<0x9181000 0x1000>;
 		qcom,max-hw-load = <352800>; /* 720p @ 30 + 1080p @ 30 */
 		qcom,enable-idle-indicator;
 		qcom,vidc-iommu-domains {
@@ -1777,6 +1793,19 @@
 			<0x07706010 0x4>;
 		reg-names = "avtimer_lsb_addr", "avtimer_msb_addr";
 		qcom,clk_div = <27>;
+	};
+
+	mcd {
+		compatible = "qcom,mcd";
+		qcom,ce-hw-instance = <0>;
+		qcom,ce-device = <0>;
+		clocks = <&clock_gcc clk_crypto_clk_src>,
+			 <&clock_gcc clk_gcc_crypto_clk>,
+			 <&clock_gcc clk_gcc_crypto_ahb_clk>,
+			 <&clock_gcc clk_gcc_crypto_axi_clk>;
+		clock-names = "core_clk_src", "core_clk",
+				"iface_clk", "bus_clk";
+		qcom,ce-opp-freq = <100000000>;
 	};
 };
 

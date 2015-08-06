@@ -22,6 +22,11 @@
 #include <linux/spinlock.h>
 #include <linux/syscore_ops.h>
 #include "pinctrl-msm.h"
+#ifdef CONFIG_POWER_KEY_EID
+#include <linux/gpio_keys.h>
+#include <linux/string.h>
+#endif
+
 
 #if defined(CONFIG_HTC_POWER_DEBUG) && defined(CONFIG_PINCTRL_MSM_TLMM)
 #include <linux/debugfs.h>
@@ -983,7 +988,10 @@ void msm_tlmm_gp_show_resume_irq(void)
 #endif
                         pr_warning("%s: %d triggered %s\n",
                                         __func__, irq, name);
-
+#ifdef CONFIG_POWER_KEY_EID
+			if(!strcmp(name, "power_key"))
+				power_key_resume_handler(irq);
+#endif
                 }
         }
         spin_unlock_irqrestore(&tlmm_gp_lock, irq_flags);

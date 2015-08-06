@@ -37,6 +37,8 @@ static void do_restart(void)
 	clear_hw_reset();
 #endif
 	sys_sync();
+	KEY_LOGI("[PWR] Show Blocked State -- long press power key\n");
+	show_state_filter(TASK_UNINTERRUPTIBLE);
 	machine_restart("power-key-force-hard");
 }
 

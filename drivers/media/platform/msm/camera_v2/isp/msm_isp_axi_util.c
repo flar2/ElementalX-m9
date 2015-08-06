@@ -16,6 +16,9 @@
 #include "msm_isp_axi_util.h"
 #include <linux/time.h>
 #define SENSOR_ISP_MAX 2
+int g_subcam_SOF = 0;
+extern int g_subcam_vfe_intf;
+extern int g_subcam_no_ack;
 
 #define SRC_TO_INTF(src) \
 	((src < RDI_INTF_0 || src == VFE_AXI_SRC_MAX) ? VFE_PIX_0 : \
@@ -517,6 +520,10 @@ void msm_isp_notify(struct vfe_device *vfe_dev, uint32_t event_type,
 				}
 			}
 		}
+		
+		
+		if(vfe_dev->pdev->id == g_subcam_vfe_intf && g_subcam_SOF < 100)
+			g_subcam_SOF ++;
 		
 		vfe_dev->axi_data.src_info[frame_src].frame_id++;
 		if (vfe_dev->axi_data.src_info[frame_src].frame_id == 0)
@@ -1247,6 +1254,15 @@ static int msm_isp_axi_wait_for_cfg_done(struct vfe_device *vfe_dev,
 		vfe_dev->axi_data.pipeline_update = camif_update;
 	}
 	spin_unlock_irqrestore(&vfe_dev->shared_data_lock, flags);
+	
+	if(g_subcam_no_ack == 1 && vfe_dev->pdev->id == g_subcam_vfe_intf)
+	{
+		rc = wait_for_completion_interruptible_timeout(
+			&vfe_dev->stream_config_complete,
+			msecs_to_jiffies(100));
+	}
+	else
+	
 	rc = wait_for_completion_timeout(
 		&vfe_dev->stream_config_complete,
 		msecs_to_jiffies(VFE_MAX_CFG_TIMEOUT));

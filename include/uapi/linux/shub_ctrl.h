@@ -65,6 +65,7 @@ typedef struct {
 #define SHUB_FW_IOCTL_GET_FW_VERSION            _IOR(SHUB_FW_IOCTL_CODE, 3, mcu_fw_version_t)
 #define SHUB_FW_IOCTL_GET_FW_CHECKSUM           _IOR(SHUB_FW_IOCTL_CODE, 4, uint32_t)
 #define SHUB_FW_IOCTL_GET_FW_INFO               _IOR(SHUB_FW_IOCTL_CODE, 5, mcu_fw_info_t)
+#define SHUB_FW_IOCTL_START_FW_CHECKSUM         _IOW(SHUB_FW_IOCTL_CODE, 6, uint32_t)
 #endif 
 
 #endif 

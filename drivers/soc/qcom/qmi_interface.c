@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,6 +29,7 @@
 #include <linux/mutex.h>
 #include <linux/hashtable.h>
 #include <linux/ipc_router.h>
+#include <linux/ipc_logging.h>
 
 #include <soc/qcom/msm_qmi_interface.h>
 
@@ -37,6 +38,21 @@
 #define BUILD_INSTANCE_ID(vers, ins) (((vers) & 0xFF) | (((ins) & 0xFF) << 8))
 #define LOOKUP_MASK 0xFFFFFFFF
 #define MAX_WQ_NAME_LEN 20
+#define QMI_REQ_RESP_LOG_PAGES 3
+#define QMI_IND_LOG_PAGES 2
+#define QMI_REQ_RESP_LOG(buf...) \
+do { \
+	if (qmi_req_resp_log_ctx) { \
+		ipc_log_string(qmi_req_resp_log_ctx, buf); \
+	} \
+} while (0) \
+
+#define QMI_IND_LOG(buf...) \
+do { \
+	if (qmi_ind_log_ctx) { \
+		ipc_log_string(qmi_ind_log_ctx, buf); \
+	} \
+} while (0) \
 
 static LIST_HEAD(svc_event_nb_list);
 static DEFINE_MUTEX(svc_event_nb_list_lock);
@@ -115,7 +131,46 @@ struct msg_desc err_resp_desc = {
 
 static void svc_resume_tx_worker(struct work_struct *work);
 static void clean_txn_info(struct qmi_handle *handle);
+static void *qmi_req_resp_log_ctx;
+static void *qmi_ind_log_ctx;
 
+
+static void qmi_log(struct qmi_handle *handle,
+			unsigned char cntl_flag, uint16_t txn_id,
+			uint16_t msg_id, uint16_t msg_len)
+{
+	uint32_t service_id = 0;
+	const char *ops_type = NULL;
+
+	if (handle->handle_type == QMI_CLIENT_HANDLE) {
+		service_id = handle->dest_service_id;
+		if (cntl_flag == QMI_REQUEST_CONTROL_FLAG)
+			ops_type = "TX";
+		else if (cntl_flag == QMI_INDICATION_CONTROL_FLAG ||
+			cntl_flag == QMI_RESPONSE_CONTROL_FLAG)
+			ops_type = "RX";
+	} else if (handle->handle_type == QMI_SERVICE_HANDLE) {
+		service_id = handle->svc_ops_options->service_id;
+		if (cntl_flag == QMI_REQUEST_CONTROL_FLAG)
+			ops_type = "RX";
+		else if (cntl_flag == QMI_INDICATION_CONTROL_FLAG ||
+			cntl_flag == QMI_RESPONSE_CONTROL_FLAG)
+			ops_type = "TX";
+	}
+
+	if (qmi_req_resp_log_ctx &&
+		((cntl_flag == QMI_REQUEST_CONTROL_FLAG) ||
+		(cntl_flag == QMI_RESPONSE_CONTROL_FLAG))) {
+		QMI_REQ_RESP_LOG("%s %s CF:%x TI:%x MI:%x ML:%x SvcId: %x",
+		(handle->handle_type == QMI_CLIENT_HANDLE ? "QCCI" : "QCSI"),
+		ops_type, cntl_flag, txn_id, msg_id, msg_len, service_id);
+	} else if (qmi_ind_log_ctx &&
+		(cntl_flag == QMI_INDICATION_CONTROL_FLAG)) {
+		QMI_IND_LOG("%s %s CF:%x TI:%x MI:%x ML:%x SvcId: %x",
+		(handle->handle_type == QMI_CLIENT_HANDLE ? "QCCI" : "QCSI"),
+		ops_type, cntl_flag, txn_id, msg_id, msg_len, service_id);
+	}
+}
 
 static struct req_handle *add_req_handle(struct qmi_svc_clnt_conn *conn_h,
 					 uint16_t msg_id, uint16_t txn_id)
@@ -738,6 +793,8 @@ static int qmi_encode_and_send_req(struct qmi_txn **ret_txn_handle,
 	}
 
 	list_add_tail(&txn_handle->list, &handle->txn_list);
+	qmi_log(handle, QMI_REQUEST_CONTROL_FLAG, txn_handle->txn_id,
+			req_desc->msg_id, encoded_req_len);
 	
 	rc = msm_ipc_router_send_msg((struct msm_ipc_port *)(handle->src_port),
 		(struct msm_ipc_addr *)handle->dest_info,
@@ -917,6 +974,8 @@ static int qmi_encode_and_send_resp(struct qmi_handle *handle,
 			  encoded_resp_len);
 	encoded_resp_len += QMI_HEADER_SIZE;
 
+	qmi_log(handle, cntl_flag, txn_handle->txn_id,
+			resp_desc->msg_id, encoded_resp_len);
 	mutex_lock(&conn_h->pending_txn_lock);
 	if (list_empty(&conn_h->pending_txn_list))
 		rc = msm_ipc_router_send_msg(
@@ -1116,6 +1175,8 @@ static int send_err_resp(struct qmi_handle *handle,
 			  encoded_resp_len);
 	encoded_resp_len += QMI_HEADER_SIZE;
 
+	qmi_log(handle, QMI_RESPONSE_CONTROL_FLAG, txn_id,
+			msg_id, encoded_resp_len);
 	if (!conn_h) {
 		dest_addr = (struct msm_ipc_addr *)addr;
 		goto tx_err_resp;
@@ -1347,6 +1408,7 @@ int qmi_recv_msg(struct qmi_handle *handle)
 	
 	decode_qmi_header(recv_msg, &cntl_flag, &txn_id, &msg_id, &msg_len);
 
+	qmi_log(handle, cntl_flag, txn_id, msg_id, msg_len);
 	switch (cntl_flag) {
 	case QMI_REQUEST_CONTROL_FLAG:
 		rc = handle_qmi_request(handle, recv_msg, txn_id, msg_id,
@@ -1415,6 +1477,7 @@ int qmi_connect_to_service(struct qmi_handle *handle,
 		return -ENETRESET;
 	}
 	handle->dest_info = svc_dest_addr;
+	handle->dest_service_id = service_id;
 	mutex_unlock(&handle->handle_lock);
 
 	return 0;
@@ -1595,6 +1658,20 @@ int qmi_svc_event_notifier_unregister(uint32_t service_id,
 }
 EXPORT_SYMBOL(qmi_svc_event_notifier_unregister);
 
+void qmi_log_init(void)
+{
+	qmi_req_resp_log_ctx =
+		ipc_log_context_create(QMI_REQ_RESP_LOG_PAGES,
+			"kqmi_req_resp", 0);
+	if (!qmi_req_resp_log_ctx)
+		pr_err("%s: Unable to create QMI IPC logging for Req/Resp",
+			__func__);
+	qmi_ind_log_ctx =
+		ipc_log_context_create(QMI_IND_LOG_PAGES, "kqmi_ind", 0);
+	if (!qmi_ind_log_ctx)
+		pr_err("%s: Unable to create QMI IPC %s",
+				"logging for Indications", __func__);
+}
 
 int qmi_svc_register(struct qmi_handle *handle, void *ops_options)
 {
@@ -1666,6 +1743,13 @@ int qmi_svc_unregister(struct qmi_handle *handle)
 	return 0;
 }
 EXPORT_SYMBOL(qmi_svc_unregister);
+
+static int __init qmi_interface_init(void)
+{
+	qmi_log_init();
+	return 0;
+}
+module_init(qmi_interface_init);
 
 MODULE_DESCRIPTION("MSM QMI Interface");
 MODULE_LICENSE("GPL v2");

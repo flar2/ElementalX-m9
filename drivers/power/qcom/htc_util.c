@@ -20,6 +20,7 @@
 #include <linux/mm.h>
 #include <linux/vmstat.h>
 unsigned long prev_vm_event[NR_VM_EVENT_ITEMS];
+static int s_on;
 #ifdef CONFIG_ZONE_DMA
 #define TEXT_FOR_DMA(xx) xx "_dma",
 #else
@@ -783,16 +784,18 @@ static void htc_pm_monitor_work_func(struct work_struct *work)
 	
 	htc_debug_flag_show();
 
-	all_vm_events(vm_event);
-	vm_event[PGPGIN] /= 2;
-	
-	vm_event[PGPGOUT] /= 2;
+	if (s_on == 0) {
+		all_vm_events(vm_event);
+		vm_event[PGPGIN] /= 2;
+		
+		vm_event[PGPGOUT] /= 2;
 
-	for(i = 0; i < NR_VM_EVENT_ITEMS; i++) {
-		if (vm_event[i] - prev_vm_event[i] > 0)
-			pr_info("[K] %s = %lu\n", vm_event_text[i], vm_event[i] - prev_vm_event[i]);
+		for(i = 0; i < NR_VM_EVENT_ITEMS; i++) {
+			if (vm_event[i] - prev_vm_event[i] > 0)
+				pr_info("[K] %s = %lu\n", vm_event_text[i], vm_event[i] - prev_vm_event[i]);
+		}
+		memcpy(prev_vm_event, vm_event, sizeof(unsigned long) * NR_VM_EVENT_ITEMS);
 	}
-	memcpy(prev_vm_event, vm_event, sizeof(unsigned long) * NR_VM_EVENT_ITEMS);
 
 	pr_info("[K][PM] hTC PM Statistic done\n");
 }
@@ -860,6 +863,7 @@ void htc_monitor_init(void)
 		get_all_cpustat(&htc_kernel_top->curr_cpustat);
 	        get_all_cpustat(&htc_kernel_top->prev_cpustat);
 
+		s_on = get_tamper_sf();
 		INIT_DELAYED_WORK(&htc_kernel_top->dwork, htc_pm_monitor_work_func);
 		queue_delayed_work(htc_pm_monitor_wq, &htc_kernel_top->dwork,
 						msecs_to_jiffies(msm_htc_util_delay_time));

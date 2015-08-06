@@ -61,6 +61,8 @@ Optional properties:
 				It is a four tuple consisting of min x,
 				min y, max x and max y values
  - focaltech,fw-name	: specify the firmware file name
+ - focaltech,psensor-support	: specify whether support the proximity sensor
+ - focaltech,gesture-support	: specify whether support gesture feature
 
 Example:
 	i2c@f9923000{
@@ -96,5 +98,7 @@ Example:
 			focaltech,fw-delay-readid-ms = <10>;
 			focaltech,fw-delay-era-flsh-ms = <2000>;
 			focaltech,fw-auto-cal;
+			focaltech,psensor-support;
+			focaltech,gesture-support;
 		};
 	};

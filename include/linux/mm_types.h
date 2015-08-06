@@ -117,7 +117,6 @@ struct page {
 #ifdef LAST_NID_NOT_IN_PAGE_FLAGS
 	int _last_nid;
 #endif
-
 #ifdef CONFIG_PAGE_OWNER
 	int order;
 	gfp_t gfp_mask;

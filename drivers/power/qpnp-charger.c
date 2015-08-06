@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -235,6 +235,7 @@ struct qpnp_chg_irq {
 	int		irq;
 	unsigned long		disabled;
 	unsigned long		wake_enable;
+	bool			is_wake;
 };
 
 struct qpnp_chg_regulator {
@@ -625,6 +626,10 @@ qpnp_chg_enable_irq(struct qpnp_chg_irq *irq)
 		pr_debug("number = %d\n", irq->irq);
 		enable_irq(irq->irq);
 	}
+	if ((irq->is_wake) && (!__test_and_set_bit(0, &irq->wake_enable))) {
+		pr_debug("enable wake, number = %d\n", irq->irq);
+		enable_irq_wake(irq->irq);
+	}
 }
 
 static void
@@ -633,6 +638,10 @@ qpnp_chg_disable_irq(struct qpnp_chg_irq *irq)
 	if (!__test_and_set_bit(0, &irq->disabled)) {
 		pr_debug("number = %d\n", irq->irq);
 		disable_irq_nosync(irq->irq);
+	}
+	if ((irq->is_wake) && (__test_and_clear_bit(0, &irq->wake_enable))) {
+		pr_debug("disable wake, number = %d\n", irq->irq);
+		disable_irq_wake(irq->irq);
 	}
 }
 
@@ -643,6 +652,7 @@ qpnp_chg_irq_wake_enable(struct qpnp_chg_irq *irq)
 		pr_debug("number = %d\n", irq->irq);
 		enable_irq_wake(irq->irq);
 	}
+	irq->is_wake = true;
 }
 
 static void
@@ -652,6 +662,7 @@ qpnp_chg_irq_wake_disable(struct qpnp_chg_irq *irq)
 		pr_debug("number = %d\n", irq->irq);
 		disable_irq_wake(irq->irq);
 	}
+	irq->is_wake = false;
 }
 
 #define USB_OTG_EN_BIT	BIT(0)
@@ -3123,6 +3134,17 @@ qpnp_chg_trim_ibat(struct qpnp_chg_chip *chip, u8 ibat_trim)
 						IBAT_TRIM_HIGH_LIM))
 				return;
 		}
+
+		if (chip->type == SMBBP) {
+			rc = qpnp_chg_masked_write(chip,
+					chip->buck_base + SEC_ACCESS,
+					0xFF, 0xA5, 1);
+			if (rc) {
+				pr_err("failed to write SEC_ACCESS: %d\n", rc);
+				return;
+			}
+		}
+
 		ibat_trim |= IBAT_TRIM_GOOD_BIT;
 		rc = qpnp_chg_write(chip, &ibat_trim,
 				chip->buck_base + BUCK_CTRL_TRIM3, 1);
@@ -3158,7 +3180,7 @@ qpnp_chg_input_current_settled(struct qpnp_chg_chip *chip)
 	if (!chip->ibat_calibration_enabled)
 		return 0;
 
-	if (chip->type != SMBB)
+	if (chip->type != SMBB && chip->type != SMBBP)
 		return 0;
 
 	rc = qpnp_chg_read(chip, &reg,
@@ -3178,6 +3200,17 @@ qpnp_chg_input_current_settled(struct qpnp_chg_chip *chip)
 		pr_debug("Improper ibat_trim value=%x setting to value=%x\n",
 						ibat_trim, IBAT_TRIM_MEAN);
 		ibat_trim = IBAT_TRIM_MEAN;
+
+		if (chip->type == SMBBP) {
+			rc = qpnp_chg_masked_write(chip,
+					chip->buck_base + SEC_ACCESS,
+					0xFF, 0xA5, 1);
+			if (rc) {
+				pr_err("failed to write SEC_ACCESS: %d\n", rc);
+				return rc;
+			}
+		}
+
 		rc = qpnp_chg_masked_write(chip,
 				chip->buck_base + BUCK_CTRL_TRIM3,
 				IBAT_TRIM_OFFSET_MASK, ibat_trim, 1);
@@ -4592,8 +4625,8 @@ qpnp_chg_request_irqs(struct qpnp_chg_chip *chip)
 
 			qpnp_chg_irq_wake_enable(&chip->chg_trklchg);
 			qpnp_chg_irq_wake_enable(&chip->chg_failed);
-			qpnp_chg_disable_irq(&chip->chg_vbatdet_lo);
 			qpnp_chg_irq_wake_enable(&chip->chg_vbatdet_lo);
+			qpnp_chg_disable_irq(&chip->chg_vbatdet_lo);
 
 			break;
 		case SMBB_BAT_IF_SUBTYPE:
@@ -5410,7 +5443,8 @@ qpnp_charger_probe(struct spmi_device *spmi)
 				goto fail_chg_enable;
 			}
 
-			if (subtype == SMBB_BAT_IF_SUBTYPE) {
+			if (subtype == SMBB_BAT_IF_SUBTYPE ||
+				subtype == SMBBP_BAT_IF_SUBTYPE) {
 				chip->iadc_dev = qpnp_get_iadc(chip->dev,
 						"chg");
 				if (IS_ERR(chip->iadc_dev)) {

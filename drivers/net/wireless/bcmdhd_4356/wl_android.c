@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_android.c 532217 2015-02-05 09:55:05Z $
+ * $Id: wl_android.c 556862 2015-05-15 04:01:30Z $
  */
 
 #include <linux/module.h>
@@ -322,9 +322,13 @@ int block_ap_event = 0;
 static uint32 last_txframes = 0xffffffff;
 static uint32 last_txretrans = 0xffffffff;
 static uint32 last_txerror = 0xffffffff;
+#if defined(USE_STATIC_MEMDUMP)
+extern int dhd_pub_mem_dump(dhd_pub_t *dhd);
+#endif
 
 extern int dhdcdc_wifiLock;
 static struct mac_list_set android_mac_list_buf;
+static struct mflist android_ap_white_list;
 static struct mflist android_ap_black_list;
 static int android_ap_macmode = MACLIST_MODE_DISABLED;
 
@@ -351,6 +355,7 @@ static int wl_android_set_wificall(struct net_device *ndev, char *command, int t
 static int wl_android_set_project(struct net_device *ndev, char *command, int total_len);
 static int wl_android_gateway_add(struct net_device *ndev, char *command, int total_len);
 static int wl_android_auto_channel(struct net_device *dev, char *command, int total_len);
+static int wl_android_allow_p2p_event(struct net_device *dev, char *command, int total_len);
 extern int wldev_get_conap_ctrl_channel(struct net_device *dev, uint8 *ctrl_channel);
 static void wlan_init_perf(void);
 static void wlan_deinit_perf(void);
@@ -419,6 +424,8 @@ static uint old_tx_stat_chk_num;
 #define CMD_PFN_REMOVE		"PFN_REMOVE"
 #define CMD_GET_AUTO_CHANNEL	"AUTOCHANNELGET"
 #define CMD_SET_HOTSPOT_BW	"SET_HOTSPOT_BW"
+#define CMD_TRIG_RAMDUMP	"TRIG_RAMDUMP"
+#define CMD_ALLOW_P2P_EVENT	"ALLOW_P2P_EVENT"
 #endif 
 
 
@@ -477,6 +484,12 @@ static int wl_android_set_suspendopt(struct net_device *dev, char *command, int 
 	int suspend_flag;
 	int ret_now;
 	int ret = 0;
+#ifdef WL_CFG80211
+	dhd_pub_t *dhdp = (dhd_pub_t *)wl_cfg80211_get_dhdp();
+#else
+	dhd_info_t *dhd = DHD_DEV_INFO(dev);
+	dhd_pub_t *dhdp = &(dhd->pub);
+#endif 
 
 		suspend_flag = *(command + strlen(CMD_SETSUSPENDOPT) + 1) - '0';
 
@@ -490,10 +503,13 @@ static int wl_android_set_suspendopt(struct net_device *dev, char *command, int 
 #endif
 		ret_now = net_os_set_suspend_disable(dev, suspend_flag);
 
-		if (ret_now != suspend_flag) {
-			if (!(ret = net_os_set_suspend(dev, ret_now, 1)))
+		if ((ret_now != suspend_flag) && dhdp->in_suspend) {
+			if (!(ret = net_os_set_suspend(dev, !suspend_flag, 1))) {
 				DHD_INFO(("%s: Suspend Flag %d -> %d\n",
 					__FUNCTION__, ret_now, suspend_flag));
+				
+				dhdp->in_suspend = 1;
+			}
 			else
 				DHD_ERROR(("%s: failed %d\n", __FUNCTION__, ret));
 		}
@@ -1065,10 +1081,10 @@ int wl_android_wifi_off(struct net_device *dev)
 	bcm_mdelay(100);
 
 	if (dhd_APUP) {
-		printf("apmode off - AP_DOWN\n");
+		DHD_ERROR(("apmode off - AP_DOWN\n"));
 		dhd_APUP = false;
 		if (check_hang_already(dev)) {
-			printf("Don't send AP_DOWN due to alreayd hang\n");
+			DHD_ERROR(("Don't send AP_DOWN due to alreayd hang\n"));
 		} else {
 			wlan_unlock_multi_core(dev);
 		}
@@ -1283,7 +1299,7 @@ wl_android_ltecoex_mode(struct net_device *dev, char *command, int total_len)
 	}
 
 	
-	if ( coex_channel != 0)
+	if (coex_channel != 0)
 		release_wlan_seci_gpio();
 	
 
@@ -2806,7 +2822,20 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 		bytes_written = wl_android_get_assoc_sta_list(net, command, priv_cmd.total_len);
 	}
 	else if (strnicmp(command, CMD_AP_MAC_LIST_SET, strlen(CMD_AP_MAC_LIST_SET)) == 0) {
+#ifdef CUSTOMER_HW_ONE
+#ifdef WL_CFG80211
+		dhd_pub_t *dhdp = (dhd_pub_t *)wl_cfg80211_get_dhdp();
+#else
+		dhd_info_t *dhd = DHD_DEV_INFO(dev);
+		dhd_pub_t *dhdp = &(dhd->pub);
+#endif 
+		if (dhdp->op_mode & DHD_FLAG_HOSTAP_MODE)
+			bytes_written = wl_android_set_ap_mac_list(net, command + PROFILE_OFFSET);
+		else
+			DHD_ERROR(("Not in AP mode skip this %s cmmd\n", CMD_AP_MAC_LIST_SET));
+#else
 		bytes_written = wl_android_set_ap_mac_list(net, command + PROFILE_OFFSET);
+#endif 
 	}
 	else if (strnicmp(command, CMD_SCAN_MINRSSI_SET, strlen(CMD_SCAN_MINRSSI_SET)) == 0) {
 		bytes_written = wl_android_set_scan_minrssi(net, command, priv_cmd.total_len);
@@ -2836,6 +2865,20 @@ int wl_android_priv_cmd(struct net_device *net, struct ifreq *ifr, int cmd)
 		int bw = bcm_atoi(command + skip);
 		DHD_ERROR(("%s CMD_SET_HOTSPOT_BW  bw = %d\n", __FUNCTION__, bw));
 		wl_cfg80211_set_hotspot_bw(bw);
+#if defined(USE_STATIC_MEMDUMP)
+	} else if (strnicmp(command, CMD_TRIG_RAMDUMP, strlen(CMD_TRIG_RAMDUMP)) == 0) {
+#ifdef WL_CFG80211
+		dhd_pub_t *dhdp = (dhd_pub_t *)wl_cfg80211_get_dhdp();
+#else
+		dhd_info_t *dhd = DHD_DEV_INFO(dev);
+		dhd_pub_t *dhdp = &(dhd->pub);
+#endif 
+		DHD_ERROR(("%s CMD_TRIG_RAMDUMP \n", __FUNCTION__));
+		dhd_pub_mem_dump(dhdp);
+#endif 
+	}
+	else if (strnicmp(command, CMD_ALLOW_P2P_EVENT, strlen(CMD_ALLOW_P2P_EVENT)) == 0) {
+		bytes_written = wl_android_allow_p2p_event(net, command, priv_cmd.total_len);
 	}
 #endif 
 	else {
@@ -2925,7 +2968,7 @@ void wl_android_post_init(void)
 
 #ifdef ENABLE_4335BT_WAR
 	bcm_bt_unlock(lock_cookie_wifi);
-	printk("%s: btlock released\n", __FUNCTION__);
+	DHD_ERROR(("%s: btlock released\n", __FUNCTION__));
 #endif 
 
 	if (!dhd_download_fw_on_driverload)
@@ -3227,8 +3270,8 @@ static int wl_android_get_tx_fail(struct net_device *dev, char *command, int tot
 	last_txerror = curr_txerror;
 
 exit:
-	printf("TXPER:%d, txframes: %d ,txretrans: %d, txerror: %d, total: %d\n",
-		diff_ratio, txframes_diff, txretrans_diff, txerror_diff, total_cnt);
+	DHD_ERROR(("TXPER:%d, txframes: %d ,txretrans: %d, txerror: %d, total: %d\n",
+		diff_ratio, txframes_diff, txretrans_diff, txerror_diff, total_cnt));
 	bytes_written = snprintf(command, total_len, "%s %d",
 		CMD_GET_TX_FAIL, diff_ratio);
 
@@ -3289,7 +3332,7 @@ void wlan_lock_multi_core(struct net_device *dev)
 	if (dhdp) {
 		dhd_sched_dpc(dhdp);
 	} else {
-		printf("%s: dhdp is null", __func__);
+		DHD_ERROR(("%s: dhdp is null", __func__));
 	}
 }
 
@@ -3306,7 +3349,7 @@ void wlan_unlock_multi_core(struct net_device *dev)
 	if (dhdp) {
 		dhd_sched_dpc(dhdp);
 	} else {
-		printf("%s: dhdp is null", __func__);
+		DHD_ERROR(("%s: dhdp is null", __func__));
 	}
 	wl_cfg80211_send_priv_event(dev, "PERF_UNLOCK");
 }
@@ -3328,8 +3371,8 @@ void wl_android_traffic_monitor(struct net_device *dev)
 
 		
 		if (screen_off || !sta_connected) {
-			printf("set traffic = 0 and relase performace lock when %s",
-				screen_off ? "screen off": "disconnected");
+			DHD_ERROR(("set traffic = 0 and relase performace lock when %s",
+				screen_off ? "screen off": "disconnected"));
 			traffic_diff = 0;
 		}
 		else {
@@ -3349,12 +3392,12 @@ void wl_android_traffic_monitor(struct net_device *dev)
 			if (traffic_diff > TRAFFIC_HIGH_WATER_MARK) {
 				traffic_stats_flag = TRAFFIC_STATS_HIGH;
 				wlan_lock_perf();
-				printf("lock cpu here, traffic-count=%ld\n", traffic_diff);
+				DHD_ERROR(("lock cpu here, traffic-count=%ld\n", traffic_diff));
 				if (traffic_diff > TRAFFIC_SUPER_HIGH_WATER_MARK) {
 					traffic_stats_flag = TRAFFIC_STATS_SUPER_HIGH;
 					wlan_lock_multi_core(dev);
-					printf("lock 2nd cpu here, traffic-count=%ld\n",
-						traffic_diff);
+					DHD_ERROR(("lock 2nd cpu here, traffic-count=%ld\n",
+						traffic_diff));
 				}
 			}
 			break;
@@ -3362,24 +3405,25 @@ void wl_android_traffic_monitor(struct net_device *dev)
 			if (traffic_diff > TRAFFIC_SUPER_HIGH_WATER_MARK) {
 				traffic_stats_flag = TRAFFIC_STATS_SUPER_HIGH;
 				wlan_lock_multi_core(dev);
-				printf("lock 2nd cpu here, traffic-count=%ld\n", traffic_diff);
+				DHD_ERROR(("lock 2nd cpu here, traffic-count=%ld\n", traffic_diff));
 			}
 			else if (traffic_diff < TRAFFIC_LOW_WATER_MARK) {
 				traffic_stats_flag = TRAFFIC_STATS_NORMAL;
 				wlan_unlock_perf();
-				printf("unlock cpu here, traffic-count=%ld\n", traffic_diff);
+				DHD_ERROR(("unlock cpu here, traffic-count=%ld\n", traffic_diff));
 			}
 			break;
 		case TRAFFIC_STATS_SUPER_HIGH:
 			if (traffic_diff < TRAFFIC_SUPER_HIGH_WATER_MARK) {
 				traffic_stats_flag = TRAFFIC_STATS_HIGH;
 				wlan_unlock_multi_core(dev);
-				printf("unlock 2nd cpu here, traffic-count=%ld\n", traffic_diff);
+				DHD_ERROR(("unlock 2nd cpu here, traffic-count=%ld\n",
+					traffic_diff));
 				if (traffic_diff < TRAFFIC_LOW_WATER_MARK) {
 					traffic_stats_flag = TRAFFIC_STATS_NORMAL;
 					wlan_unlock_perf();
-					printf("unlock cpu here, traffic-count=%ld\n",
-						traffic_diff);
+					DHD_ERROR(("unlock cpu here, traffic-count=%ld\n",
+						traffic_diff));
 				}
 			}
 			break;
@@ -3405,7 +3449,7 @@ static int wl_android_set_tx_tracking(struct net_device *dev, char *command, int
 
 	sscanf(command + strlen(CMD_TX_TRACKING) + 1, "%u %u %u %u",
 		&tx_stat_chk, &tx_stat_chk_prd, &tx_stat_chk_ratio, &tx_stat_chk_num);
-	printf("wl_android_set_tx_tracking command=%s", command);
+	DHD_ERROR(("wl_android_set_tx_tracking command=%s", command));
 
 	if (tx_stat_chk_num != old_tx_stat_chk_num) {
 		bcm_mkiovar("tx_stat_chk_num", (char *)&tx_stat_chk_num, 4, iovbuf, sizeof(iovbuf));
@@ -3657,7 +3701,7 @@ wl_android_get_assoc_sta_list(struct net_device *dev, char *buf, int len)
 		DHD_ERROR(("get assoc count fail\n"));
 		maclist->count = 0;
 	} else
-		printf("get assoc count %d, len %d\n", maclist->count, len);
+		DHD_ERROR(("get assoc count %d, len %d\n", maclist->count, len));
 
 #ifdef CUSTOMER_HW_ONE
 	if (!sta_event_sent && assoc_count_buff && (assoc_count_buff != maclist->count)) {
@@ -3678,9 +3722,9 @@ static int wl_android_set_ap_mac_list(struct net_device *dev, void *buf)
 	struct maclist *white_maclist = (struct maclist *)&mac_list_set->white_list;
 	struct maclist *black_maclist = (struct maclist *)&mac_list_set->black_list;
 	int mac_mode = mac_list_set->mode;
-	int length;
-	int i;
-	printf("%s in\n", __func__);
+	uint length;
+	uint i;
+	DHD_ERROR(("%s in\n", __func__));
 
 
 	if (white_maclist->count > 16 || black_maclist->count > 16) {
@@ -3710,42 +3754,48 @@ static int wl_android_set_ap_mac_list(struct net_device *dev, void *buf)
 
 		wldev_ioctl(dev, WLC_SET_MACMODE, &mac_mode, sizeof(mac_mode), 1);
 
+		
+		bcopy(white_maclist, &android_ap_white_list, sizeof(android_ap_white_list));
+
 		length = sizeof(white_maclist->count)+white_maclist->count*ETHER_ADDR_LEN;
 		wldev_ioctl(dev, WLC_SET_MACLIST, white_maclist, length, 1);
-		printf("White List, length %d:\n", length);
-		for (i = 0; i < white_maclist->count; i++)
-			printf("mac %d: %02X:%02X:%02X:%02X:%02X:%02X\n", i,
-				white_maclist->ea[i].octet[0], white_maclist->ea[i].octet[1],
-				white_maclist->ea[i].octet[2], white_maclist->ea[i].octet[3],
-				white_maclist->ea[i].octet[4], white_maclist->ea[i].octet[5]);
+		DHD_ERROR(("White List, length %d:\n", length));
+		for (i = 0; (i < android_ap_white_list.count) && (i < 16); i++)
+			DHD_ERROR(("wmac %d: %02X:%02X:%02X:%02X:%02X:%02X\n", i,
+				android_ap_white_list.ea[i].octet[0],
+				android_ap_white_list.ea[i].octet[1],
+				android_ap_white_list.ea[i].octet[2],
+				android_ap_white_list.ea[i].octet[3],
+				android_ap_white_list.ea[i].octet[4],
+				android_ap_white_list.ea[i].octet[5]));
 
 		
 		bcopy(black_maclist, &android_ap_black_list, sizeof(android_ap_black_list));
 
-		printf("Black List, size %d:\n", (int)sizeof(android_ap_black_list));
-		for (i = 0; i < android_ap_black_list.count; i++)
-			printf("mac %d: %02X:%02X:%02X:%02X:%02X:%02X\n", i,
+		DHD_ERROR(("Black List, size %d:\n", (int)sizeof(android_ap_black_list)));
+		for (i = 0; (i < android_ap_black_list.count) && (i < 16); i++)
+			DHD_ERROR(("bmac %d: %02X:%02X:%02X:%02X:%02X:%02X\n", i,
 				android_ap_black_list.ea[i].octet[0],
 				android_ap_black_list.ea[i].octet[1],
 				android_ap_black_list.ea[i].octet[2],
 				android_ap_black_list.ea[i].octet[3],
 				android_ap_black_list.ea[i].octet[4],
-				android_ap_black_list.ea[i].octet[5]);
+				android_ap_black_list.ea[i].octet[5]));
 
 		
 		assoc_maclist->count = 8;
 		wldev_ioctl(dev, WLC_GET_ASSOCLIST, assoc_maclist, 256, 0);
 		if (assoc_maclist->count) {
-			int j;
-			for (i = 0; i < assoc_maclist->count; i++) {
-				for (j = 0; j < white_maclist->count; j++) {
+			uint j;
+			for (i = 0; (i < assoc_maclist->count) && (i < 8); i++) {
+				for (j = 0; (j < android_ap_white_list.count) && (j < 16); j++) {
 					if (!bcmp(&assoc_maclist->ea[i],
-						&white_maclist->ea[j], ETHER_ADDR_LEN)) {
+						&android_ap_white_list.ea[j], ETHER_ADDR_LEN)) {
 						DHD_TRACE(("match allow, let it be\n"));
 						break;
 					}
 				}
-				if (j == white_maclist->count) {
+				if (j == android_ap_white_list.count) {
 					DHD_TRACE(("match black, deauth it\n"));
 					scbval.val = htod32(1);
 					bcopy(&assoc_maclist->ea[i], &scbval.ea, ETHER_ADDR_LEN);
@@ -3811,14 +3861,14 @@ static void wl_android_deactive(void)
 void wl_android_set_active_level(int level)
 {
 	active_level = level;
-	printf("set active level to %d\n", active_level);
+	DHD_ERROR(("set active level to %d\n", active_level));
 	return;
 }
 
 void wl_android_set_active_period(int period)
 {
 	active_period = period;
-	printf("set active_period to %d\n", active_period);
+	DHD_ERROR(("set active_period to %d\n", active_period));
 	return;
 }
 
@@ -3835,7 +3885,7 @@ int wl_android_get_active_period(void)
 void wl_android_set_screen_off(int off)
 {
 	screen_off = off;
-	printf("wl_android_set_screen_off %d\n", screen_off);
+	DHD_ERROR(("wl_android_set_screen_off %d\n", screen_off));
 	if (screen_off)
 		wl_android_deactive();
 
@@ -3926,14 +3976,14 @@ static int wl_android_set_power_mode(struct net_device *dev, char *command, int 
 			break;
 
 		case 87: 
-			printf("wifilock release\n");
+			DHD_ERROR(("wifilock release\n"));
 			dhdcdc_wifiLock = 0;
 			dhdhtc_update_wifi_power_mode(screen_off);
 			dhdhtc_update_dtim_listen_interval(screen_off);
 			break;
 
 		case 88: 
-			printf("wifilock accquire\n");
+			DHD_ERROR(("wifilock accquire\n"));
 			dhdcdc_wifiLock = 1;
 			dhdhtc_update_wifi_power_mode(screen_off);
 			dhdhtc_update_dtim_listen_interval(screen_off);
@@ -3982,7 +4032,7 @@ static int wl_android_get_wifilock(struct net_device *ndev, char *command, int t
 	int bytes_written = 0;
 
 	bytes_written = snprintf(command, total_len, "%d", dhdcdc_wifiLock);
-	printf("dhdcdc_wifiLock: %s\n", command);
+	DHD_ERROR(("dhdcdc_wifiLock: %s\n", command));
 
 	return bytes_written;
 }
@@ -4007,11 +4057,11 @@ static int wl_android_set_wificall(struct net_device *ndev, char *command, int t
 	switch (set_val) {
 	case 0:
 		if (wl_android_is_during_wifi_call() == 0) {
-			printf("wifi call is in disconnected state!\n");
+			DHD_ERROR(("wifi call is in disconnected state!\n"));
 			break;
 		}
 
-		printf("wifi call ends: %d\n", set_val);
+		DHD_ERROR(("wifi call ends: %d\n", set_val));
 		wl_android_wifi_call = 0;
 
 		dhdhtc_set_power_control(0, DHDHTC_POWER_CTRL_WIFI_PHONE);
@@ -4022,11 +4072,11 @@ static int wl_android_set_wificall(struct net_device *ndev, char *command, int t
 		break;
 	case 1:
 		if (wl_android_is_during_wifi_call() == 1) {
-			printf("wifi call is already in running state!\n");
+			DHD_ERROR(("wifi call is already in running state!\n"));
 			break;
 		}
 
-		printf("wifi call comes: %d\n", set_val);
+		DHD_ERROR(("wifi call comes: %d\n", set_val));
 		wl_android_wifi_call = 1;
 
 		dhdhtc_set_power_control(1, DHDHTC_POWER_CTRL_WIFI_PHONE);
@@ -4051,7 +4101,7 @@ int dhd_set_project(char * project, int project_len)
 {
 
 	if ((project_len < 1) || (project_len > 32)) {
-		printf("Invaild project name length!\n");
+		DHD_ERROR(("Invaild project name length!\n"));
 		return -1;
 	}
 
@@ -4201,7 +4251,7 @@ auto_channel_retry:
 		for (i = 0; i < request->count; i++) {
 			request->element[i] = CH20MHZ_CHSPEC((start_channel + i));
 			
-			printf("request.element[%d]=0x%x\n", i, request->element[i]);
+			DHD_ERROR(("request.element[%d]=0x%x\n", i, request->element[i]));
 		}
 	}
 
@@ -4266,5 +4316,92 @@ fail :
 	bytes_written = snprintf(command, total_len, "%d", channel);
 	return bytes_written;
 
+}
+
+static int wl_android_allow_p2p_event(struct net_device *dev, char *command, int total_len)
+{
+	int bytes_written = 0;
+	int ret = 0;
+	char *s;
+	int set_val;
+#ifdef WL_CFG80211
+	dhd_pub_t *dhdp = (dhd_pub_t *)wl_cfg80211_get_dhdp();
+#else
+	dhd_info_t *dhd = DHD_DEV_INFO(dev);
+	dhd_pub_t *dhdp = &(dhd->pub);
+#endif 
+	char iovbuf[WL_EVENTING_MASK_LEN+32];
+	char eventmask[WL_EVENTING_MASK_LEN];
+
+	s =  command + strlen(CMD_ALLOW_P2P_EVENT) + 1;
+	set_val = bcm_atoi(s);
+
+	DHD_ERROR(("%s: allow p2p event %d\n", __FUNCTION__, set_val));
+	switch (set_val) {
+	case 0:
+		dhdp->allow_p2p_event = set_val;
+		if (screen_off && !dhdp->suspend_disable_flag) {
+			DHD_ERROR(("%s: screen is off, clear event mask\n", __FUNCTION__));
+			memset(eventmask, 0, sizeof(eventmask));
+			ret = wldev_iovar_getbuf(dev, "event_msgs",
+				NULL, 0, eventmask, sizeof(eventmask), NULL);
+			if (ret) {
+				WL_ERR(("%s: wldev_iovar_getbuf() failed, ret=%d\n",
+					__FUNCTION__, ret));
+				goto error;
+			}
+
+			clrbit(eventmask, WLC_E_ACTION_FRAME_RX);
+			
+			
+			
+			clrbit(eventmask, WLC_E_P2P_DISC_LISTEN_COMPLETE);
+
+			ret = wldev_iovar_setbuf(dev, "event_msgs",
+				eventmask, sizeof(eventmask), iovbuf, sizeof(iovbuf), NULL);
+			if (ret) {
+				WL_ERR(("%s: wldev_iovar_setbuf() failed, ret=%d\n",
+					__FUNCTION__, ret));
+				goto error;
+			}
+		} else {
+			DHD_ERROR(("%s: screen is on or suspend disabled, do nothing\n",
+				__FUNCTION__));
+		}
+		break;
+	case 1:
+		dhdp->allow_p2p_event = set_val;
+		DHD_ERROR(("%s: set event mask\n", __FUNCTION__));
+		memset(eventmask, 0, sizeof(eventmask));
+		ret = wldev_iovar_getbuf(dev, "event_msgs",
+			NULL, 0, eventmask, sizeof(eventmask), NULL);
+		if (ret) {
+			WL_ERR(("%s: wldev_iovar_getbuf() failed, ret=%d\n",
+				__FUNCTION__, ret));
+			goto error;
+		}
+
+		setbit(eventmask, WLC_E_ACTION_FRAME_RX);
+		
+		
+		
+		setbit(eventmask, WLC_E_P2P_DISC_LISTEN_COMPLETE);
+
+		ret = wldev_iovar_setbuf(dev, "event_msgs",
+			eventmask, sizeof(eventmask), iovbuf, sizeof(iovbuf), NULL);
+		if (ret) {
+			WL_ERR(("%s: wldev_iovar_setbuf() failed, ret=%d\n",
+				__FUNCTION__, ret));
+			goto error;
+		}
+		break;
+	default:
+		DHD_ERROR(("%s: not support mode: %d\n", __FUNCTION__, set_val));
+		break;
+
+	}
+	bytes_written = snprintf(command, total_len, "OK");
+error:
+	return ((ret == 0) ? bytes_written : ret);
 }
 #endif 

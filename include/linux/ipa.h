@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -430,6 +430,51 @@ struct odu_bridge_params {
 	u32 ipa_desc_size;
 };
 
+enum ipa_mhi_event_type {
+	IPA_MHI_EVENT_READY,
+	IPA_MHI_EVENT_DATA_AVAILABLE,
+	IPA_MHI_EVENT_MAX,
+};
+
+typedef void (*mhi_client_cb)(void *priv, enum ipa_mhi_event_type event,
+	unsigned long data);
+
+/**
+ * struct ipa_mhi_msi_info - parameters for MSI (Message Signaled Interrupts)
+ * @addr_low: MSI lower base physical address
+ * @addr_hi: MSI higher base physical address
+ * @data: Data Pattern to use when generating the MSI
+ * @mask: Mask indicating number of messages assigned by the host to device
+ *
+ * msi value is written according to this formula:
+ *	((data & ~mask) | (mmio.msiVec & mask))
+ */
+struct ipa_mhi_msi_info {
+	u32 addr_low;
+	u32 addr_hi;
+	u32 data;
+	u32 mask;
+};
+
+struct ipa_mhi_init_params {
+	struct ipa_mhi_msi_info msi;
+	u32 mmio_addr;
+	u32 first_ch_idx;
+	u32 first_er_idx;
+	mhi_client_cb notify;
+	void *priv;
+};
+
+struct ipa_mhi_start_params {
+	u32 host_ctrl_addr;
+	u32 host_data_addr;
+};
+
+struct ipa_mhi_connect_params {
+	struct ipa_sys_connect_params sys;
+	u8 channel_id;
+};
+
 #ifdef CONFIG_IPA
 
 int ipa_connect(const struct ipa_connect_params *in, struct ipa_sps_params *sps,
@@ -614,6 +659,34 @@ int odu_bridge_tx_dp(struct sk_buff *skb, struct ipa_tx_meta *metadata);
 
 int odu_bridge_cleanup(void);
 
+int ipa_dma_init(void);
+
+int ipa_dma_enable(void);
+
+int ipa_dma_disable(void);
+
+int ipa_dma_sync_memcpy(phys_addr_t dest, phys_addr_t src, int len);
+
+int ipa_dma_async_memcpy(phys_addr_t dest, phys_addr_t src, int len,
+			void (*user_cb)(void *user1), void *user_param);
+
+int ipa_dma_uc_memcpy(phys_addr_t dest, phys_addr_t src, int len);
+
+void ipa_dma_destroy(void);
+
+int ipa_mhi_init(struct ipa_mhi_init_params *params);
+
+int ipa_mhi_start(struct ipa_mhi_start_params *params);
+
+int ipa_mhi_connect_pipe(struct ipa_mhi_connect_params *in, u32 *clnt_hdl);
+
+int ipa_mhi_disconnect_pipe(u32 clnt_hdl);
+
+int ipa_mhi_suspend(bool force);
+
+int ipa_mhi_resume(void);
+
+int ipa_mhi_destroy(void);
 
 int ipa_write_qmap_id(struct ipa_ioc_write_qmapid *param_in);
 
@@ -1113,6 +1186,79 @@ static inline int odu_bridge_cleanup(void)
 	return -EPERM;
 }
 
+static inline int ipa_dma_init(void)
+{
+	return -EPERM;
+}
+
+static inline int ipa_dma_enable(void)
+{
+	return -EPERM;
+}
+
+static inline int ipa_dma_disable(void)
+{
+	return -EPERM;
+}
+
+static inline int ipa_dma_sync_memcpy(phys_addr_t dest, phys_addr_t src
+			, int len)
+{
+	return -EPERM;
+}
+
+static inline int ipa_dma_async_memcpy(phys_addr_t dest, phys_addr_t src
+			, int len, void (*user_cb)(void *user1),
+			void *user_param)
+{
+	return -EPERM;
+}
+
+static inline int ipa_dma_uc_memcpy(phys_addr_t dest, phys_addr_t src, int len)
+{
+	return -EPERM;
+}
+
+static inline void ipa_dma_destroy(void)
+{
+	return;
+}
+
+static inline int ipa_mhi_init(struct ipa_mhi_init_params *params)
+{
+	return -EPERM;
+}
+
+static inline int ipa_mhi_start(struct ipa_mhi_start_params *params)
+{
+	return -EPERM;
+}
+
+static inline int ipa_mhi_connect_pipe(struct ipa_mhi_connect_params *in,
+	u32 *clnt_hdl)
+{
+	return -EPERM;
+}
+
+static inline int ipa_mhi_disconnect_pipe(u32 clnt_hdl)
+{
+	return -EPERM;
+}
+
+static inline int ipa_mhi_suspend(bool force)
+{
+	return -EPERM;
+}
+
+static inline int ipa_mhi_resume(void)
+{
+	return -EPERM;
+}
+
+static inline int ipa_mhi_destroy(void)
+{
+	return -EPERM;
+}
 
 static inline int ipa_write_qmap_id(struct ipa_ioc_write_qmapid *param_in)
 {

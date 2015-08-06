@@ -6,7 +6,7 @@
 #define TFA9895_I2C_NAME "tfa9895"
 #define TFA9895L_I2C_NAME "tfa9895l"
 
-#define MSM8994_LDO_WR (1) 
+#define MSM8994_LDO_WR (0) 
 
 #define TFA9895_IOCTL_MAGIC 'a'
 #define TFA9895_WRITE_CONFIG_NR     0x01

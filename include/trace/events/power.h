@@ -241,6 +241,31 @@ TRACE_EVENT(clock_set_parent,
 	TP_printk("%s parent=%s", __get_str(name), __get_str(parent_name))
 );
 
+TRACE_EVENT(clock_state,
+
+	TP_PROTO(const char *name, unsigned long prepare_count,
+		unsigned long count, unsigned long rate),
+
+	TP_ARGS(name, prepare_count, count, rate),
+
+	TP_STRUCT__entry(
+		__string(name,			name)
+		__field(unsigned long,		prepare_count)
+		__field(unsigned long,		count)
+		__field(unsigned long,		rate)
+	),
+
+	TP_fast_assign(
+		__assign_str(name, name);
+		__entry->prepare_count = prepare_count;
+		__entry->count = count;
+		__entry->rate = rate;
+	),
+
+	TP_printk("%s\t[%lu:%lu]\t%lu", __get_str(name), __entry->prepare_count,
+					__entry->count, __entry->rate)
+);
+
 /*
  * The power domain events are used for power domains transitions
  */
@@ -301,6 +326,129 @@ DEFINE_EVENT(kpm_module, set_max_cpus,
 DEFINE_EVENT(kpm_module, reevaluate_hotplug,
 	TP_PROTO(unsigned int managed_cpus, unsigned int max_cpus),
 	TP_ARGS(managed_cpus, max_cpus)
+);
+
+TRACE_EVENT(core_ctl_eval_need,
+
+	TP_PROTO(unsigned int cpu, unsigned int old_need,
+		 unsigned int new_need, unsigned int updated),
+	TP_ARGS(cpu, old_need, new_need, updated),
+	TP_STRUCT__entry(
+		__field(u32, cpu)
+		__field(u32, old_need)
+		__field(u32, new_need)
+		__field(u32, updated)
+	),
+	TP_fast_assign(
+		__entry->cpu = cpu;
+		__entry->old_need = old_need;
+		__entry->new_need = new_need;
+		__entry->updated = updated;
+	),
+	TP_printk("cpu=%u, old_need=%u, new_need=%u, updated=%u", __entry->cpu,
+		  __entry->old_need, __entry->new_need, __entry->updated)
+);
+
+TRACE_EVENT(core_ctl_set_busy,
+
+	TP_PROTO(unsigned int cpu, unsigned int busy,
+		 unsigned int old_is_busy, unsigned int is_busy),
+	TP_ARGS(cpu, busy, old_is_busy, is_busy),
+	TP_STRUCT__entry(
+		__field(u32, cpu)
+		__field(u32, busy)
+		__field(u32, old_is_busy)
+		__field(u32, is_busy)
+	),
+	TP_fast_assign(
+		__entry->cpu = cpu;
+		__entry->busy = busy;
+		__entry->old_is_busy = old_is_busy;
+		__entry->is_busy = is_busy;
+	),
+	TP_printk("cpu=%u, busy=%u, old_is_busy=%u, new_is_busy=%u",
+		  __entry->cpu, __entry->busy, __entry->old_is_busy,
+		  __entry->is_busy)
+);
+
+DECLARE_EVENT_CLASS(kpm_module2,
+
+	TP_PROTO(unsigned int cpu, unsigned int cycles, unsigned int io_busy,
+								u64 iowait),
+
+	TP_ARGS(cpu, cycles, io_busy, iowait),
+
+	TP_STRUCT__entry(
+		__field(u32, cpu)
+		__field(u32, cycles)
+		__field(u32, io_busy)
+		__field(u64, iowait)
+	),
+
+	TP_fast_assign(
+		__entry->cpu = cpu;
+		__entry->cycles = cycles;
+		__entry->io_busy = io_busy;
+		__entry->iowait = iowait;
+	),
+
+	TP_printk("CPU:%u cycles=%u io_busy=%u iowait=%lu",
+		(unsigned int)__entry->cpu, (unsigned int)__entry->cycles,
+		(unsigned int)__entry->io_busy, (unsigned long)__entry->iowait)
+);
+
+DEFINE_EVENT(kpm_module2, track_iowait,
+	TP_PROTO(unsigned int cpu, unsigned int cycles, unsigned int io_busy,
+								u64 iowait),
+	TP_ARGS(cpu, cycles, io_busy, iowait)
+);
+
+DECLARE_EVENT_CLASS(cpu_modes,
+
+	TP_PROTO(unsigned int cpu, unsigned int max_load,
+		unsigned int single_cycles, unsigned int total_load,
+		unsigned int multi_cycles, unsigned int mode,
+		unsigned int cpu_cnt),
+
+	TP_ARGS(cpu, max_load, single_cycles, total_load, multi_cycles,
+								mode, cpu_cnt),
+
+	TP_STRUCT__entry(
+		__field(u32, cpu)
+		__field(u32, max_load)
+		__field(u32, single_cycles)
+		__field(u32, total_load)
+		__field(u32, multi_cycles)
+		__field(u32, mode)
+		__field(u32, cpu_cnt)
+	),
+
+	TP_fast_assign(
+		__entry->cpu = cpu;
+		__entry->max_load = max_load;
+		__entry->single_cycles = single_cycles;
+		__entry->total_load = total_load;
+		__entry->multi_cycles = multi_cycles;
+		__entry->mode = mode;
+		__entry->cpu_cnt = cpu_cnt;
+	),
+
+	TP_printk("CPU:%u max_load=%4u single_cycles=%4u total_load=%4u multi_cycles=%4u mode=%4u cpu_cnt=%u",
+		(unsigned int)__entry->cpu, (unsigned int)__entry->max_load,
+		(unsigned int)__entry->single_cycles,
+		(unsigned int)__entry->total_load,
+		(unsigned int)__entry->multi_cycles,
+		(unsigned int)__entry->mode,
+		(unsigned int)__entry->cpu_cnt)
+);
+
+DEFINE_EVENT(cpu_modes, cpu_mode_detect,
+	TP_PROTO(unsigned int cpu, unsigned int max_load,
+		unsigned int single_cycles, unsigned int total_load,
+		unsigned int multi_cycles, unsigned int mode,
+		unsigned int cpu_cnt),
+	TP_ARGS(cpu, max_load, single_cycles, total_load, multi_cycles,
+								mode, cpu_cnt)
 );
 #endif /* _TRACE_POWER_H */
 

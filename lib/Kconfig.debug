@@ -285,6 +285,17 @@ config PANIC_ON_OOPS_VALUE
 	default 0 if !PANIC_ON_OOPS
 	default 1 if PANIC_ON_OOPS
 
+config PANIC_ON_RECURSIVE_FAULT
+	bool "Panic on recursive faults during task exit"
+	help
+	  Panic upon the detection of a recursive fault during task exit,
+	  rather than putting the task into an uninterruptible sleep.
+	  This is particularly useful for debugging system hangs in
+	  scenarios where the task experiencing the fault is critical
+	  for system operation, rendering the system inoperable.
+
+	  Say N if unsure.
+
 config DETECT_HUNG_TASK
 	bool "Detect Hung Tasks"
 	depends on DEBUG_KERNEL
@@ -543,6 +554,24 @@ config DEBUG_KMEMLEAK_DEFAULT_OFF
 	help
 	  Say Y here to disable kmemleak by default. It can then be enabled
 	  on the command line via kmemleak=on.
+
+config DEBUG_TASK_STACK_SCAN_OFF
+	bool "Disable kmemleak task stack scan by default"
+	depends on DEBUG_KMEMLEAK
+	help
+	  Say Y here to disable kmemleak task stack scan by default
+	  at compile time. It can be enabled later if required by
+	  writing to the debugfs entry :
+	  echo "stack=on" > /sys/kernel/debug/kmemleak.
+
+config DEBUG_MODULE_SCAN_OFF
+	bool "Disable module memory scan for leaks by default"
+	depends on DEBUG_KMEMLEAK
+	help
+	  Say Y here to disable scanning kernel modules area list
+	  by default for memory leaks. Module scan an potentially
+	  run with irq/preemption disabled for considerable amount
+	  of time.
 
 config DEBUG_PREEMPT
 	bool "Debug preemptible kernel"

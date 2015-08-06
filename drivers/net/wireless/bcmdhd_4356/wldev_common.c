@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wldev_common.c 532200 2015-02-05 08:48:30Z $
+ * $Id: wldev_common.c 550257 2015-04-20 04:40:23Z $
  */
 
 #include <osl.h>
@@ -354,7 +354,9 @@ int wldev_set_country(
 			if (error < 0) {
 				WLDEV_ERROR(("%s: set country failed due to Disassoc error %d\n",
 					__FUNCTION__, error));
+#ifndef CUSTOMER_HW_ONE
 				return error;
+#endif 
 			}
 		}
 
@@ -365,18 +367,18 @@ int wldev_set_country(
 		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
 			smbuf, sizeof(smbuf), NULL);
 		if (error < 0) {
-			WLDEV_ERROR(("%s: set country for %s as %s rev %d failed\n",
+			WLDEV_ERROR(("%s: set country for %s as %s/%d failed\n",
 				__FUNCTION__, country_code, cspec.ccode, cspec.rev));
 #ifdef CUSTOMER_HW_ONE
 			
 			error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
 				smbuf, sizeof(smbuf), NULL);
 			if (error < 0) {
-				WLDEV_ERROR(("%s: set country for %s as %s rev %d failed after retry\n",
+				WLDEV_ERROR(("%s: set country for %s as %s/%d failed after retry\n",
 					__FUNCTION__, country_code, cspec.ccode, cspec.rev));
 				return error;
 			} else {
-				WLDEV_ERROR(("%s: set country for %s as %s rev %d ok after retry\n",
+				WLDEV_ERROR(("%s: set country for %s as %s/%d ok after retry\n",
 					__FUNCTION__, country_code, cspec.ccode, cspec.rev));
 			}
 #else

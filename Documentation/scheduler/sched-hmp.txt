@@ -830,7 +830,16 @@ power-efficient cpu found while scanning cluster's online cpus.
 - PF_WAKE_UP_IDLE
 	Any task that has this flag set in its 'task_struct.flags' field will be
 always woken to idle cpu. Further any task woken by such tasks will be also
-placed on idle cpu.
+placed on idle cpu. PF_WAKE_UP_IDLE flag is inherited by children of a task.
+It can be modified for a task in two ways:
+
+	> kernel-space interface
+		set_wake_up_idle() needs to be called in the context of a task
+		to set or clear its PF_WAKE_UP_IDLE flag.
+
+	> user-space interface
+		/proc/[pid]/sched_wake_up_idle file needs to be written to for
+		setting or clearing PF_WAKE_UP_IDLE flag for a given task
 
 For some low band of frequency, spread of task on all available cpus can be
 groslly power-inefficient. As an example, consider two tasks that each need
@@ -1098,7 +1107,7 @@ See also notes on 'cpu.upmigrate_discourage' tunable.
 
 Appears at: /proc/sys/kernel/sched_enable_power_aware
 
-Default value: 1
+Default value: 0
 
 Controls whether or not per-CPU power values are used in determining
 task placement. If this is disabled, tasks are simply placed on the
@@ -1223,27 +1232,7 @@ comparison. Scheduler will request a raise in cpu frequency when heavy tasks
 wakeup after at least one window of sleep, where window size is defined by
 sched_ravg_window. Value 0 will disable this feature.
 
-** 7.21 sched_min_runtime
-
-Appears at: /proc/sys/kernel/sched_min_vruntime
-
-Default value: 0 (0 ms)
-
-This tunable helps avouid frequent migration of task on account of
-energy-awareness. During scheduler tick, a check is made (in migration_needed())
-whether the running task needs to be migrated to a "better" cpu, which could
-either offer better performance or power. When deciding to migrate task on
-account of power, we want to avoid "frequent" migration of task (say every
-tick), which could be add more overhead for comparatively little gains. A task's
-'run_start' attribute is set when it starts running on a cpu. This information
-is used in migration_needed() to avoid "frequent" migrations. Once a task has
-been associated with a cpu (in either running or runnable state) for more than
-'sched_min_vruntime' ns, it is considered eligible for migration in tick path on
-account of energy awareness reasons.
-The same logic also applies to the load balancer path to avoid frequent
-migrations due to energy awareness.
-
-** 7.22 sched_mostly_idle_freq
+** 7.21 sched_mostly_idle_freq
 
 Appears at: /sys/devices/system/cpu/cpuX/sched_mostly_idle_freq
 
@@ -1282,7 +1271,27 @@ Non-small tasks will prefer to wake up on idle CPUs if this tunable is set to 1.
 If the tunable is set to 0, non-small tasks will prefer to wake up on mostly
 idle CPUs which are not completely idle, increasing task packing behavior.
 
-** 7.24 cpu.upmigrate_discourage
+** 7.24 sched_min_runtime
+
+Appears at: /proc/sys/kernel/sched_min_runtime
+
+Default value: 0 (0 ms)
+
+This tunable helps avouid frequent migration of task on account of
+energy-awareness. During scheduler tick, a check is made (in migration_needed())
+whether the running task needs to be migrated to a "better" cpu, which could
+either offer better performance or power. When deciding to migrate task on
+account of power, we want to avoid "frequent" migration of task (say every
+tick), which could be add more overhead for comparatively little gains. A task's
+'run_start' attribute is set when it starts running on a cpu. This information
+is used in migration_needed() to avoid "frequent" migrations. Once a task has
+been associated with a cpu (in either running or runnable state) for more than
+'sched_min_vruntime' ns, it is considered eligible for migration in tick path on
+account of energy awareness reasons.
+The same logic also applies to the load balancer path to avoid frequent
+migrations due to energy awareness.
+
+** 7.25 cpu.upmigrate_discourage
 
 Default value : 0
 

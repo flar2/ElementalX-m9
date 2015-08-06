@@ -37,10 +37,8 @@ EXPORT_SYMBOL(ieee80211_get_response_rate);
 
 int ieee80211_channel_to_frequency(int chan, enum ieee80211_band band)
 {
-	/* see 802.11 17.3.8.3.2 and Annex J
-	 * there are overlapping channel numbers in 5GHz and 2GHz bands */
 	if (chan <= 0)
-		return 0; /* not supported */
+		return 0; 
 	switch (band) {
 	case IEEE80211_BAND_2GHZ:
 		if (chan == 14)
@@ -61,20 +59,20 @@ int ieee80211_channel_to_frequency(int chan, enum ieee80211_band band)
 	default:
 		;
 	}
-	return 0; /* not supported */
+	return 0; 
 }
 EXPORT_SYMBOL(ieee80211_channel_to_frequency);
 
 int ieee80211_frequency_to_channel(int freq)
 {
-	/* see 802.11 17.3.8.3.2 and Annex J */
+	
 	if (freq == 2484)
 		return 14;
 	else if (freq < 2484)
 		return (freq - 2407) / 5;
 	else if (freq >= 4910 && freq <= 4980)
 		return (freq - 4000) / 5;
-	else if (freq <= 45000) /* DMG band lower limit */
+	else if (freq <= 45000) 
 		return (freq - 5000) / 5;
 	else if (freq >= 58320 && freq <= 64800)
 		return (freq - 56160) / 2160;
@@ -156,7 +154,7 @@ static void set_mandatory_flags_band(struct ieee80211_supported_band *sband,
 		WARN_ON(want != 0 && want != 3 && want != 6);
 		break;
 	case IEEE80211_BAND_60GHZ:
-		/* check for mandatory HT MCS 1..4 */
+		
 		WARN_ON(!sband->ht_cap.ht_supported);
 		WARN_ON((sband->ht_cap.mcs.rx_mask[0] & 0x1e) != 0x1e);
 		break;
@@ -197,13 +195,6 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 	if (pairwise && !mac_addr)
 		return -EINVAL;
 
-	/*
-	 * Disallow pairwise keys with non-zero index unless it's WEP
-	 * or a vendor specific cipher (because current deployments use
-	 * pairwise WEP keys with non-zero indices and for vendor specific
-	 * ciphers this should be validated in the driver or hardware level
-	 * - but 802.11i clearly specifies to use zero)
-	 */
 	if (pairwise && key_idx &&
 	    ((params->cipher == WLAN_CIPHER_SUITE_TKIP) ||
 	     (params->cipher == WLAN_CIPHER_SUITE_CCMP) ||
@@ -236,13 +227,6 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 			return -EINVAL;
 		break;
 	default:
-		/*
-		 * We don't know anything about this algorithm,
-		 * allow using it -- but the driver must check
-		 * all parameters! We still check below whether
-		 * or not the driver supports this algorithm,
-		 * of course.
-		 */
 		break;
 	}
 
@@ -250,7 +234,7 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 		switch (params->cipher) {
 		case WLAN_CIPHER_SUITE_WEP40:
 		case WLAN_CIPHER_SUITE_WEP104:
-			/* These ciphers do not use key sequence */
+			
 			return -EINVAL;
 		case WLAN_CIPHER_SUITE_TKIP:
 		case WLAN_CIPHER_SUITE_CCMP:
@@ -283,15 +267,6 @@ unsigned int __attribute_const__ ieee80211_hdrlen(__le16 fc)
 	}
 
 	if (ieee80211_is_ctl(fc)) {
-		/*
-		 * ACK and CTS are 10 bytes, all others 16. To see how
-		 * to get this condition consider
-		 *   subtype mask:   0b0000000011110000 (0x00F0)
-		 *   ACK subtype:    0b0000000011010000 (0x00D0)
-		 *   CTS subtype:    0b0000000011000000 (0x00C0)
-		 *   bits that matter:         ^^^      (0x00E0)
-		 *   value of those: 0b0000000011000000 (0x00C0)
-		 */
 		if ((fc & cpu_to_le16(0x00E0)) == cpu_to_le16(0x00C0))
 			hdrlen = 10;
 		else
@@ -320,7 +295,7 @@ EXPORT_SYMBOL(ieee80211_get_hdrlen_from_skb);
 unsigned int ieee80211_get_mesh_hdrlen(struct ieee80211s_hdr *meshhdr)
 {
 	int ae = meshhdr->flags & MESH_FLAGS_AE;
-	/* 802.11-2012, 8.2.4.7.3 */
+	
 	switch (ae) {
 	default:
 	case 0:
@@ -347,15 +322,6 @@ int ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
 
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
-	/* convert IEEE 802.11 header + possible LLC headers into Ethernet
-	 * header
-	 * IEEE 802.11 address fields:
-	 * ToDS FromDS Addr1 Addr2 Addr3 Addr4
-	 *   0     0   DA    SA    BSSID n/a
-	 *   0     1   DA    BSSID SA    n/a
-	 *   1     0   BSSID SA    DA    n/a
-	 *   1     1   RA    TA    DA    SA
-	 */
 	memcpy(dst, ieee80211_get_DA(hdr), ETH_ALEN);
 	memcpy(src, ieee80211_get_SA(hdr), ETH_ALEN);
 
@@ -376,7 +342,7 @@ int ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
 		if (iftype == NL80211_IFTYPE_MESH_POINT) {
 			struct ieee80211s_hdr *meshdr =
 				(struct ieee80211s_hdr *) (skb->data + hdrlen);
-			/* make sure meshdr->flags is on the linear part */
+			
 			if (!pskb_may_pull(skb, hdrlen + 1))
 				return -1;
 			if (meshdr->flags & MESH_FLAGS_AE_A4)
@@ -402,7 +368,7 @@ int ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
 		if (iftype == NL80211_IFTYPE_MESH_POINT) {
 			struct ieee80211s_hdr *meshdr =
 				(struct ieee80211s_hdr *) (skb->data + hdrlen);
-			/* make sure meshdr->flags is on the linear part */
+			
 			if (!pskb_may_pull(skb, hdrlen + 1))
 				return -1;
 			if (meshdr->flags & MESH_FLAGS_AE_A5_A6)
@@ -430,8 +396,6 @@ int ieee80211_data_to_8023(struct sk_buff *skb, const u8 *addr,
 	if (likely((ether_addr_equal(payload, rfc1042_header) &&
 		    ethertype != ETH_P_AARP && ethertype != ETH_P_IPX) ||
 		   ether_addr_equal(payload, bridge_tunnel_header))) {
-		/* remove RFC1042 or Bridge-Tunnel encapsulation and
-		 * replace EtherType */
 		skb_pull(skb, hdrlen + 6);
 		memcpy(skb_push(skb, ETH_ALEN), src, ETH_ALEN);
 		memcpy(skb_push(skb, ETH_ALEN), dst, ETH_ALEN);
@@ -467,8 +431,6 @@ int ieee80211_data_from_8023(struct sk_buff *skb, const u8 *addr,
 	nh_pos = skb_network_header(skb) - skb->data;
 	h_pos = skb_transport_header(skb) - skb->data;
 
-	/* convert Ethernet header to proper 802.11 header (based on
-	 * operation mode) */
 	ethertype = (skb->data[12] << 8) | skb->data[13];
 	fc = cpu_to_le16(IEEE80211_FTYPE_DATA | IEEE80211_STYPE_DATA);
 
@@ -477,7 +439,7 @@ int ieee80211_data_from_8023(struct sk_buff *skb, const u8 *addr,
 	case NL80211_IFTYPE_AP_VLAN:
 	case NL80211_IFTYPE_P2P_GO:
 		fc |= cpu_to_le16(IEEE80211_FCTL_FROMDS);
-		/* DA BSSID SA */
+		
 		memcpy(hdr.addr1, skb->data, ETH_ALEN);
 		memcpy(hdr.addr2, addr, ETH_ALEN);
 		memcpy(hdr.addr3, skb->data + ETH_ALEN, ETH_ALEN);
@@ -486,14 +448,14 @@ int ieee80211_data_from_8023(struct sk_buff *skb, const u8 *addr,
 	case NL80211_IFTYPE_STATION:
 	case NL80211_IFTYPE_P2P_CLIENT:
 		fc |= cpu_to_le16(IEEE80211_FCTL_TODS);
-		/* BSSID SA DA */
+		
 		memcpy(hdr.addr1, bssid, ETH_ALEN);
 		memcpy(hdr.addr2, skb->data + ETH_ALEN, ETH_ALEN);
 		memcpy(hdr.addr3, skb->data, ETH_ALEN);
 		hdrlen = 24;
 		break;
 	case NL80211_IFTYPE_ADHOC:
-		/* DA SA BSSID */
+		
 		memcpy(hdr.addr1, skb->data, ETH_ALEN);
 		memcpy(hdr.addr2, skb->data + ETH_ALEN, ETH_ALEN);
 		memcpy(hdr.addr3, bssid, ETH_ALEN);
@@ -554,9 +516,6 @@ int ieee80211_data_from_8023(struct sk_buff *skb, const u8 *addr,
 	nh_pos += hdrlen;
 	h_pos += hdrlen;
 
-	/* Update skb pointers to various headers since this modified frame
-	 * is going to go through Linux networking code that may potentially
-	 * need things like pointer to IP header. */
 	skb_set_mac_header(skb, 0);
 	skb_set_network_header(skb, nh_pos);
 	skb_set_transport_header(skb, h_pos);
@@ -583,7 +542,7 @@ void ieee80211_amsdu_to_8023s(struct sk_buff *skb, struct sk_buff_head *list,
 		if (err)
 			goto out;
 
-		/* skip the wrapping header */
+		
 		eth = (struct ethhdr *) skb_pull(skb, sizeof(struct ethhdr));
 		if (!eth)
 			goto out;
@@ -601,20 +560,16 @@ void ieee80211_amsdu_to_8023s(struct sk_buff *skb, struct sk_buff_head *list,
 		memcpy(src, eth->h_source, ETH_ALEN);
 
 		padding = (4 - subframe_len) & 0x3;
-		/* the last MSDU has no padding */
+		
 		if (subframe_len > remaining)
 			goto purge;
 
 		skb_pull(skb, sizeof(struct ethhdr));
-		/* reuse skb for the last subframe */
+		
 		if (remaining <= subframe_len + padding)
 			frame = skb;
 		else {
 			unsigned int hlen = ALIGN(extra_headroom, 4);
-			/*
-			 * Allocate and reserve two bytes more for payload
-			 * alignment since sizeof(struct ethhdr) is 14.
-			 */
 			frame = dev_alloc_skb(hlen + subframe_len + 2);
 			if (!frame)
 				goto purge;
@@ -641,8 +596,6 @@ void ieee80211_amsdu_to_8023s(struct sk_buff *skb, struct sk_buff_head *list,
 		if (likely((ether_addr_equal(payload, rfc1042_header) &&
 			    ethertype != ETH_P_AARP && ethertype != ETH_P_IPX) ||
 			   ether_addr_equal(payload, bridge_tunnel_header))) {
-			/* remove RFC1042 or Bridge-Tunnel
-			 * encapsulation and replace EtherType */
 			skb_pull(frame, 6);
 			memcpy(skb_push(frame, ETH_ALEN), src, ETH_ALEN);
 			memcpy(skb_push(frame, ETH_ALEN), dst, ETH_ALEN);
@@ -664,17 +617,11 @@ void ieee80211_amsdu_to_8023s(struct sk_buff *skb, struct sk_buff_head *list,
 }
 EXPORT_SYMBOL(ieee80211_amsdu_to_8023s);
 
-/* Given a data frame determine the 802.1p/1d tag to use. */
 unsigned int cfg80211_classify8021d(struct sk_buff *skb,
 				    struct cfg80211_qos_map *qos_map)
 {
 	unsigned int dscp;
 
-	/* skb->priority values from 256->263 are magic values to
-	 * directly indicate a specific 802.1d priority.  This is used
-	 * to allow 802.1d priority to be passed directly in from VLAN
-	 * tags, etc.
-	 */
 	if (skb->priority >= 256 && skb->priority <= 263)
 		return skb->priority - 256;
 
@@ -831,11 +778,11 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 
 	ASSERT_RDEV_LOCK(rdev);
 
-	/* don't support changing VLANs, you just re-create them */
+	
 	if (otype == NL80211_IFTYPE_AP_VLAN)
 		return -EOPNOTSUPP;
 
-	/* cannot change into P2P device type */
+	
 	if (ntype == NL80211_IFTYPE_P2P_DEVICE)
 		return -EOPNOTSUPP;
 
@@ -843,7 +790,7 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 	    !(rdev->wiphy.interface_modes & (1 << ntype)))
 		return -EOPNOTSUPP;
 
-	/* if it's part of a bridge, reject changing type to station/ibss */
+	
 	if ((dev->priv_flags & IFF_BRIDGE_PORT) &&
 	    (ntype == NL80211_IFTYPE_ADHOC ||
 	     ntype == NL80211_IFTYPE_STATION ||
@@ -875,7 +822,7 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 					    WLAN_REASON_DEAUTH_LEAVING, true);
 			break;
 		case NL80211_IFTYPE_MESH_POINT:
-			/* mesh should be handled? */
+			
 			break;
 		default:
 			break;
@@ -897,7 +844,7 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 		case NL80211_IFTYPE_STATION:
 			if (dev->ieee80211_ptr->use_4addr)
 				break;
-			/* fall through */
+			
 		case NL80211_IFTYPE_P2P_CLIENT:
 		case NL80211_IFTYPE_ADHOC:
 			dev->priv_flags |= IFF_DONT_BRIDGE;
@@ -907,14 +854,14 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 		case NL80211_IFTYPE_AP_VLAN:
 		case NL80211_IFTYPE_WDS:
 		case NL80211_IFTYPE_MESH_POINT:
-			/* bridging OK */
+			
 			break;
 		case NL80211_IFTYPE_MONITOR:
-			/* monitor can't bridge anyway */
+			
 			break;
 		case NL80211_IFTYPE_UNSPECIFIED:
 		case NUM_NL80211_IFTYPES:
-			/* not happening */
+			
 			break;
 		case NL80211_IFTYPE_P2P_DEVICE:
 			WARN_ON(1);
@@ -933,14 +880,14 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 static u32 cfg80211_calculate_bitrate_60g(struct rate_info *rate)
 {
 	static const u32 __mcs2bitrate[] = {
-		/* control PHY */
+		
 		[0] =   275,
-		/* SC PHY */
+		
 		[1] =  3850,
 		[2] =  7700,
 		[3] =  9625,
 		[4] = 11550,
-		[5] = 12512, /* 1251.25 mbps */
+		[5] = 12512, 
 		[6] = 15400,
 		[7] = 19250,
 		[8] = 23100,
@@ -948,9 +895,9 @@ static u32 cfg80211_calculate_bitrate_60g(struct rate_info *rate)
 		[10] = 30800,
 		[11] = 38500,
 		[12] = 46200,
-		/* OFDM PHY */
+		
 		[13] =  6930,
-		[14] =  8662, /* 866.25 mbps */
+		[14] =  8662, 
 		[15] = 13860,
 		[16] = 17325,
 		[17] = 20790,
@@ -960,8 +907,8 @@ static u32 cfg80211_calculate_bitrate_60g(struct rate_info *rate)
 		[21] = 45045,
 		[22] = 51975,
 		[23] = 62370,
-		[24] = 67568, /* 6756.75 mbps */
-		/* LP-SC PHY */
+		[24] = 67568, 
+		
 		[25] =  6260,
 		[26] =  8340,
 		[27] = 11120,
@@ -1042,7 +989,7 @@ static u32 cfg80211_calculate_bitrate_vht(struct rate_info *rate)
 	if (rate->flags & RATE_INFO_FLAGS_SHORT_GI)
 		bitrate = (bitrate / 9) * 10;
 
-	/* do NOT round down here */
+	
 	return (bitrate + 50000) / 100000;
 }
 
@@ -1058,7 +1005,7 @@ u32 cfg80211_calculate_bitrate(struct rate_info *rate)
 	if (rate->flags & RATE_INFO_FLAGS_VHT_MCS)
 		return cfg80211_calculate_bitrate_vht(rate);
 
-	/* the formula below does only work for MCS values smaller than 32 */
+	
 	if (WARN_ON_ONCE(rate->mcs >= 32))
 		return 0;
 
@@ -1080,7 +1027,7 @@ u32 cfg80211_calculate_bitrate(struct rate_info *rate)
 	if (rate->flags & RATE_INFO_FLAGS_SHORT_GI)
 		bitrate = (bitrate / 9) * 10;
 
-	/* do NOT round down here */
+	
 	return (bitrate + 50000) / 100000;
 }
 EXPORT_SYMBOL(cfg80211_calculate_bitrate);
@@ -1113,7 +1060,7 @@ int cfg80211_get_p2p_attr(const u8 *ies, unsigned int len,
 
 		iedata = ies + 2;
 
-		/* check WFA OUI, P2P subtype */
+		
 		if (iedata[0] != 0x50 || iedata[1] != 0x6f ||
 		    iedata[2] != 0x9a || iedata[3] != 0x09)
 			goto cont;
@@ -1121,7 +1068,7 @@ int cfg80211_get_p2p_attr(const u8 *ies, unsigned int len,
 		iedatalen -= 4;
 		iedata += 4;
 
-		/* check attribute continuation into this IE */
+		
 		copy = min_t(unsigned int, attr_remaining, iedatalen);
 		if (copy && desired_attr) {
 			desired_len += copy;
@@ -1146,7 +1093,7 @@ int cfg80211_get_p2p_attr(const u8 *ies, unsigned int len,
 		while (iedatalen > 0) {
 			u16 attr_len;
 
-			/* P2P attribute ID & size must fit */
+			
 			if (iedatalen < 3)
 				return -EILSEQ;
 			desired_attr = iedata[0] == attr;
@@ -1282,7 +1229,7 @@ int cfg80211_can_use_iftype_chan(struct cfg80211_registered_device *rdev,
 	if (radar_required && !radar_detect)
 		return -EINVAL;
 
-	/* Always allow software iftypes */
+	
 	if (rdev->wiphy.software_iftypes & BIT(iftype)) {
 		if (radar_detect)
 			return -EINVAL;
@@ -1323,12 +1270,6 @@ int cfg80211_can_use_iftype_chan(struct cfg80211_registered_device *rdev,
 		if (rdev->wiphy.software_iftypes & BIT(wdev_iter->iftype))
 			continue;
 
-		/*
-		 * We may be holding the "wdev" mutex, but now need to lock
-		 * wdev_iter. This is OK because once we get here wdev_iter
-		 * is not wdev (tested above), but we need to use the nested
-		 * locking for lockdep.
-		 */
 		mutex_lock_nested(&wdev_iter->mtx, 1);
 		__acquire(wdev_iter->mtx);
 		cfg80211_get_chan_state(wdev_iter, &ch, &chmode);
@@ -1396,19 +1337,9 @@ int cfg80211_can_use_iftype_chan(struct cfg80211_registered_device *rdev,
 		if (radar_detect && !(c->radar_detect_widths & radar_detect))
 			goto cont;
 
-		/*
-		 * Finally check that all iftypes that we're currently
-		 * using are actually part of this combination. If they
-		 * aren't then we can't use this combination and have
-		 * to continue to the next.
-		 */
 		if ((all_iftypes & used_iftypes) != used_iftypes)
 			goto cont;
 
-		/*
-		 * This combination covered all interface types and
-		 * supported the requested numbers, so we're good.
-		 */
 		kfree(limits);
 		return 0;
  cont:
@@ -1447,22 +1378,14 @@ int ieee80211_get_ratemask(struct ieee80211_supported_band *sband,
 			return -EINVAL;
 	}
 
-	/*
-	 * mask must have at least one bit set here since we
-	 * didn't accept a 0-length rates array nor allowed
-	 * entries in the array that didn't exist
-	 */
 
 	return 0;
 }
 
-/* See IEEE 802.1H for LLC/SNAP encapsulation/decapsulation */
-/* Ethernet-II snap header (RFC1042 for most EtherTypes) */
 const unsigned char rfc1042_header[] __aligned(2) =
 	{ 0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00 };
 EXPORT_SYMBOL(rfc1042_header);
 
-/* Bridge-Tunnel header (for EtherTypes ETH_P_AARP and ETH_P_IPX) */
 const unsigned char bridge_tunnel_header[] __aligned(2) =
 	{ 0xaa, 0xaa, 0x03, 0x00, 0x00, 0xf8 };
 EXPORT_SYMBOL(bridge_tunnel_header);
@@ -1482,7 +1405,7 @@ bool cfg80211_is_gratuitous_arp_unsolicited_na(struct sk_buff *skb)
 
 	switch (eth->h_proto) {
 	case cpu_to_be16(ETH_P_ARP):
-		/* can't say - but will probably be dropped later anyway */
+		
 		if (!pskb_may_pull(skb, sizeof(*eth) + sizeof(*arp)))
 			return false;
 
@@ -1494,7 +1417,7 @@ bool cfg80211_is_gratuitous_arp_unsolicited_na(struct sk_buff *skb)
 			return true;
 		break;
 	case cpu_to_be16(ETH_P_IPV6):
-		/* can't say - but will probably be dropped later anyway */
+		
 		if (!pskb_may_pull(skb, sizeof(*eth) + sizeof(*ipv6) +
 					sizeof(*icmpv6)))
 			return false;
@@ -1507,10 +1430,6 @@ bool cfg80211_is_gratuitous_arp_unsolicited_na(struct sk_buff *skb)
 			return true;
 		break;
 	default:
-		/*
-		 * no need to support other protocols, proxy service isn't
-		 * specified for any others
-		 */
 		break;
 	}
 

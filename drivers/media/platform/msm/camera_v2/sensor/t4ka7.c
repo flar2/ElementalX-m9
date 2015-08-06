@@ -16,6 +16,7 @@
 DEFINE_MSM_MUTEX(t4ka7_mut);
 
 static struct msm_sensor_ctrl_t t4ka7_s_ctrl;
+static uint32_t Module_Type = 0x00;    
 
 #define DUAL_CAL_OTP_SIZE 2048    
 int32_t t4ka7_read_otp_memory(uint8_t *otpPtr, struct msm_sensor_ctrl_t *s_ctrl);
@@ -127,7 +128,10 @@ static ssize_t sensor_vendor_show(struct device *dev,
 {
 	ssize_t ret = 0;
 
-	sprintf(buf, "%s %s %s\n", t4ka7Vendor, t4ka7NAME, t4ka7Size);
+	if(Module_Type == 0x1)
+		sprintf(buf, "%s %s %s - Altek\n", t4ka7Vendor, t4ka7NAME, t4ka7Size);
+	else
+		sprintf(buf, "%s %s %s\n", t4ka7Vendor, t4ka7NAME, t4ka7Size);
 	ret = strlen(buf) + 1;
 
 	return ret;
@@ -239,6 +243,29 @@ static int t4ka7_read_fuseid(struct sensorb_cfg_data *cdata,
             }
 		}
 
+        for(page = 10; page >= 8; page--)   
+        {
+            rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(s_ctrl->sensor_i2c_client, 0x2A02, page, MSM_CAMERA_I2C_BYTE_DATA);
+            if (rc < 0)
+                pr_info("[CAM]%s: i2c_write w 0x2A02 fail\n", __func__);
+
+            msleep(10);
+            
+            rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read(s_ctrl->sensor_i2c_client, 0x2A32, &read_data, MSM_CAMERA_I2C_BYTE_DATA);
+            if (rc < 0)
+                pr_err("[CAM]%s: i2c_read 0x2A32 failed\n", __func__);
+            else
+            {
+                if(read_data)
+                {
+                    Module_Type = 0x01;
+                    pr_info("[CAM]%s: valid Altek info\n", __func__);
+                    break;
+                }
+                read_data = 0;
+            }
+        }
+
         
         pr_info("%s: read OTP for dual cam calibration\n", __func__);
         t4ka7_read_otp_memory(otp_mem, s_ctrl);
@@ -287,6 +314,8 @@ static int t4ka7_read_fuseid(struct sensorb_cfg_data *cdata,
     cdata->cfg.fuse.fuse_id_word3 = otp[10] << 8 | otp[9];
     cdata->cfg.fuse.fuse_id_word4 = otp[12] << 8 | otp[11];
 
+    cdata->module_type = Module_Type;
+
     pr_info("%s: OTP Module vendor = 0x%x\n",               __func__,  otp[0]);
     pr_info("%s: OTP LENS = 0x%x\n",                        __func__,  otp[1]);
     pr_info("%s: OTP Sensor Version = 0x%x\n",              __func__,  otp[2]);
@@ -309,6 +338,8 @@ static int t4ka7_read_fuseid(struct sensorb_cfg_data *cdata,
     pr_info("%s: OTP VCM top mech. Limit (MSByte) = 0x%x\n",    __func__,  cdata->af_value.VCM_TOP_MECH_MSB);
     pr_info("%s: OTP VCM top mech. Limit (LSByte) = 0x%x\n",    __func__,  cdata->af_value.VCM_TOP_MECH_LSB);
 
+    pr_info("%s: OTP Module type = 0x%x\n", __func__, cdata->module_type);
+
     strlcpy(cdata->af_value.ACT_NAME, "lc898212", sizeof("lc898212"));
     pr_info("%s: OTP Actuator Name = %s\n",__func__, cdata->af_value.ACT_NAME);
 	}
@@ -319,6 +350,7 @@ static int t4ka7_read_fuseid(struct sensorb_cfg_data *cdata,
 	    pr_info("%s: OTP Sensor Version = 0x%x\n",              __func__,  otp[2]);
 	    pr_info("%s: OTP Driver IC Vendor & Version = 0x%x\n",  __func__,  otp[3]);
 	    pr_info("%s: OTP Actuator vender ID & Version = 0x%x\n",__func__,  otp[4]);
+	    pr_info("%s: OTP Module type = 0x%x\n",__func__,  Module_Type);
 	}
     return rc;
 
@@ -404,6 +436,29 @@ static int t4ka7_read_fuseid32(struct sensorb_cfg_data32 *cdata,
             }
 		}
 
+        for(page = 10; page >= 8; page--)   
+        {
+            rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(s_ctrl->sensor_i2c_client, 0x2A02, page, MSM_CAMERA_I2C_BYTE_DATA);
+            if (rc < 0)
+                pr_info("[CAM]%s: i2c_write w 0x2A02 fail\n", __func__);
+
+            msleep(10);
+            
+            rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read(s_ctrl->sensor_i2c_client, 0x2A32, &read_data, MSM_CAMERA_I2C_BYTE_DATA);
+            if (rc < 0)
+                pr_err("[CAM]%s: i2c_read 0x2A32 failed\n", __func__);
+            else
+            {
+                if(read_data)
+                {
+                    Module_Type = 0x01;
+                    pr_info("[CAM]%s: valid Altek info\n", __func__);
+                    break;
+                }
+                read_data = 0;
+            }
+        }
+
         
         pr_info("%s: read OTP for dual cam calibration\n", __func__);
         t4ka7_read_otp_memory(otp_mem, s_ctrl);
@@ -452,6 +507,8 @@ static int t4ka7_read_fuseid32(struct sensorb_cfg_data32 *cdata,
     cdata->cfg.fuse.fuse_id_word3 = otp[10] << 8 | otp[9];
     cdata->cfg.fuse.fuse_id_word4 = otp[12] << 8 | otp[11];
 
+    cdata->module_type = Module_Type;
+
     pr_info("%s: OTP Module vendor = 0x%x\n",               __func__,  otp[0]);
     pr_info("%s: OTP LENS = 0x%x\n",                        __func__,  otp[1]);
     pr_info("%s: OTP Sensor Version = 0x%x\n",              __func__,  otp[2]);
@@ -474,6 +531,8 @@ static int t4ka7_read_fuseid32(struct sensorb_cfg_data32 *cdata,
     pr_info("%s: OTP VCM top mech. Limit (MSByte) = 0x%x\n",    __func__,  cdata->af_value.VCM_TOP_MECH_MSB);
     pr_info("%s: OTP VCM top mech. Limit (LSByte) = 0x%x\n",    __func__,  cdata->af_value.VCM_TOP_MECH_LSB);
 
+    pr_info("%s: OTP Module type = 0x%x\n", __func__, cdata->module_type);
+
     strlcpy(cdata->af_value.ACT_NAME, "lc898212", sizeof("lc898212"));
     pr_info("%s: OTP Actuator Name = %s\n",__func__, cdata->af_value.ACT_NAME);
 	}
@@ -484,6 +543,7 @@ static int t4ka7_read_fuseid32(struct sensorb_cfg_data32 *cdata,
 	    pr_info("%s: OTP Sensor Version = 0x%x\n",              __func__,  otp[2]);
 	    pr_info("%s: OTP Driver IC Vendor & Version = 0x%x\n",  __func__,  otp[3]);
 	    pr_info("%s: OTP Actuator vender ID & Version = 0x%x\n",__func__,  otp[4]);
+	    pr_info("%s: OTP Module type = 0x%x\n",__func__,  Module_Type);
 	}
     return rc;
 
@@ -522,6 +582,63 @@ int32_t t4ka7_read_otp_memory(uint8_t *otpPtr, struct msm_sensor_ctrl_t *s_ctrl)
 	pr_info("%s: read OTP memory done\n", __func__);
 	return rc;
 }
+
+static int t4ka7_read_emmc32(struct sensorb_cfg_data32 *cdata)
+{
+	int ret = 0;
+	unsigned char *ptr;
+
+	ptr = get_cam_emmc_cal(&ret);
+	if(ret)
+	{
+#if 0
+		if(cdata==NULL || copy_to_user((void *)compat_ptr(cdata->cfg.setting), ptr, ret))
+		{
+			pr_err("[CAM]%s: get camera emmc data error!\n", __func__);
+			ret = -1;
+		}
+		else
+			pr_info("[CAM]%s: get camera emmc data successfully!\n", __func__);
+#endif
+		pr_info("[CAM]%s: get camera emmc data successfully!\n", __func__);
+	}
+	else
+	{
+		pr_info("[CAM]%s: get_cam_emmc_cal = NULL\n", __func__);
+		ret = -1;
+	}
+
+	return ret;
+}
+
+static int t4ka7_read_emmc(struct sensorb_cfg_data *cdata)
+{
+	int ret = 0;
+	unsigned char *ptr;
+
+	ptr = get_cam_emmc_cal(&ret);
+	if(ret)
+	{
+#if 0
+		if(cdata==NULL || copy_to_user((void *)cdata->cfg.setting, ptr, ret))
+		{
+			pr_err("[CAM]%s: Can't copy emmc data to user\n", __func__);
+			ret = -1;
+		}
+		else
+			pr_info("[CAM]%s: get camera emmc data successfully!\n", __func__);
+#endif
+		pr_info("[CAM]%s: get camera emmc data successfully!\n", __func__);
+	}
+	else
+	{
+		pr_info("[CAM]%s: get_cam_emmc_cal = NULL\n", __func__);
+		ret = -1;
+	}
+
+	return ret;
+}
+
 
 static int32_t t4ka7_platform_probe(struct platform_device *pdev)
 {
@@ -630,6 +747,8 @@ static struct msm_sensor_fn_t t4ka7_sensor_func_tbl = {
 	.sensor_match_id = t4ka7_sensor_match_id,
 	.sensor_i2c_read_fuseid = t4ka7_read_fuseid,
 	.sensor_i2c_read_fuseid32 = t4ka7_read_fuseid32,
+	.sensor_i2c_read_emmc = t4ka7_read_emmc,
+	.sensor_i2c_read_emmc32 = t4ka7_read_emmc32,
 };
 
 static struct msm_sensor_ctrl_t t4ka7_s_ctrl = {

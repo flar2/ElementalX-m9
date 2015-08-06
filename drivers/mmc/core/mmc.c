@@ -10,6 +10,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/bitops.h>
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
@@ -59,38 +60,16 @@ static const unsigned int tacc_mant[] = {
 	})
 
 static const struct mmc_fixup mmc_fixups[] = {
-	MMC_FIXUP_EXT_CSD_REV(CID_NAME_ANY, CID_MANFID_HYNIX,
-			      0x014a, add_quirk, MMC_QUIRK_BROKEN_HPI, 5),
 
 	
 	MMC_FIXUP_EXT_CSD_REV("MMC16G", CID_MANFID_KINGSTON, CID_OEMID_ANY,
 			add_quirk, MMC_QUIRK_BROKEN_HPI, 5),
 
-#if 0
 	MMC_FIXUP("H8G2d", CID_MANFID_HYNIX, CID_OEMID_ANY, add_quirk_mmc,
 		  MMC_QUIRK_CACHE_DISABLE),
 	MMC_FIXUP(CID_NAME_ANY, CID_MANFID_NUMONYX_MICRON, CID_OEMID_ANY,
 		add_quirk_mmc, MMC_QUIRK_CACHE_DISABLE),
 	MMC_FIXUP("MMC16G", CID_MANFID_KINGSTON, CID_OEMID_ANY, add_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-#endif
-	MMC_FIXUP("MAG2GC", CID_MANFID_SAMSUNG, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("AWPD3R", CID_MANFID_SAMSUNG, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("BWBC3R", CID_MANFID_SAMSUNG, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("BGND3R", CID_MANFID_SAMSUNG, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("SEM16G", CID_MANFID_SANDISK, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("SEM32G", CID_MANFID_SANDISK, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("HAG4d", CID_MANFID_HYNIX, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("HBG4e", CID_MANFID_HYNIX, CID_OEMID_ANY, remove_quirk_mmc,
-		  MMC_QUIRK_CACHE_DISABLE),
-	MMC_FIXUP("HAG2e", CID_MANFID_HYNIX, CID_OEMID_ANY, remove_quirk_mmc,
 		  MMC_QUIRK_CACHE_DISABLE),
 
 	END_FIXUP
@@ -315,15 +294,6 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 	}
 
 	card->ext_csd.rev = ext_csd[EXT_CSD_REV];
-	if (card->ext_csd.rev > 7) {
-		pr_err("%s: unrecognised EXT_CSD revision %d\n",
-			mmc_hostname(card->host), card->ext_csd.rev);
-		err = -EINVAL;
-		goto out;
-	}
-
-	if (mmc_card_mmc(card))
-		card->quirks |= MMC_QUIRK_CACHE_DISABLE;
 
 	
 	mmc_fixup_device(card, mmc_fixups);
@@ -483,15 +453,19 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 			card->ext_csd.bkops_en = ext_csd[EXT_CSD_BKOPS_EN];
 			card->ext_csd.raw_bkops_status =
 				ext_csd[EXT_CSD_BKOPS_STATUS];
-			if (!card->ext_csd.bkops_en &&
+			if (!(mmc_card_get_bkops_en_manual(card)) &&
 				card->host->caps2 & MMC_CAP2_INIT_BKOPS) {
-				err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
-					EXT_CSD_BKOPS_EN, 1, 0);
-				if (err)
+				mmc_card_set_bkops_en_manual(card);
+				err = mmc_switch(card,
+					EXT_CSD_CMD_SET_NORMAL,
+					EXT_CSD_BKOPS_EN,
+					card->ext_csd.bkops_en , 0);
+				if (err) {
 					pr_warn("%s: Enabling BKOPS failed\n",
 						mmc_hostname(card->host));
-				else
-					card->ext_csd.bkops_en = 1;
+					mmc_card_clr_bkops_en_manual(card);
+				}
+
 			}
 		}
 
@@ -1520,8 +1494,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 				goto free_card;
 			}
 		}
-
-		if (card->ext_csd.bkops_en) {
+		if (mmc_card_get_bkops_en_manual(card)) {
 			INIT_DELAYED_WORK(&card->bkops_info.dw,
 					  mmc_start_idle_time_bkops);
 

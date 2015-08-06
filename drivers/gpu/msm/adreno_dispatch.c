@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -124,19 +124,16 @@ static void fault_detect_read(struct kgsl_device *device)
 static inline bool _isidle(struct kgsl_device *device)
 {
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
-	unsigned int ts, i;
+	unsigned int i;
+	unsigned int reg_rbbm_status;
 
-	if (!kgsl_pwrctrl_isenabled(device))
+	if (!kgsl_state_is_awake(device))
 		goto ret;
 
-	
-	if (!adreno_hw_isidle(adreno_dev))
-		return false;
+	adreno_readreg(adreno_dev, ADRENO_REG_RBBM_STATUS,
+			&reg_rbbm_status);
 
-	if (adreno_rb_readtimestamp(device,
-		adreno_dev->cur_rb, KGSL_TIMESTAMP_RETIRED, &ts))
-		return false;
-	if (ts != adreno_dev->cur_rb->timestamp)
+	if (reg_rbbm_status & ADRENO_RBBM_STATUS_BUSY_MASK)
 		return false;
 ret:
 	for (i = 0; i < adreno_ft_regs_num; i++)
@@ -198,6 +195,23 @@ static void _retire_marker(struct kgsl_cmdbatch *cmdbatch)
 	kgsl_cmdbatch_destroy(cmdbatch);
 }
 
+static int _check_context_queue(struct adreno_context *drawctxt)
+{
+	int ret;
+
+	spin_lock(&drawctxt->lock);
+
+
+	if (kgsl_context_invalid(&drawctxt->base))
+		ret = 1;
+	else
+		ret = drawctxt->queued < _context_cmdqueue_size ? 1 : 0;
+
+	spin_unlock(&drawctxt->lock);
+
+	return ret;
+}
+
 static bool _marker_expired(struct kgsl_cmdbatch *cmdbatch)
 {
 	return (cmdbatch->flags & KGSL_CMDBATCH_MARKER) &&
@@ -216,7 +230,6 @@ static struct kgsl_cmdbatch *_get_cmdbatch(struct adreno_context *drawctxt)
 {
 	struct kgsl_cmdbatch *cmdbatch = NULL;
 	bool pending = false;
-	unsigned long flags;
 
 	if (drawctxt->cmdqueue_head == drawctxt->cmdqueue_tail)
 		return NULL;
@@ -238,14 +251,16 @@ static struct kgsl_cmdbatch *_get_cmdbatch(struct adreno_context *drawctxt)
 			pending = true;
 	}
 
-	spin_lock_irqsave(&cmdbatch->lock, flags);
+	spin_lock_bh(&cmdbatch->lock);
 	if (!list_empty(&cmdbatch->synclist))
 		pending = true;
-	spin_unlock_irqrestore(&cmdbatch->lock, flags);
+	spin_unlock_bh(&cmdbatch->lock);
 
 	if (pending) {
-		if (!timer_pending(&cmdbatch->timer))
-			mod_timer(&cmdbatch->timer, jiffies + (5 * HZ));
+		if (!cmdbatch->timeout_jiffies) {
+			cmdbatch->timeout_jiffies = jiffies + 5 * HZ;
+			mod_timer(&cmdbatch->timer, cmdbatch->timeout_jiffies);
+		}
 
 		return ERR_PTR(-EAGAIN);
 	}
@@ -347,6 +362,7 @@ static int sendcmd(struct adreno_device *adreno_dev,
 		ret = kgsl_active_count_get(device);
 		if (ret) {
 			dispatcher->inflight--;
+			dispatch_q->inflight--;
 			mutex_unlock(&device->mutex);
 			return ret;
 		}
@@ -469,7 +485,7 @@ static int dispatcher_context_sendcmds(struct adreno_device *adreno_dev,
 	}
 
 
-	if (count)
+	if (_check_context_queue(drawctxt))
 		wake_up_all(&drawctxt->wq);
 
 	if (!ret)
@@ -581,23 +597,6 @@ static int adreno_dispatcher_issuecmds(struct adreno_device *adreno_dev)
 
 	ret = _adreno_dispatcher_issuecmds(adreno_dev);
 	mutex_unlock(&dispatcher->mutex);
-
-	return ret;
-}
-
-static int _check_context_queue(struct adreno_context *drawctxt)
-{
-	int ret;
-
-	spin_lock(&drawctxt->lock);
-
-
-	if (kgsl_context_invalid(&drawctxt->base))
-		ret = 1;
-	else
-		ret = drawctxt->queued < _context_cmdqueue_size ? 1 : 0;
-
-	spin_unlock(&drawctxt->lock);
 
 	return ret;
 }
@@ -1183,9 +1182,14 @@ static int dispatcher_do_fault(struct kgsl_device *device)
 	if (dispatcher->inflight == 0) {
 		KGSL_DRV_WARN(device,
 		"dispatcher_do_fault with 0 inflight commands\n");
-		if (kgsl_pwrctrl_isenabled(device))
-			kgsl_pwrctrl_irq(device, KGSL_PWRFLAGS_ON);
-		return 0;
+		mutex_lock(&device->mutex);
+		if (device->state == KGSL_STATE_AWARE)
+			ret = kgsl_pwrctrl_change_state(device,
+				KGSL_STATE_ACTIVE);
+		else
+			ret = 0;
+		mutex_unlock(&device->mutex);
+		return ret;
 	}
 
 	
@@ -1228,6 +1232,7 @@ static int dispatcher_do_fault(struct kgsl_device *device)
 	if (cmdbatch &&
 		!test_bit(KGSL_FT_SKIP_PMDUMP, &cmdbatch->fault_policy)) {
 		adreno_fault_header(device, cmdbatch);
+		kgsl_device_snapshot(device, cmdbatch->context);
 	}
 
 	
@@ -1442,6 +1447,8 @@ done:
 		
 		mutex_lock(&device->mutex);
 		kgsl_pwrscale_update(device);
+		mod_timer(&device->idle_timer, jiffies +
+				device->pwrctrl.interval_timeout);
 		mutex_unlock(&device->mutex);
 	} else {
 		

@@ -1848,6 +1848,10 @@ static int dpcm_fe_dai_prepare(struct snd_pcm_substream *substream)
 	if (list_empty(&fe->dpcm[stream].be_clients)) {
 		dev_err(fe->dev, "ASoC: no backend DAIs enabled for %s\n",
 				fe->dai_link->name);
+#ifdef CONFIG_HTC_DEBUG_DSP
+		pr_err("%s: trigger ramdump here to check mixer paths!", __func__);
+		BUG();
+#endif
 		ret = -EINVAL;
 		goto out;
 	}

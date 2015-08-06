@@ -1,7 +1,7 @@
 /* drivers/soc/qcom/smd.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -1174,6 +1174,7 @@ static void smd_state_change(struct smd_channel *ch,
 			ch->half_ch->set_tail(ch->recv, 0);
 			ch->half_ch->set_head(ch->send, 0);
 			ch->half_ch->set_fBLOCKREADINTR(ch->send, 0);
+			ch->current_packet = 0;
 			ch_set_state(ch, SMD_SS_OPENING);
 		}
 		break;
@@ -1190,7 +1191,6 @@ static void smd_state_change(struct smd_channel *ch,
 	case SMD_SS_CLOSED:
 		if (ch->half_ch->get_state(ch->send) == SMD_SS_OPENED) {
 			ch_set_state(ch, SMD_SS_CLOSING);
-			ch->current_packet = 0;
 			ch->pending_pkt_sz = 0;
 			ch->notify(ch->priv, SMD_EVENT_CLOSE);
 		}
@@ -2388,7 +2388,7 @@ static irqreturn_t smsm_irq_handler(int irq, void *data)
 
 		SMSM_DBG("<SM %08x %08x>\n", apps, modm);
 		if (modm & SMSM_RESET) {
-			pr_err("\nSMSM: Modem SMSM state changed to SMSM_RESET.");
+			pr_err("SMSM: Modem SMSM state changed to SMSM_RESET.\n");
 		} else if (modm & SMSM_INIT) {
 			if (!(apps & SMSM_INIT))
 				apps |= SMSM_INIT;

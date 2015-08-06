@@ -408,6 +408,17 @@ struct smp_operations msm8916_smp_ops __initdata = {
 #endif
 };
 
+struct smp_operations msmterbium_smp_ops __initdata = {
+	.smp_init_cpus = arm_smp_init_cpus,
+	.smp_prepare_cpus = msm_platform_smp_prepare_cpus_mc,
+	.smp_secondary_init = msm_secondary_init,
+	.smp_boot_secondary = msm8936_boot_secondary, 
+#ifdef CONFIG_HOTPLUG
+	.cpu_die = msm_cpu_die,
+	.cpu_kill = msm_cpu_kill,
+#endif
+};
+
 struct smp_operations msm8936_smp_ops __initdata = {
 	.smp_init_cpus = arm_smp_init_cpus,
 	.smp_prepare_cpus = msm_platform_smp_prepare_cpus,
@@ -416,6 +427,7 @@ struct smp_operations msm8936_smp_ops __initdata = {
 #ifdef CONFIG_HOTPLUG
 	.cpu_die = msm_cpu_die,
 	.cpu_kill = msm_cpu_kill,
+	.cpu_disable = msm_cpu_disable,
 #endif
 };
 
@@ -438,7 +450,6 @@ struct smp_operations msm8960_smp_ops __initdata = {
 #ifdef CONFIG_HOTPLUG
 	.cpu_die = msm_cpu_die,
 	.cpu_kill = msm_cpu_kill,
-	.cpu_disable = msm_cpu_disable,
 #endif
 };
 

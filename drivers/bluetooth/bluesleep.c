@@ -94,6 +94,7 @@ struct bluesleep_info {
 	struct wake_lock wake_lock;
 	int irq_polarity;
 	int has_ext_wake;
+	struct mutex state_mutex; 
 };
 
 static void bluesleep_sleep_work(struct work_struct *work);
@@ -104,14 +105,16 @@ DECLARE_DELAYED_WORK(sleep_workqueue, bluesleep_sleep_work);
 #define bluesleep_tx_busy()     schedule_delayed_work(&sleep_workqueue, 0)
 #define bluesleep_rx_idle()     schedule_delayed_work(&sleep_workqueue, 0)
 #define bluesleep_tx_idle()     schedule_delayed_work(&sleep_workqueue, 0)
+#define bluesleep_hsuart_clk_check()     schedule_delayed_work(&sleep_workqueue, msecs_to_jiffies(10))
 
 #define TX_TIMER_INTERVAL  1 
 
-#define BT_PROTO	0x01
-#define BT_TXDATA	0x02
-#define BT_ASLEEP	0x04
-#define BT_EXT_WAKE	0x08
-#define BT_SUSPEND	0x10
+#define BT_PROTO		0x01    
+#define BT_TXDATA		0x02    
+#define BT_ASLEEP		0x04    
+#define BT_EXT_WAKE		0x08    
+#define BT_SUSPEND		0x10
+#define BT_ASLEEPING	0x20    
 
 #if BT_BLUEDROID_SUPPORT
 static bool has_lpm_enabled = false;
@@ -172,6 +175,12 @@ extern int msm_hs_uart_get_clk_state(void);
 
 static void hsuart_power(int on)
 {
+	
+	if (!test_bit(BT_PROTO, &flags) && !has_lpm_enabled) {
+		BT_ERR("hsuart_power: not bluesleep (0x%lx)", flags);
+		return;
+	}
+
 	if (test_bit(BT_SUSPEND, &flags)) {
 		BT_INFO("hsuart_power: suspend already");
 		return;
@@ -179,6 +188,11 @@ static void hsuart_power(int on)
 
 	if (!bt_pwr_enabled)
 		BT_INFO("hsuart_power(): control uart under bt is off !?");
+
+	if (bsi->uport == NULL) {
+		BT_ERR("NULL UART");
+		return;
+	}
 
 	BT_INFO("hsuart_power(%d)+", on);
 	if (on) {
@@ -207,7 +221,8 @@ int bluesleep_can_sleep(void)
 {
 	
 	return ((gpio_get_value(bsi->host_wake) != bsi->irq_polarity) &&
-		(test_bit(BT_EXT_WAKE, &flags)) &&
+		(test_bit(BT_EXT_WAKE, &flags)) &&  
+		(!test_bit(BT_TXDATA, &flags)) &&   
 		(bsi->uport != NULL));
 }
 
@@ -215,18 +230,23 @@ void bluesleep_sleep_wakeup(void)
 {
 	static int clk_retry = 0;
 
-	if (test_bit(BT_ASLEEP, &flags)) {
+	mutex_lock(&bsi->state_mutex);
+	if (test_bit(BT_ASLEEPING, &flags) || test_bit(BT_ASLEEP, &flags)) {
 		if (debug_mask & DEBUG_SUSPEND)
 			pr_info("waking up...\n");
+
 		wake_lock(&bsi->wake_lock);
 
 		
-		if (msm_hs_uart_get_clk_state() == MSM_HS_CLK_REQUEST_OFF
+		if ((test_bit(BT_ASLEEPING, &flags) ||  
+			 msm_hs_uart_get_clk_state() == MSM_HS_CLK_REQUEST_OFF)
 			&& clk_retry < 10) {
+
 			pr_info("not access uart when clk is REQUEST_OFF, retry:%d\n", clk_retry);
 			clk_retry++;
+
 			
-			mod_timer(&tx_timer, jiffies + msecs_to_jiffies(10));
+			bluesleep_hsuart_clk_check();
 		} else {
 			if (clk_retry != 0)
 				pr_info("clk state is changed, retry:%d\n", clk_retry);
@@ -254,6 +274,7 @@ void bluesleep_sleep_wakeup(void)
 			gpio_set_value(bsi->ext_wake, 0);
 		clear_bit(BT_EXT_WAKE, &flags);
 	}
+	mutex_unlock(&bsi->state_mutex);
 }
 
 static void bluesleep_sleep_work(struct work_struct *work)
@@ -261,8 +282,7 @@ static void bluesleep_sleep_work(struct work_struct *work)
 	if (bluesleep_can_sleep()) {
 		
 		if (test_bit(BT_ASLEEP, &flags)) {
-			if (debug_mask & DEBUG_SUSPEND)
-				pr_info("already asleep\n");
+			BT_ERR("already asleep (0x%lx)", flags);
 			return;
 		}
 
@@ -275,6 +295,8 @@ static void bluesleep_sleep_work(struct work_struct *work)
 			return;
 		}
 
+		mutex_lock(&bsi->state_mutex);
+		set_bit(BT_ASLEEPING, &flags);
 		if (msm_hs_tx_empty_brcm(bsi->uport)) {
 			if (debug_mask & DEBUG_SUSPEND)
 				pr_info("going to sleep...\n");
@@ -282,14 +304,17 @@ static void bluesleep_sleep_work(struct work_struct *work)
 			
 			hsuart_power(0);
 			wake_lock_timeout(&bsi->wake_lock, HZ / 2);
+			clear_bit(BT_ASLEEPING, &flags);
 		} else {
+			clear_bit(BT_ASLEEPING, &flags);
 			if (debug_mask & DEBUG_SUSPEND)
 				pr_info("msm_hs_tx_empty false\n");
 			mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
-			return;
 		}
+		mutex_unlock(&bsi->state_mutex);
 	} else if (test_bit(BT_EXT_WAKE, &flags)
 			&& !test_bit(BT_ASLEEP, &flags)) {
+		
 		mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
 		if (debug_mask & DEBUG_BTWAKE)
 			pr_info("BT WAKE: set to wake\n");
@@ -326,19 +351,20 @@ static void bluesleep_outgoing_data(void)
 	
 	set_bit(BT_TXDATA, &flags);
 
-	spin_unlock_irqrestore(&rw_lock, irq_flags);
-
 	
 	if (test_bit(BT_EXT_WAKE, &flags)) {
 		if (debug_mask & DEBUG_SUSPEND)
-			pr_info("tx was sleeping\n");
+			pr_info("wake up the sleeping Tx\n");
+		spin_unlock_irqrestore(&rw_lock, irq_flags);
 		bluesleep_sleep_wakeup();
-	}
+	} else
+		spin_unlock_irqrestore(&rw_lock, irq_flags);
 }
 
 #if BT_BLUEDROID_SUPPORT
 static int bluesleep_lpm_enable (int en)
 {
+	mutex_lock(&bsi->state_mutex);
 	if (!en) {
 		
 		bluesleep_stop();
@@ -353,6 +379,7 @@ static int bluesleep_lpm_enable (int en)
 			bluesleep_start();
 		}
 	}
+	mutex_unlock(&bsi->state_mutex);
 	return 0;
 }
 
@@ -429,7 +456,8 @@ static ssize_t bluesleep_write_proc_btwrite(struct file *file, const char __user
 
 		
 		while (i <= 20) {
-			if (msm_hs_uart_get_clk_state() == MSM_HS_CLK_ON) {
+			if (msm_hs_uart_get_clk_state() == MSM_HS_CLK_ON &&
+				!test_bit(BT_ASLEEPING, &flags)) {
 				if (i != 0)
 					BT_INFO("bluesleep_write_proc_btwrite: clk ready, count:%d", i);
 				break;
@@ -484,10 +512,10 @@ static void bluesleep_tx_timer_expire(unsigned long data)
 {
 	unsigned long irq_flags;
 
+	spin_lock_irqsave(&rw_lock, irq_flags);
+
 	if (debug_mask & DEBUG_VERBOSE)
 		pr_info("Tx timer expired\n");
-
-	spin_lock_irqsave(&rw_lock, irq_flags);
 
 	
 	if (!test_bit(BT_TXDATA, &flags)) {
@@ -527,6 +555,7 @@ static int bluesleep_start(void)
 	spin_lock_irqsave(&rw_lock, irq_flags);
 
 	if (test_bit(BT_PROTO, &flags)) {
+		BT_ERR("bluesleep_start already (0x%lx)", flags);
 		spin_unlock_irqrestore(&rw_lock, irq_flags);
 		return 0;
 	}
@@ -572,6 +601,7 @@ static void bluesleep_stop(void)
 	spin_lock_irqsave(&rw_lock, irq_flags);
 
 	if (!test_bit(BT_PROTO, &flags)) {
+		BT_ERR("bluesleep_stop already (0x%lx)", flags);
 		spin_unlock_irqrestore(&rw_lock, irq_flags);
 		return;
 	}
@@ -585,14 +615,14 @@ static void bluesleep_stop(void)
 	del_timer(&tx_timer);
 	clear_bit(BT_PROTO, &flags);
 
+	spin_unlock_irqrestore(&rw_lock, irq_flags);
+
 	if (test_bit(BT_ASLEEP, &flags)) {
 		clear_bit(BT_ASLEEP, &flags);
 		hsuart_power(1);
 	}
 
 	atomic_inc(&open_count);
-
-	spin_unlock_irqrestore(&rw_lock, irq_flags);
 
 #if BT_ENABLE_IRQ_WAKE
 	if (disable_irq_wake(bsi->host_wake_irq))
@@ -772,6 +802,10 @@ static int bluesleep_probe(struct platform_device *pdev)
 			bsi->host_wake_irq,
 			bsi->irq_polarity);
 
+	
+	spin_lock_init(&rw_lock);
+
+	mutex_init(&bsi->state_mutex);
 
 	
 	tasklet_init(&hostwake_task, bluesleep_hostwake_task, 0);
@@ -789,6 +823,7 @@ static int bluesleep_probe(struct platform_device *pdev)
 
 free_bt_ext_wake:
 	gpio_free(bsi->ext_wake);
+	mutex_destroy(&bsi->state_mutex);
 free_bt_host_wake:
 	gpio_free(bsi->host_wake);
 free_bsi:
@@ -803,6 +838,7 @@ static int bluesleep_remove(struct platform_device *pdev)
 	gpio_free(bsi->ext_wake);
 	wake_lock_destroy(&bsi->wake_lock);
 	kfree(bsi);
+	mutex_destroy(&bsi->state_mutex);
 	return 0;
 }
 
@@ -972,9 +1008,6 @@ static int __init bluesleep_init(void)
 	flags = 0; 
 
 	
-	spin_lock_init(&rw_lock);
-
-	
 	init_timer(&tx_timer);
 	tx_timer.function = bluesleep_tx_timer_expire;
 	tx_timer.data = 0;
@@ -982,6 +1015,8 @@ static int __init bluesleep_init(void)
 #if !BT_BLUEDROID_SUPPORT
 	hci_register_notifier(&hci_event_nblock);
 #endif
+
+	BT_INFO("BlueSleep Mode Driver Initialized");
 
 	return 0;
 

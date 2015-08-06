@@ -394,6 +394,8 @@ static uint64_t arbitrate_bus_req(struct msm_bus_node_device_type *bus_dev,
 	uint64_t sum_ab = 0;
 	uint64_t bw_max_hz;
 	struct msm_bus_node_device_type *fab_dev = NULL;
+	uint32_t util_fact = 0;
+	uint32_t vrail_comp = 0;
 
 	
 	for (i = 0; i < bus_dev->num_lnodes; i++) {
@@ -401,18 +403,23 @@ static uint64_t arbitrate_bus_req(struct msm_bus_node_device_type *bus_dev,
 		sum_ab += bus_dev->lnode_list[i].lnode_ab[ctx];
 	}
 	fab_dev = bus_dev->node_info->bus_device->platform_data;
-
 	
 	if (fab_dev && fab_dev->fabdev) {
-		sum_ab *= fab_dev->fabdev->util_fact;
+		util_fact = bus_dev->node_info->util_fact ?
+			bus_dev->node_info->util_fact :
+			fab_dev->fabdev->util_fact;
+		vrail_comp = bus_dev->node_info->vrail_comp ?
+			bus_dev->node_info->vrail_comp :
+			fab_dev->fabdev->vrail_comp;
+		sum_ab *= util_fact;
 		sum_ab = msm_bus_div64(100, sum_ab);
 		max_ib *= 100;
-		max_ib = msm_bus_div64(fab_dev->fabdev->vrail_comp, max_ib);
+		max_ib = msm_bus_div64(vrail_comp, max_ib);
 	}
 
 	
-	if (bus_dev->node_info->num_qports > 1)
-		sum_ab = msm_bus_div64(bus_dev->node_info->num_qports,
+	if (bus_dev->node_info->num_aggports > 1)
+		sum_ab = msm_bus_div64(bus_dev->node_info->num_aggports,
 					sum_ab);
 
 	if (!bus_dev->node_info->buswidth) {
@@ -452,7 +459,6 @@ static int msm_bus_apply_rules(struct list_head *list, bool after_clk_commit)
 	struct device *dev = NULL;
 	struct msm_bus_node_device_type *dev_info = NULL;
 	int ret = 0;
-	bool throttle_en = false;
 
 	list_for_each_entry(rule, list, link) {
 		if (!rule)
@@ -471,11 +477,11 @@ static int msm_bus_apply_rules(struct list_head *list, bool after_clk_commit)
 		}
 		dev_info = dev->platform_data;
 
-		throttle_en = ((rule->throttle == THROTTLE_ON) ? true : false);
-		ret = msm_bus_enable_limiter(dev_info, throttle_en,
+		ret = msm_bus_enable_limiter(dev_info, rule->throttle,
 							rule->lim_bw);
 		if (ret)
 			MSM_BUS_ERR("Failed to set limiter for %d", rule->id);
+		trace_bus_rules_apply(rule->id, rule->lim_bw, rule->throttle);
 	}
 
 	return ret;
@@ -492,9 +498,9 @@ static uint64_t get_node_aggab(struct msm_bus_node_device_type *bus_dev)
 		for (i = 0; i < bus_dev->num_lnodes; i++)
 			agg_ab += bus_dev->lnode_list[i].lnode_ab[ctx];
 
-		if (bus_dev->node_info->num_qports > 1)
-			agg_ab = msm_bus_div64(bus_dev->node_info->num_qports,
-							agg_ab);
+		if (bus_dev->node_info->num_aggports > 1)
+			agg_ab = msm_bus_div64(bus_dev->node_info->num_aggports,
+						agg_ab);
 
 		max_agg_ab = max(max_agg_ab, agg_ab);
 	}

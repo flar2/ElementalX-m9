@@ -2036,6 +2036,9 @@ static inline void msm_pcie_save_shadow(struct msm_pcie_dev_t *dev,
 	}
 }
 
+static void msm_pcie_notify_client(struct msm_pcie_dev_t *dev, enum msm_pcie_event event);
+int oper_conf_fail_cnt = 0;
+
 static inline int msm_pcie_oper_conf(struct pci_bus *bus, u32 devfn, int oper,
 				     int where, int size, u32 *val)
 {
@@ -2141,12 +2144,35 @@ static inline int msm_pcie_oper_conf(struct pci_bus *bus, u32 devfn, int oper,
 		writel_relaxed(wr_val, config_base + word_offset);
 		wmb(); /* ensure config data is written to hardware register */
 
+#if 0
 		if (rd_val == PCIE_LINK_DOWN)
 			PCIE_ERR(dev,
 				"Read of RC%d %d:0x%02x + 0x%04x[%d] is all FFs\n",
 				rc_idx, bus->number, devfn, where, size);
 		else if (dev->shadow_en)
 			msm_pcie_save_shadow(dev, word_offset, wr_val, bdf, rc);
+#endif
+		if (rd_val == PCIE_LINK_DOWN) {
+			PCIE_ERR(dev,
+				"Read of RC%d %d:0x%02x + 0x%04x[%d] is all FFs\n",
+				rc_idx, bus->number, devfn, where, size);
+
+			oper_conf_fail_cnt++;
+			if ( oper_conf_fail_cnt > 10 && dev->link_status == MSM_PCIE_LINK_ENABLED ) {
+				PCIE_ERR(dev, "Trigger recover for DPM on RC%d \n", dev->rc_idx);
+				oper_conf_fail_cnt = 0;
+				dev->link_status = MSM_PCIE_LINK_DISABLED;
+				dev->shadow_en = false;
+				gpio_set_value(dev->gpio[MSM_PCIE_GPIO_PERST].num,
+						dev->gpio[MSM_PCIE_GPIO_PERST].on);
+				msm_pcie_notify_client(dev, MSM_PCIE_EVENT_LINKDOWN);
+			}
+		} else if (dev->shadow_en) {
+			msm_pcie_save_shadow(dev, word_offset, wr_val, bdf, rc);
+			oper_conf_fail_cnt = 0;
+		} else {
+			oper_conf_fail_cnt = 0;
+		}
 
 		PCIE_DBG3(dev,
 			"RC%d %d:0x%02x + 0x%04x[%d] <- 0x%08x; rd 0x%08x val 0x%08x\n",
@@ -3770,7 +3796,7 @@ static irqreturn_t handle_aer_irq(int irq, void *data)
 				PCIE20_CAP_DEVCTRLSTATUS);
 
 	if (uncorr_val)
-		PCIE_DBG(dev, "RC's PCIE20_AER_UNCORR_ERR_STATUS_REG:0x%x\n",
+		PCIE_ERR(dev, "RC's PCIE20_AER_UNCORR_ERR_STATUS_REG:0x%x\n",
 				uncorr_val);
 	if (corr_val && (dev->rc_corr_counter < corr_counter_limit))
 		PCIE_DBG(dev, "RC's PCIE20_AER_CORR_ERR_STATUS_REG:0x%x\n",
@@ -3832,7 +3858,7 @@ static irqreturn_t handle_aer_irq(int irq, void *data)
 					ep_dev_ctrlstts_offset);
 
 		if (ep_uncorr_val)
-			PCIE_DBG(dev,
+			PCIE_ERR(dev,
 				"EP's PCIE20_AER_UNCORR_ERR_STATUS_REG:0x%x\n",
 				ep_uncorr_val);
 		if (ep_corr_val && (dev->ep_corr_counter < corr_counter_limit))
@@ -5021,7 +5047,9 @@ int msm_pcie_pm_control(enum msm_pcie_pm_opt pm_opt, u32 busnr, void *user,
 
 			if (pcie_dev) {
 				rc_idx = pcie_dev->rc_idx;
-				PCIE_DBG(pcie_dev,
+                                
+				PCIE_ERR(pcie_dev,
+                                
 					"PCIe: RC%d: pm_opt:%d;busnr:%d;options:%d\n",
 					rc_idx, pm_opt, busnr, options);
 			} else {

@@ -53,6 +53,12 @@ static int devfreq_gpubw_get_target(struct devfreq *df,
 	int act_level;
 	int norm_cycles;
 	int gpu_percent;
+	/*
+	 * Normalized AB should at max usage be the gpu_bimc frequency in MHz.
+	 * Start with a reasonable value and let the system push it up to max.
+	 */
+	static int norm_ab_max = 300;
+	int norm_ab;
 
 	stats.private_data = &b;
 
@@ -75,11 +81,16 @@ static int devfreq_gpubw_get_target(struct devfreq *df,
 	gpu_percent = (100 * (unsigned int)priv->bus.gpu_time) /
 			(unsigned int) priv->bus.total_time;
 
+	/*
+	 * If there's a new high watermark, update the cutoffs and send the
+	 * FAST hint.  Otherwise check the current value against the current
+	 * cutoffs.
+	 */
 	if (norm_cycles > priv->bus.max) {
 		_update_cutoff(priv, norm_cycles);
 		bus_profile->flag = DEVFREQ_FLAG_FAST_HINT;
 	} else {
-		
+		/* GPU votes for IB not AB so don't under vote the system */
 		norm_cycles = (100 * norm_cycles) / TARGET;
 		act_level = priv->bus.index[level] + b.mod;
 		act_level = (act_level < 0) ? 0 : act_level;
@@ -90,6 +101,15 @@ static int devfreq_gpubw_get_target(struct devfreq *df,
 			bus_profile->flag = DEVFREQ_FLAG_FAST_HINT;
 		else if (norm_cycles < priv->bus.down[act_level] && level)
 			bus_profile->flag = DEVFREQ_FLAG_SLOW_HINT;
+	}
+
+	/* Re-calculate the AB percentage for a new IB vote */
+	if (bus_profile->flag) {
+		norm_ab =  (unsigned int)priv->bus.ram_time /
+			(unsigned int) priv->bus.total_time;
+		if (norm_ab > norm_ab_max)
+			norm_ab_max = norm_ab;
+		bus_profile->percent_ab = (100 * norm_ab) / norm_ab_max;
 	}
 
 	priv->bus.total_time = 0;
@@ -115,7 +135,7 @@ static int gpubw_start(struct devfreq *devfreq)
 	devfreq->data = bus_profile->private_data;
 	priv = devfreq->data;
 
-	
+	/* Set up the cut-over percentages for the bus calculation. */
 	for (i = 0; i < priv->bus.num; i++) {
 		t1 = (u32)(100 * priv->bus.ib[i]) /
 				(u32)priv->bus.ib[priv->bus.num - 1];
@@ -123,7 +143,7 @@ static int gpubw_start(struct devfreq *devfreq)
 		priv->bus.p_down[i] = t2 - 2 * HIST;
 		t2 = t1;
 	}
-	
+	/* Set the upper-most and lower-most bounds correctly. */
 	priv->bus.p_down[0] = 0;
 	priv->bus.p_down[1] = (priv->bus.p_down[1] > (2 * HIST)) ?
 				priv->bus.p_down[1] : (2 * HIST);
@@ -156,8 +176,8 @@ static int devfreq_gpubw_event_handler(struct devfreq *devfreq,
 		result = gpubw_stop(devfreq);
 		break;
 	case DEVFREQ_GOV_RESUME:
-		
-		
+		/* TODO ..... */
+		/* ret = update_devfreq(devfreq); */
 		break;
 	case DEVFREQ_GOV_SUSPEND:
 		{

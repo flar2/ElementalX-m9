@@ -52,6 +52,7 @@ static int is_mtp_enable;
 static int disk_mode = 0;
 static int is_mass_storage_enable;
 static bool connect2pc;
+static int linux_mtp_mode = 0;
 
 #include "composite.c"
 
@@ -188,9 +189,14 @@ struct android_dev {
 	
 	int autobot_mode;
 	
+	int mirrorlink_mode;
 
 	
 	struct list_head list_item;
+
+	atomic_t	adb_ready;
+	atomic_t	delay_enable_store;
+
 } *_android_dev;
 
 struct android_configuration {
@@ -248,7 +254,6 @@ static struct usb_device_descriptor device_desc = {
 	.bDeviceClass         = USB_CLASS_PER_INTERFACE,
 	.idVendor             = __constant_cpu_to_le16(VENDOR_ID),
 	.idProduct            = __constant_cpu_to_le16(PRODUCT_ID),
-	.bcdDevice            = __constant_cpu_to_le16(0xffff),
 	.bNumConfigurations   = 1,
 };
 
@@ -463,6 +468,10 @@ static void android_work(struct work_struct *data)
                 
                 setup_usb_denied(0);
         }
+	if (next_state == USB_DISCONNECTED && switch_get_state(&ml_switch)) {
+		switch_set_state(&ml_switch, 0);
+		printk("[MIRROR_LINK]%s : Out of order, ml_switch set 0\n", __func__);
+	}
 }
 
 static int android_enable(struct android_dev *dev)
@@ -471,6 +480,7 @@ static int android_enable(struct android_dev *dev)
 	struct android_configuration *conf;
 	int err = 0;
 
+	pr_debug("%s: disable_depth %d -> %d\n", __func__, dev->disable_depth, dev->disable_depth-1);
 	if (WARN_ON(!dev->disable_depth))
 		return err;
 
@@ -482,7 +492,8 @@ static int android_enable(struct android_dev *dev)
 			if (err < 0) {
 				pr_err("%s: usb_add_config failed : err: %d\n",
 						__func__, err);
-				dev->disable_depth++;
+				
+				
 				return err;
 			}
 		}
@@ -497,6 +508,7 @@ static void android_disable(struct android_dev *dev)
 	struct usb_composite_dev *cdev = dev->cdev;
 	struct android_configuration *conf;
 
+	pr_debug("%s: disable_depth %d -> %d\n", __func__, dev->disable_depth, dev->disable_depth+1);
 	if (dev->disable_depth++ == 0) {
 		usb_gadget_disconnect(cdev->gadget);
 		
@@ -504,6 +516,25 @@ static void android_disable(struct android_dev *dev)
 
 		list_for_each_entry(conf, &dev->configs, list_item)
 			usb_remove_config(cdev, &conf->usb_config);
+	}
+}
+
+
+void usb_android_force_reset(struct usb_composite_dev *cdev)
+{
+	struct android_dev *dev = cdev_to_android_dev(cdev);
+
+	mutex_lock(&dev->mutex);
+	
+	if (cdev && cdev->gadget && cdev->gadget->speed != USB_SPEED_UNKNOWN) {
+		android_disable(dev);
+
+		msleep(100);
+
+		android_enable(dev);
+		mutex_unlock(&dev->mutex);
+	} else {
+		mutex_unlock(&dev->mutex);
 	}
 }
 
@@ -703,6 +734,18 @@ static int functionfs_ready_callback(struct ffs_data *ffs)
 	if (config->enabled)
 		android_enable(dev);
 
+	atomic_set(&dev->adb_ready, 1);
+	while (atomic_read(&dev->delay_enable_store) != 0) {
+		ret = android_enable(dev);
+		if (ret < 0) {
+			pr_err("%s: android_enable failed\n", __func__);
+			dev->connected = 0;
+			dev->enabled = false;
+		} else {
+			dev->enabled = true;
+		}
+		atomic_sub(1, &dev->delay_enable_store);
+	}
 	mutex_unlock(&dev->mutex);
 
 	return 0;
@@ -713,6 +756,9 @@ static void functionfs_closed_callback(struct ffs_data *ffs)
 	struct android_dev *dev = ffs_function.android_dev;
 	struct functionfs_config *config = ffs_function.config;
 
+	
+	pr_err("[USB]entering %s: \n", __func__);
+	
 	if (!dev)
 		dev = config->dev;
 
@@ -2380,20 +2426,31 @@ static ssize_t rndis_transports_store(struct device *dev,
 static DEVICE_ATTR(rndis_transports, S_IRUGO | S_IWUSR, rndis_transports_show,
 					       rndis_transports_store);
 
+static ssize_t rndis_rx_trigger_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	bool write = false;
+	int rx_trigger = rndis_rx_trigger(write);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", rx_trigger);
+}
+
 static ssize_t rndis_rx_trigger_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	int value;
+	bool write = true;
 
 	if (sscanf(buf, "%d", &value) == 1) {
-		rndis_rx_trigger();
+		rndis_rx_trigger(write);
 		return size;
 	}
 	return -EINVAL;
 }
 
-static DEVICE_ATTR(rx_trigger, S_IWUSR, NULL,
-					     rndis_rx_trigger_store);
+static DEVICE_ATTR(rx_trigger, S_IRUGO | S_IWUSR,
+					 rndis_rx_trigger_show,
+					 rndis_rx_trigger_store);
 
 static ssize_t rndis_pkt_alignment_factor_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -3105,8 +3162,37 @@ static ssize_t projector2_width_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", config->set_display_info.wWidth);
 }
 
+#if HSML_VERSION_12
+#define cHSML_WIDTH_SIZE        2
+
+static ssize_t projector2_width_store(struct device *dev,
+        struct device_attribute *attr, const char *buff, size_t size)
+{
+struct android_usb_function *f = dev_get_drvdata(dev);
+struct hsml_protocol *config = f->config;
+u16 uValue;
+u8 aucWidth[cHSML_WIDTH_SIZE];
+
+    if (size <= cHSML_WIDTH_SIZE) {
+        memset(aucWidth, 0, sizeof(aucWidth));
+        memcpy(aucWidth, buff, size);
+        uValue = be16_to_cpu(*((__le16 *) aucWidth));
+        config->set_display_info.wWidth = uValue;
+        return size;
+    } else {
+        printk(KERN_ERR "%s: size is invalid %zu/%d\n", __func__, size, cHSML_WIDTH_SIZE);
+    }
+    return -EINVAL;
+}
+#endif
+
 static DEVICE_ATTR(client_width, S_IRUGO | S_IWUSR, projector2_width_show,
-						    NULL);
+#if !HSML_VERSION_12
+                            NULL
+#else
+                            projector2_width_store
+#endif
+        );
 
 static ssize_t projector2_height_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -3116,8 +3202,36 @@ static ssize_t projector2_height_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", config->set_display_info.wHeight);
 }
 
+#if HSML_VERSION_12
+static ssize_t projector2_height_store(struct device *dev,
+        struct device_attribute *attr, const char *buff, size_t size)
+{
+struct android_usb_function *f = dev_get_drvdata(dev);
+struct hsml_protocol *config = f->config;
+u16 uValue;
+u8 aucWidth[cHSML_WIDTH_SIZE];
+
+    if (size <= cHSML_WIDTH_SIZE) {
+        memset(aucWidth, 0, sizeof(aucWidth));
+        memcpy(aucWidth, buff, size);
+        uValue = be16_to_cpu(*((__le16 *) aucWidth));
+        config->set_display_info.wHeight = uValue;
+        return size;
+    } else {
+        printk(KERN_ERR "%s: size is invalid %zu/%d\n", __func__, size, cHSML_WIDTH_SIZE);
+    }
+
+    return -EINVAL;
+}
+#endif
+
 static DEVICE_ATTR(client_height, S_IRUGO | S_IWUSR, projector2_height_show,
-						    NULL);
+#if !HSML_VERSION_12
+                            NULL
+#else
+                            projector2_height_store
+#endif
+                            );
 
 static ssize_t projector2_maxfps_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -3142,6 +3256,11 @@ static DEVICE_ATTR(client_pixel_format, S_IRUGO | S_IWUSR, projector2_pixel_form
 						    NULL);
 
 static DEVICE_ATTR(client_context_info, S_IRUGO | S_IWUSR, NULL, context_info_store);
+#if HSML_VERSION_12
+static DEVICE_ATTR(client_ver, S_IRUGO | S_IWUSR, projector2_ver_show, NULL);
+static DEVICE_ATTR(client_cap, S_IRUGO | S_IWUSR, projector2_cap_show, NULL); 
+static DEVICE_ATTR(client_uuid, S_IRUGO | S_IWUSR, NULL, projector2_uuid_store);
+#endif
 
 static struct device_attribute *projector2_function_attributes[] = {
 	&dev_attr_client_width,
@@ -3149,10 +3268,13 @@ static struct device_attribute *projector2_function_attributes[] = {
 	&dev_attr_client_maxfps,
 	&dev_attr_client_pixel_format,
 	&dev_attr_client_context_info,
+#if HSML_VERSION_12
+	&dev_attr_client_ver,
+	&dev_attr_client_cap, 
+	&dev_attr_client_uuid,
+#endif
 	NULL
 };
-
-
 
 struct android_usb_function projector2_function = {
 	.name		= "projector2",
@@ -3508,6 +3630,7 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	strlcpy(buf, buff, sizeof(buf));
 	b = strim(buf);
 
+	dev->cdev->gadget->streaming_enabled = false;
 	while (b) {
 		conf_str = strsep(&b, ":");
 		if (!conf_str)
@@ -3601,6 +3724,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 	struct android_configuration *conf;
 	int enabled = 0;
 	bool audio_enabled = false;
+	bool ffs_enabled = false;
 	static DEFINE_RATELIMIT_STATE(rl, 10*HZ, 1);
 	int err = 0;
 
@@ -3615,7 +3739,8 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 	if (enabled && !dev->enabled) {
 		cdev->desc.idVendor = device_desc.idVendor;
 		cdev->desc.idProduct = device_desc.idProduct;
-		cdev->desc.bcdDevice = device_desc.bcdDevice;
+		if (device_desc.bcdDevice)
+			cdev->desc.bcdDevice = device_desc.bcdDevice;
 		cdev->desc.bDeviceClass = device_desc.bDeviceClass;
 		cdev->desc.bDeviceSubClass = device_desc.bDeviceSubClass;
 		cdev->desc.bDeviceProtocol = device_desc.bDeviceProtocol;
@@ -3632,18 +3757,39 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 				if (!strncmp(f_holder->f->name,
 						"audio_source", 12))
 					audio_enabled = true;
+				if (!strncmp(f_holder->f->name,
+						"ffs", 3))
+					ffs_enabled = true;
 			}
 		if (audio_enabled)
 			msleep(100);
-		err = android_enable(dev);
-		if (err < 0) {
-			pr_err("%s: android_enable failed\n", __func__);
-			dev->connected = 0;
-			dev->enabled = false;
-			mutex_unlock(&dev->mutex);
-			return size;
+		if ((ffs_enabled && atomic_read(&dev->adb_ready)) || !ffs_enabled) {
+			err = android_enable(dev);
+			if (err < 0) {
+				pr_err("%s: android_enable failed\n", __func__);
+				dev->connected = 0;
+				dev->enabled = false;
+				mutex_unlock(&dev->mutex);
+				return size;
+			}
+			dev->enabled = true;
+
+			while (atomic_read(&dev->delay_enable_store) != 0) {
+				err = android_enable(dev);
+				if (err < 0) {
+					pr_err("%s: android_enable failed\n", __func__);
+					dev->connected = 0;
+					dev->enabled = false;
+					mutex_unlock(&dev->mutex);
+					return size;
+				}
+				dev->enabled = true;
+				atomic_sub(1, &dev->delay_enable_store);
+			}
+
+		} else {
+			atomic_add(1, &dev->delay_enable_store);
 		}
-		dev->enabled = true;
 	} else if (!enabled && dev->enabled) {
 		android_disable(dev);
 		list_for_each_entry(conf, &dev->configs, list_item)
@@ -3653,6 +3799,8 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 					f_holder->f->disable(f_holder->f);
 			}
 		dev->enabled = false;
+		atomic_set(&dev->delay_enable_store, 0);
+		atomic_set(&dev->adb_ready, 0);
 	} else if (__ratelimit(&rl)) {
 		pr_err("android_usb: already %s\n",
 				dev->enabled ? "enabled" : "disabled");
@@ -3845,10 +3993,6 @@ static void android_unbind_config(struct usb_configuration *c)
 {
 	struct android_dev *dev = cdev_to_android_dev(c->cdev);
 
-	if (c->cdev->gadget->streaming_enabled) {
-		c->cdev->gadget->streaming_enabled = false;
-		pr_debug("setting streaming_enabled to false.\n");
-	}
 	android_unbind_enabled_functions(dev, c);
 }
 

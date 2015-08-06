@@ -261,6 +261,8 @@ void tune_lmk_param(int *other_free, int *other_file, struct shrink_control *sc)
 	}
 }
 
+#define REVERT_ADJ(x)  (x * (-OOM_DISABLE + 1) / OOM_SCORE_ADJ_MAX)
+
 static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 {
 	struct task_struct *tsk;
@@ -301,7 +303,7 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		array_size = lowmem_minfree_size;
 	for (i = 0; i < array_size; i++) {
 		minfree = lowmem_minfree[i];
-		if (other_file < minfree) {
+		if (other_free < minfree && other_file < minfree) {
 			min_score_adj = lowmem_adj[i];
 			break;
 		}
@@ -367,6 +369,30 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 			    tasksize <= selected_tasksize)
 				continue;
 		}
+
+#ifdef CONFIG_LMK_ZYGOTE_PROTECT
+		
+		if (!strncmp("main",p->comm,4) && p->parent->pid == 1 ) {
+			if (oom_score_adj != OOM_SCORE_ADJ_MIN) {
+				lowmem_print(2, "select but ignore '%s' (%d), oom_score_adj %d, oom_adj %d, size %d, to kill with invalid adj values\n" \
+								"cache %ldkB is below limit %ldkB",
+					p->comm, p->pid, oom_score_adj, REVERT_ADJ(oom_score_adj), tasksize,
+					other_file * (long)(PAGE_SIZE / 1024),
+					minfree * (long)(PAGE_SIZE / 1024));
+
+				
+				task_lock(p);
+				p->signal->oom_score_adj = OOM_SCORE_ADJ_MIN;
+				task_unlock(p);
+
+				lowmem_print(2, "reset the '%s' (%d) adj values: oom_score_adj %d, oom_adj %d\n",
+						p->comm, p->pid, OOM_SCORE_ADJ_MIN, REVERT_ADJ(OOM_SCORE_ADJ_MIN));
+
+				continue;
+			}
+		}
+#endif
+
 		selected = p;
 		selected_tasksize = tasksize;
 		selected_oom_score_adj = oom_score_adj;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,6 +25,7 @@
 #define IPA_A7_QMAP_HDR_NAME "ipa_qmap_hdr"
 #define IPA_DFLT_WAN_RT_TBL_NAME "ipa_dflt_wan_rt"
 #define MAX_NUM_Q6_RULE 35
+#define MAX_NUM_QMI_RULE_CACHE 10
 #define DEV_NAME "ipa-wan"
 #define SUBSYS_MODEM "modem"
 
@@ -32,6 +33,19 @@
 	pr_debug(DEV_NAME " %s:%d " fmt, __func__, __LINE__, ## args)
 #define IPAWANERR(fmt, args...) \
 	pr_err(DEV_NAME " %s:%d " fmt, __func__, __LINE__, ## args)
+
+extern struct ipa_qmi_context *ipa_qmi_ctx;
+
+struct ipa_qmi_context {
+struct ipa_ioc_ext_intf_prop q6_ul_filter_rule[MAX_NUM_Q6_RULE];
+u32 q6_ul_filter_rule_hdl[MAX_NUM_Q6_RULE];
+int num_ipa_install_fltr_rule_req_msg;
+struct ipa_install_fltr_rule_req_msg_v01
+		ipa_install_fltr_rule_req_msg_cache[MAX_NUM_QMI_RULE_CACHE];
+int num_ipa_fltr_installed_notif_req_msg;
+struct ipa_fltr_installed_notif_req_msg_v01
+		ipa_fltr_installed_notif_req_msg_cache[MAX_NUM_QMI_RULE_CACHE];
+};
 
 struct rmnet_mux_val {
 	uint32_t  mux_id;
@@ -51,6 +65,11 @@ int qmi_filter_request_send(struct ipa_install_fltr_rule_req_msg_v01 *req);
 /* sending filter-installed-notify-request to modem*/
 int qmi_filter_notify_send(struct ipa_fltr_installed_notif_req_msg_v01 *req);
 
+int qmi_enable_force_clear_datapath_send(
+	struct ipa_enable_force_clear_datapath_req_msg_v01 *req);
+int qmi_disable_force_clear_datapath_send(
+	struct ipa_disable_force_clear_datapath_req_msg_v01 *req);
+
 int copy_ul_filter_rule_to_ipa(struct ipa_install_fltr_rule_req_msg_v01
 		*rule_req, uint32_t *rule_hdl);
 
@@ -63,6 +82,8 @@ void wan_ioctl_stop_qmi_messages(void);
 void wan_ioctl_enable_qmi_messages(void);
 
 void wan_ioctl_deinit(void);
+
+void ipa_qmi_stop_workqueues(void);
 
 extern struct elem_info ipa_init_modem_driver_req_msg_data_v01_ei[];
 extern struct elem_info ipa_init_modem_driver_resp_msg_data_v01_ei[];
@@ -89,5 +110,4 @@ struct ipa_rmnet_context {
 };
 
 extern struct ipa_rmnet_context ipa_rmnet_ctx;
-#endif /* IPA_QMI_SERVICE_H
- */
+#endif /* IPA_QMI_SERVICE_H */

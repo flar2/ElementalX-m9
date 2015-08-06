@@ -58,6 +58,7 @@ static unsigned int debug_quirks2;
 extern struct scatterlist	*cur_sg;
 extern struct scatterlist	*prev_sg;
 extern struct scatterlist *mmc_alloc_sg(int sg_len, int *err);
+extern unsigned int		disable_auto_sd;
 
 static void sdhci_finish_data(struct sdhci_host *);
 
@@ -968,8 +969,14 @@ static void sdhci_set_transfer_mode(struct sdhci_host *host,
 
 	if (data->flags & MMC_DATA_READ) {
 		mode |= SDHCI_TRNS_READ;
-		if (host->ops->toggle_cdr)
-			host->ops->toggle_cdr(host, true);
+		if (host->ops->toggle_cdr) {
+			if ((cmd->opcode == MMC_SEND_TUNING_BLOCK_HS200) ||
+				(cmd->opcode == MMC_SEND_TUNING_BLOCK_HS400) ||
+				(cmd->opcode == MMC_SEND_TUNING_BLOCK))
+				host->ops->toggle_cdr(host, false);
+			else
+				host->ops->toggle_cdr(host, true);
+		}
 	}
 	if (host->ops->toggle_cdr && (data->flags & MMC_DATA_WRITE))
 		host->ops->toggle_cdr(host, false);
@@ -1360,14 +1367,46 @@ static int sdhci_set_power(struct sdhci_host *host, unsigned short power)
 	return power;
 }
 
+#ifdef CONFIG_SMP
+static void sdhci_set_pmqos_req_type(struct sdhci_host *host, bool enable)
+{
+	if (host->pm_qos_req_dma.type == PM_QOS_REQ_AFFINE_IRQ) {
+		host->pm_qos_req_dma.irq = host->irq;
+	} else if (host->pm_qos_req_dma.type == PM_QOS_REQ_AFFINE_CORES) {
+		if (enable) {
+			if (current_thread_info()->cpu < 4)
+				host->pm_qos_index = SDHCI_LITTLE_CLUSTER;
+			else
+				host->pm_qos_index = SDHCI_BIG_CLUSTER;
+		}
+		cpumask_bits(&host->pm_qos_req_dma.cpus_affine)[0] =
+			host->cpu_affinity_mask[host->pm_qos_index];
+	}
+}
+#else
+static void sdhci_set_pmqos_req_type(struct sdhci_host *host, bool enable)
+{
+}
+#endif
+
 
 static int sdhci_enable(struct mmc_host *mmc)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
 
-	if (host->cpu_dma_latency_us)
-		pm_qos_update_request(&host->pm_qos_req_dma,
-					host->cpu_dma_latency_us);
+	if (unlikely(!host->cpu_dma_latency_us))
+		goto platform_bus_vote;
+
+	if (host->cpu_dma_latency_tbl_sz > 2)
+		host->pm_qos_index = host->power_policy;
+
+	sdhci_set_pmqos_req_type(host, true);
+	pm_qos_update_request(&host->pm_qos_req_dma,
+		host->cpu_dma_latency_us[host->pm_qos_index]);
+	if (host->pm_qos_req_dma.type == PM_QOS_REQ_AFFINE_CORES)
+		irq_set_affinity(host->irq, &host->pm_qos_req_dma.cpus_affine);
+
+platform_bus_vote:
 	if (host->ops->platform_bus_voting)
 		host->ops->platform_bus_voting(host, 1);
 
@@ -1378,16 +1417,22 @@ static int sdhci_disable(struct mmc_host *mmc)
 {
 	struct sdhci_host *host = mmc_priv(mmc);
 
-	if (host->cpu_dma_latency_us) {
-		if (host->power_policy == SDHCI_PERFORMANCE_MODE)
-			pm_qos_update_request_timeout(&host->pm_qos_req_dma,
-					host->cpu_dma_latency_us,
-					host->pm_qos_timeout_us);
-		else
-			pm_qos_update_request(&host->pm_qos_req_dma,
-					PM_QOS_DEFAULT_VALUE);
-	}
+	if (unlikely(!host->cpu_dma_latency_us))
+		goto platform_bus_vote;
 
+	if (host->cpu_dma_latency_tbl_sz > 2)
+		host->pm_qos_index = host->power_policy;
+
+	sdhci_set_pmqos_req_type(host, false);
+	if (host->power_policy == SDHCI_POWER_SAVE_MODE)
+		pm_qos_update_request(&host->pm_qos_req_dma,
+			PM_QOS_DEFAULT_VALUE);
+	else
+		pm_qos_update_request_timeout(&host->pm_qos_req_dma,
+			host->cpu_dma_latency_us[host->pm_qos_index],
+			host->pm_qos_timeout_us);
+
+platform_bus_vote:
 	if (host->ops->platform_bus_voting)
 		host->ops->platform_bus_voting(host, 0);
 
@@ -1408,6 +1453,9 @@ static int sdhci_notify_load(struct mmc_host *mmc, enum mmc_load state)
 	switch (state) {
 	case MMC_LOAD_HIGH:
 		sdhci_update_power_policy(host, SDHCI_PERFORMANCE_MODE);
+		break;
+	case MMC_LOAD_INIT:
+		sdhci_update_power_policy(host, SDHCI_PERFORMANCE_MODE_INIT);
 		break;
 	case MMC_LOAD_LOW:
 		sdhci_update_power_policy(host, SDHCI_POWER_SAVE_MODE);
@@ -3137,18 +3185,6 @@ static int sdhci_is_adma2_64bit(struct sdhci_host *host)
 }
 #endif
 
-#ifdef CONFIG_SMP
-static void sdhci_set_pmqos_req_type(struct sdhci_host *host)
-{
-	if (host->pm_qos_req_dma.type == PM_QOS_REQ_AFFINE_IRQ)
-		host->pm_qos_req_dma.irq = host->irq;
-}
-#else
-static void sdhci_set_pmqos_req_type(struct sdhci_host *host)
-{
-}
-#endif
-
 int sdhci_add_host(struct sdhci_host *host)
 {
 	struct mmc_host *mmc;
@@ -3300,6 +3336,7 @@ int sdhci_add_host(struct sdhci_host *host)
 			>> SDHCI_CLOCK_BASE_SHIFT;
 
 	host->max_clk *= 1000000;
+	sdhci_update_power_policy(host, SDHCI_PERFORMANCE_MODE_INIT);
 	if (host->max_clk == 0 || host->quirks &
 			SDHCI_QUIRK_CAP_CLOCK_BASE_BROKEN) {
 		if (!host->ops->get_max_clock) {
@@ -3377,8 +3414,11 @@ int sdhci_add_host(struct sdhci_host *host)
 	if ((host->quirks & SDHCI_QUIRK_BROKEN_CARD_DETECTION) &&
 	    !(host->mmc->caps & MMC_CAP_NONREMOVABLE) &&
 	    (mmc_gpio_get_cd(host->mmc) < 0) &&
-	    !(host->mmc->caps2 & MMC_CAP2_NONHOTPLUG))
-		mmc->caps |= MMC_CAP_NEEDS_POLL;
+	    !(host->mmc->caps2 & MMC_CAP2_NONHOTPLUG)) {
+		if (!disable_auto_sd) 
+			mmc->caps |= MMC_CAP_NEEDS_POLL;
+	}
+
 	
 	host->vqmmc = regulator_get(mmc_dev(mmc), "vqmmc");
 	if (IS_ERR_OR_NULL(host->vqmmc)) {
@@ -3638,7 +3678,7 @@ int sdhci_add_host(struct sdhci_host *host)
 
 	if (host->cpu_dma_latency_us) {
 		host->pm_qos_timeout_us = 10000; 
-		sdhci_set_pmqos_req_type(host);
+		sdhci_set_pmqos_req_type(host, true);
 		pm_qos_add_request(&host->pm_qos_req_dma,
 				PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
 
@@ -3705,6 +3745,7 @@ void sdhci_remove_host(struct sdhci_host *host, int dead)
 		spin_unlock_irqrestore(&host->lock, flags);
 	}
 
+	sdhci_update_power_policy(host, SDHCI_POWER_SAVE_MODE);
 	sdhci_disable_card_detection(host);
 
 	if (host->cpu_dma_latency_us)
