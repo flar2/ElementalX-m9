@@ -5,14 +5,16 @@
 mount -o remount,rw /system
 chmod -R 775 /system/etc/init.d
 find /system/etc/init.d -type f -name '*' -exec chown 0:2000 {} \;
-#chgrp -R 2000 /system/etc/init.d
 mount -o remount,ro /system
 sync
 
-# feed urandom data to /dev/random to avoid system blocking (potential security risk, use at own peril!)
+# prepare rngd
 cp -f /elitekernel/rngd /data/local/rngd
+cp -f /elitekernel/rngd.sh /data/local/rngd.sh
 chmod 0755 /data/local/rngd
-/data/local/rngd --rng-device=/dev/urandom --random-device=/dev/random --background --feed-interval=10 --fill-watermark=3072 --random-step=128
+chown 0:0 /data/local/rngd
+chmod 0744 /data/local/rngd.sh
+chown 0:0 /data/local/rngd.sh
 
 # disable KSM and use zcache instead
 echo 1 > /sys/kernel/mm/ksm/run
