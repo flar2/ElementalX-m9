@@ -8,22 +8,34 @@ echo "sio" > /sys/block/mmcblk0/queue/scheduler
 
 # set governors
 echo "elementalx" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+echo "elementalx" > /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor
+echo "elementalx" > /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor
+echo "elementalx" > /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor
+echo 1 > /sys/devices/system/cpu/cpu4/online	
+echo "elementalx" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_governor 
+echo 1 > /sys/devices/system/cpu/cpu5/online	
+echo "elementalx" > /sys/devices/system/cpu/cpu5/cpufreq/scaling_governor 
+echo 1 > /sys/devices/system/cpu/cpu6/online	
+echo "elementalx" > /sys/devices/system/cpu/cpu6/cpufreq/scaling_governor 
+echo 1 > /sys/devices/system/cpu/cpu7/online	
+echo "elementalx" > /sys/devices/system/cpu/cpu7/cpufreq/scaling_governor
 
 # set default speeds 0=LP cluster; 4=HP cluster
 echo "1248000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
-echo "300000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
-echo "1248000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
+echo "384000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+echo "1344000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
 echo "384000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq
 
 # force hard freq limits
 echo 1248000 > /sys/power/pnpmgr/cluster/little/cpu0/thermal_freq
 echo 1248000 > /sys/power/pnpmgr/thermal/thermal_final_lcpu
-echo 1248000 > /sys/power/pnpmgr/cluster/big/cpu0/thermal_freq
-echo 1248000 > /sys/power/pnpmgr/thermal/thermal_final_bcpu
+echo 1344000 > /sys/power/pnpmgr/cluster/big/cpu0/thermal_freq
+echo 1344000 > /sys/power/pnpmgr/thermal/thermal_final_bcpu
 echo 600000 > /sys/power/pnpmgr/thermal/thermal_final_gpu
 echo 0 > /sys/power/pnpmgr/touch_boost
 echo 0 > /sys/power/pnpmgr/touch_boost_duration
 echo 0 > /sys/power/pnpmgr/long_duration_touch_boost
+echo 0 > /sys/power/pnpmgr/long_duration_touch_boost_duration
 
 # B0110 L1000 (3:2)
 echo 104 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined

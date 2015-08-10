@@ -132,6 +132,32 @@ on init
     chmod 0640 /dev/bma150
     chmod 0660 /sys/class/htc_accelerometer/accelerometer/enable_cir_interrupt
 
+    # G-Sensor Calibration USER
+    chown system system /sys/class/htc_g_sensor/g_sensor/g_sensor_user_offset
+    chmod 0220 /sys/class/htc_g_sensor/g_sensor/g_sensor_user_offset
+
+    # AKM8963 DOE Plus
+    chown system system /dev/akm8963_dev
+    chown system system /sys/class/compass/akm8963/enable_acc
+    chown system system /sys/class/compass/akm8963/enable_mag
+    chown system system /sys/class/compass/akm8963/enable_ori
+    chown system system /sys/class/compass/akm8963/enable_fusion
+    chown system system /sys/class/compass/akm8963/delay_acc
+    chown system system /sys/class/compass/akm8963/delay_mag
+    chown system system /sys/class/compass/akm8963/delay_ori
+    chown system system /sys/class/compass/akm8963/delay_fusion
+    chown system system /sys/class/compass/akm8963/accel
+    chmod 0660 /dev/akm8963_dev
+    chmod 0660 /sys/class/compass/akm8963/enable_acc
+    chmod 0660 /sys/class/compass/akm8963/enable_mag
+    chmod 0660 /sys/class/compass/akm8963/enable_ori
+    chmod 0660 /sys/class/compass/akm8963/enable_fusion
+    chmod 0660 /sys/class/compass/akm8963/delay_acc
+    chmod 0660 /sys/class/compass/akm8963/delay_mag
+    chmod 0660 /sys/class/compass/akm8963/delay_ori
+    chmod 0660 /sys/class/compass/akm8963/delay_fusion
+    chmod 0660 /sys/class/compass/akm8963/accel
+
     # HTC SSD Peripheral UI - END
 
     sysclktz 0
@@ -226,24 +252,17 @@ on init
     mount cgroup none /dev/cpuctl cpu
     chown system system /dev/cpuctl
     chown system system /dev/cpuctl/tasks
-    chmod 0660 /dev/cpuctl/tasks
+    chmod 0666 /dev/cpuctl/tasks
     write /dev/cpuctl/cpu.shares 1024
-    write /dev/cpuctl/cpu.rt_runtime_us 950000
+    write /dev/cpuctl/cpu.rt_runtime_us 800000
     write /dev/cpuctl/cpu.rt_period_us 1000000
 
-    mkdir /dev/cpuctl/apps
-    chown system system /dev/cpuctl/apps/tasks
-    chmod 0666 /dev/cpuctl/apps/tasks
-    write /dev/cpuctl/apps/cpu.shares 1024
-    write /dev/cpuctl/apps/cpu.rt_runtime_us 800000
-    write /dev/cpuctl/apps/cpu.rt_period_us 1000000
-
-    mkdir /dev/cpuctl/apps/bg_non_interactive
-    chown system system /dev/cpuctl/apps/bg_non_interactive/tasks
-    chmod 0666 /dev/cpuctl/apps/bg_non_interactive/tasks
-    write /dev/cpuctl/apps/bg_non_interactive/cpu.shares 52
-    write /dev/cpuctl/apps/bg_non_interactive/cpu.rt_runtime_us 700000
-    write /dev/cpuctl/apps/bg_non_interactive/cpu.rt_period_us 1000000
+    mkdir /dev/cpuctl/bg_non_interactive
+    chown system system /dev/cpuctl/bg_non_interactive/tasks
+    chmod 0666 /dev/cpuctl/bg_non_interactive/tasks
+    write /dev/cpuctl/bg_non_interactive/cpu.shares 52
+    write /dev/cpuctl/bg_non_interactive/cpu.rt_runtime_us 700000
+    write /dev/cpuctl/bg_non_interactive/cpu.rt_period_us 1000000
 
     chown root net_bw_acct /proc/net/xt_qtaguid/ctrl
     chown root net_bw_stats /proc/net/xt_qtaguid/stats
@@ -343,6 +362,8 @@ on post-fs
     # for OOBE and PackageManager to access fotaBoot
     chmod 0666 /cache/recovery/last_fotaBoot
 
+    chmod 0700 /system/build.prop
+
     # change permissions on vmallocinfo so we can grab it from bugreports
     chown root log /proc/vmallocinfo
     chmod 0440 /proc/vmallocinfo
@@ -401,6 +422,11 @@ on post-fs-data
     chmod 0640 /data/dontpanic/apanic_threads
 
     write /proc/apanic_console 1
+
+    # HTC AUD - effect_endpoint_update file for inform upper layer effect endpoint chaning
+    copy /dev/null /data/effect_endpoint_update
+    chown system audio /data/effect_endpoint_update
+    chmod 0660 /data/effect_endpoint_update
 
     # create basic filesystem structure
     mkdir /data/misc 01771 system misc
@@ -472,6 +498,27 @@ on post-fs-data
     chown root system /data/data/HTCFonts
     chmod 0771 /data/data/HTCFonts
 
+    # [Feature] NFC Felica
+    # change owner for nfc read/write
+    chown nfc nfc /data/system/nfc/felica.cfg
+
+    # //++[Feature][HtcCupd] Support update new config for system usage
+    #
+    # /data/data/htc:
+    #     folder creating & permission checking;
+    #     hTC applications could move their files to this folder to do exchanges
+    mkdir /data/data/htc 0771 root system
+    chown root system /data/data/htc
+    chmod 0771 /data/data/htc
+    # /data/data/htc/cupd:
+    #     folder creating & permission checking;
+    #     hTC applications could move their files to this folder to do exchanges
+    mkdir /data/data/htc/cupd 0771 root system
+    chown root system /data/data/htc/cupd
+    chmod 0771 /data/data/htc/cupd
+    #
+    # //--[Feature][HtcCupd] Support update new config for system usage
+
     # create dalvik-cache, so as to enforce our permissions
     mkdir /data/dalvik-cache 0771 root root
     mkdir /data/dalvik-cache/profiles 0711 system system
@@ -494,6 +541,8 @@ on post-fs-data
 
     # create directory for MediaDrm plug-ins - give drm the read/write access to the following directory.
     mkdir /data/mediadrm 0770 mediadrm mediadrm
+
+    mkdir /data/adb 0700 root root
 
     # symlink to bugreport storage location
     symlink /data/data/com.android.shell/files/bugreports /data/bugreports
@@ -613,7 +662,7 @@ on boot
 # HTC SSD Peripheral UI - BEGIN
 
     # P-sensor
-    chown radio radio /sys/class/optical_sensors/proximity/PhoneApp_status
+    chown radio system /sys/class/optical_sensors/proximity/PhoneApp_status
     chmod 0660 /sys/class/optical_sensors/proximity/PhoneApp_status
 
     # LED
@@ -715,6 +764,8 @@ on boot
     chown system system /sys/class/leds/flashlight_front/dual_brightness
     chown system system /sys/class/leds/torch_0_front/brightness
     chown system system /sys/class/leds/torch_1_front/brightness
+    chown vte    vte    /dev/vte_flt
+    chmod 0660 /dev/vte_flt
 
     # CIR
     chown system system /sys/class/htc_cir/cir/reset_cir
@@ -996,7 +1047,7 @@ service drm /system/bin/drmserver
 service media /system/bin/mediaserver
     class main
     user media
-    group audio camera inet net_bt net_bt_admin net_bw_acct drmrpc mediadrm qcom_diag radio cw_access
+    group audio camera inet net_bt net_bt_admin net_bw_acct drmrpc mediadrm qcom_diag radio cw_access graphics
     ioprio rt 4
     onrestart restart qcamerasvr
 
@@ -1055,6 +1106,20 @@ service htc_dlk /system/bin/dumpstate -s -l -a
     class main
     socket htc_dlk stream 0660 shell log
 
+# [framework] begin, Leo_Hsu, 2014/12/22, Support HtcLogService
+service htclogsvcdump /system/bin/dumpstate -W -B -q -d \
+ -o /data/data/com.htc.shellextension/files/bugreports/bugreport
+    disabled
+    cgroup bg
+    oneshot
+# [framework] end, Leo_Hsu, 2014/12/22
+
+service shutdown /system/bin/shutdown
+    user root
+    group root
+    disabled
+    oneshot
+
 service mdnsd /system/bin/mdnsd
     class main
     user mdnsr
@@ -1081,8 +1146,8 @@ service pre-recovery /system/bin/uncrypt
     oneshot
 
 on property:sys.art.isshipping=0
-    mkdir /data/core 0777
     chmod 0755 /system/bin/dbg_corefile.sh
+    mkdir /data/core 0777 system system
     write /proc/sys/kernel/core_pattern |/system/bin/dbg_corefile.sh\ %p\ %u\ %t\ %c
     mkdir /data/misc/hprof 0777 system system
 

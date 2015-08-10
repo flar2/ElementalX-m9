@@ -935,7 +935,7 @@ static int htc_battery_get_property(struct power_supply *psy,
 			if (battery_core_info.rep.temp_fault == 1)
 				val->intval =  POWER_SUPPLY_HEALTH_OVERHEAT;
 		}
-		else if (battery_core_info.rep.batt_temp >= 480 ||
+		else if (battery_core_info.rep.batt_temp >= 445 ||
 			battery_core_info.rep.batt_temp <= 0)
 			val->intval =  POWER_SUPPLY_HEALTH_OVERHEAT;
 		break;
@@ -1300,7 +1300,7 @@ void htc_battery_update_batt_uevent(void)
 	BATT_LOG("%s: power_supply_changed: battery", __func__);
 }
 
-static unsigned int batt_thermal_thres_val = 400;
+static unsigned int batt_thermal_thres_val = 385;
 module_param_named(batt_thermal_threshold, batt_thermal_thres_val,
 														uint, S_IRUGO | S_IWUSR);
 
