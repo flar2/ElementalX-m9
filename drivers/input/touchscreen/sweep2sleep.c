@@ -25,7 +25,7 @@ MODULE_LICENSE("GPL");
 
 // 1=sweep right, 2=sweep left, 3=both
 static int s2s_switch = 2;
-
+static int s2s_y_limit = S2S_Y_LIMIT;
 static int touch_x = 0, touch_y = 0, firstx = 0;
 static bool touch_x_called = false, touch_y_called = false;
 static bool scr_on_touch = false, barrier[2] = {false, false};
@@ -181,7 +181,10 @@ static void s2s_input_event(struct input_handle *handle, unsigned int type,
 }
 
 static int input_dev_filter(struct input_dev *dev) {
-	if (strstr(dev->name, "synaptics_dsx") || strstr(dev->name, "max1187x_touchscreen_0")) {
+	if (strstr(dev->name, "synaptics_dsx")) {
+		return 0;
+	} else if (strstr(dev->name, "max1187x_touchscreen_0")) {
+		s2s_y_limit = S2S_Y_MAX - 90;
 		return 0;
 	} else {
 		return 1;
