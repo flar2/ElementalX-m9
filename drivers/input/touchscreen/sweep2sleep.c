@@ -89,18 +89,18 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		if ((barrier[0] == true) ||
 		   ((x > prevx) &&
 		    (x < nextx) &&
-		    (y > S2S_Y_LIMIT))) {
+		    (y > s2s_y_limit))) {
 			prevx = nextx;
 			nextx += 200;
 			barrier[0] = true;
 			if ((barrier[1] == true) ||
 			   ((x > prevx) &&
 			    (x < nextx) &&
-			    (y > S2S_Y_LIMIT))) {
+			    (y > s2s_y_limit))) {
 				prevx = nextx;
 				barrier[1] = true;
 				if ((x > prevx) &&
-				    (y > S2S_Y_LIMIT)) {
+				    (y > s2s_y_limit)) {
 					if (x > (nextx + 180)) {
 						if (exec_count) {
 							sweep2sleep_pwrtrigger();
@@ -118,18 +118,18 @@ static void detect_sweep2sleep(int x, int y, bool st)
 		if ((barrier[0] == true) ||
 		   ((x < prevx) &&
 		    (x > nextx) &&
-		    (y > S2S_Y_LIMIT))) {
+		    (y > s2s_y_limit))) {
 			prevx = nextx;
 			nextx -= 200;
 			barrier[0] = true;
 			if ((barrier[1] == true) ||
 			   ((x < prevx) &&
 			    (x > nextx) &&
-			    (y > S2S_Y_LIMIT))) {
+			    (y > s2s_y_limit))) {
 				prevx = nextx;
 				barrier[1] = true;
 				if ((x < prevx) &&
-				    (y > S2S_Y_LIMIT)) {
+				    (y > s2s_y_limit)) {
 					if (x < (nextx - 180)) {
 						if (exec_count) {
 							sweep2sleep_pwrtrigger();
