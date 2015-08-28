@@ -935,7 +935,7 @@ static int htc_battery_get_property(struct power_supply *psy,
 			if (battery_core_info.rep.temp_fault == 1)
 				val->intval =  POWER_SUPPLY_HEALTH_OVERHEAT;
 		}
-		else if (battery_core_info.rep.batt_temp >= 445 ||
+		else if (battery_core_info.rep.batt_temp >= 435 ||
 			battery_core_info.rep.batt_temp <= 0)
 			val->intval =  POWER_SUPPLY_HEALTH_OVERHEAT;
 		break;

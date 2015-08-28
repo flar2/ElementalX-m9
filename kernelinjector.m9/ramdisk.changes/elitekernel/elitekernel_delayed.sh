@@ -21,29 +21,38 @@ echo 1 > /sys/devices/system/cpu/cpu7/online
 echo "elementalx" > /sys/devices/system/cpu/cpu7/cpufreq/scaling_governor
 
 # set default speeds 0=LP cluster; 4=HP cluster
-echo "1248000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+echo "1344000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
 echo "384000" > /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
-echo "1344000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
+echo "1440000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_max_freq
 echo "384000" > /sys/devices/system/cpu/cpu4/cpufreq/scaling_min_freq
 
 # force hard freq limits
-echo 1248000 > /sys/power/pnpmgr/cluster/little/cpu0/thermal_freq
-echo 1248000 > /sys/power/pnpmgr/thermal/thermal_final_lcpu
-echo 1344000 > /sys/power/pnpmgr/cluster/big/cpu0/thermal_freq
-echo 1344000 > /sys/power/pnpmgr/thermal/thermal_final_bcpu
-echo 600000 > /sys/power/pnpmgr/thermal/thermal_final_gpu
+echo 1344000 > /sys/power/pnpmgr/cluster/little/cpu0/thermal_freq
+echo 1344000 > /sys/power/pnpmgr/thermal/thermal_final_lcpu
+echo 1440000 > /sys/power/pnpmgr/cluster/big/cpu0/thermal_freq
+echo 1440000 > /sys/power/pnpmgr/thermal/thermal_final_bcpu
+echo 630000 > /sys/power/pnpmgr/thermal/thermal_final_gpu
 echo 0 > /sys/power/pnpmgr/touch_boost
 echo 0 > /sys/power/pnpmgr/touch_boost_duration
 echo 0 > /sys/power/pnpmgr/long_duration_touch_boost
 echo 0 > /sys/power/pnpmgr/long_duration_touch_boost_duration
 
+echo 1 > /sys/devices/system/cpu/cpu0/sched_prefer_idle
+echo 1 > /sys/devices/system/cpu/cpu1/sched_prefer_idle
+echo 1 > /sys/devices/system/cpu/cpu2/sched_prefer_idle
+echo 1 > /sys/devices/system/cpu/cpu3/sched_prefer_idle
+echo 960000 > /sys/devices/system/cpu/cpu0/sched_mostly_idle_freq
+echo 960000 > /sys/devices/system/cpu/cpu1/sched_mostly_idle_freq
+echo 960000 > /sys/devices/system/cpu/cpu2/sched_mostly_idle_freq
+echo 960000 > /sys/devices/system/cpu/cpu3/sched_mostly_idle_freq
+
 # B0110 L1000 (3:2)
-echo 104 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
+#echo 104 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
 
 # B1110 L1000 (3:1)
 # echo 232 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
 # B1010 L1010 (2:2)
-# echo 170 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
+echo 170 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
 # B0000 L0000 (4:4)
 # echo 0 > /sys/power/pnpmgr/thermal/thermal_cpus_offlined
 
@@ -52,10 +61,10 @@ echo 40 > /sys/devices/system/cpu/cpu1/sched_budget
 echo 40 > /sys/devices/system/cpu/cpu2/sched_budget
 echo 40 > /sys/devices/system/cpu/cpu3/sched_budget
 
-echo 100 > /sys/devices/system/cpu/cpu4/sched_budget
-echo 100 > /sys/devices/system/cpu/cpu5/sched_budget
-echo 100 > /sys/devices/system/cpu/cpu6/sched_budget
-echo 100 > /sys/devices/system/cpu/cpu7/sched_budget
+echo 999999 > /sys/devices/system/cpu/cpu4/sched_budget
+echo 999999 > /sys/devices/system/cpu/cpu5/sched_budget
+echo 999999 > /sys/devices/system/cpu/cpu6/sched_budget
+echo 999999 > /sys/devices/system/cpu/cpu7/sched_budget
 
 # set vm tweaks
 sysctl -w vm.min_free_kbytes=8192
@@ -79,6 +88,14 @@ echo "80" > /sys/block/mmcblk0/queue/iosched/sync_read_expire
 echo "400" > /sys/block/mmcblk0/queue/iosched/sync_write_expire
 echo "240" > /sys/block/mmcblk0/queue/iosched/async_read_expire
 echo "800" > /sys/block/mmcblk0/queue/iosched/async_write_expire
+
+# reapply delayed
+echo "1024" > /sys/block/mmcblk0/bdi/read_ahead_kb;
+echo "1024" > /sys/block/mmcblk0/queue/read_ahead_kb;
+echo "1024" > /sys/block/mmcblk1/bdi/read_ahead_kb;
+echo "1024" > /sys/block/mmcblk1/queue/read_ahead_kb;
+echo "1024" > /sys/block/mmcblk0rpmb/bdi/read_ahead_kb;
+echo "1024" > /sys/block/mmcblk0rpmb/queue/read_ahead_kb;
 
 # temporary workaround for stock OTA updater wakelock bugs
 pm disable com.google.android.gms/com.google.android.gms.update.SystemUpdateService\$Receiver

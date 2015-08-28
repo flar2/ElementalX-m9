@@ -132,8 +132,8 @@ static int context_state;
 #define BATT_TIMER_CHECK_TIME				(360)
 #define BATT_TIMER_UPDATE_TIME				(60)
 
-#define SMALL_CHG_TEMP_SOFT     390
-#define SMALL_CHG_TEMP_HEAVY    450
+#define SMALL_CHG_TEMP_SOFT     385
+#define SMALL_CHG_TEMP_HEAVY    435
 
 #define HTC_EXT_UNKNOWN_USB_CHARGER		(1<<0)
 #define HTC_EXT_CHG_UNDER_RATING		(1<<1)
@@ -3442,7 +3442,7 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 #if defined(CONFIG_MACH_B2_WLJ)
 	.usb_temp_monitor_enable = 1,
 	.usb_temp_overheat_increase_threshold = 25, 
-	.normal_usb_temp_threshold = 450, 
+	.normal_usb_temp_threshold = 435, 
 	.usb_temp_overheat_threshold = 650,
 #endif
 
