@@ -34,6 +34,8 @@ echo "1024" > /sys/block/mmcblk1/queue/read_ahead_kb;
 echo "1024" > /sys/block/mmcblk0rpmb/bdi/read_ahead_kb;
 echo "1024" > /sys/block/mmcblk0rpmb/queue/read_ahead_kb;
 
+echo "0f" > /proc/irq/default_smp_affinity
+
 # activate delayed config to override ROM
 /system/xbin/busybox nohup /system/bin/sh /elitekernel/elitekernel_delayed.sh 2>&1 >/dev/null &
 
