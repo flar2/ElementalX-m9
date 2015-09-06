@@ -73,6 +73,7 @@
 #define BLANK_FLAG_ULP	FB_BLANK_NORMAL
 
 static int backlight_dimmer = 0;
+static int backlight_min = 5;
 
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
@@ -284,8 +285,8 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 		bl_lvl -= (20 * backlight_dimmer);
 	}
 
-	if (bl_lvl < 5)
-		bl_lvl = 5;
+	if (bl_lvl < backlight_min)
+		bl_lvl = backlight_min;
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
@@ -340,9 +341,39 @@ static struct kobj_attribute backlight_dimmer_attribute =
 		backlight_dimmer_show,
 		backlight_dimmer_store);
 
+static ssize_t backlight_min_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", backlight_min);
+}
+
+static ssize_t backlight_min_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int ret;
+	unsigned long input;
+
+	ret = kstrtoul(buf, 0, &input);
+	if (ret < 0)
+		return ret;
+
+	backlight_min = input;
+
+	if (backlight_min < 5 || backlight_min > 4095)
+		backlight_min = 5;
+
+	return count;
+}
+
+static struct kobj_attribute backlight_min_attribute =
+	__ATTR(backlight_min, 0666,
+		backlight_min_show,
+		backlight_min_store);
+
 static struct attribute *backlight_dimmer_attrs[] =
 	{
 		&backlight_dimmer_attribute.attr,
+		&backlight_min_attribute.attr,
 		NULL,
 	};
 
