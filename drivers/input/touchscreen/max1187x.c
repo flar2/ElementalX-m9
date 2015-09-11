@@ -107,7 +107,11 @@ do {                                            \
 #define SHIFT_BITS 10
 
 static u32 debug_mask = 0x00080000;
+#ifdef CONFIG_SWEEP2SLEEP
+struct kobject *android_touch_kobj;
+#else
 static struct kobject *android_touch_kobj;
+#endif
 static struct data *gl_ts;
 static unsigned int support_htc_event_flag = 0;
 
