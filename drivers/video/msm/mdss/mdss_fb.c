@@ -75,6 +75,16 @@
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
 
+#define BRI_SETTING_MIN                 30
+#define BRI_SETTING_DEF                 142
+#define BRI_SETTING_MAX			255
+#define BRI_SETTING_LOW                 1
+#define BRI_SETTING_MID                 45
+#define BRI_SETTING_HIGH		175
+
+bool backlight_dimmer = false;
+module_param(backlight_dimmer, bool, 0755);
+
 static u32 mdss_fb_pseudo_palette[16] = {
 	0x00000000, 0xffffffff, 0xffffffff, 0xffffffff,
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
@@ -284,7 +294,25 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
-	bl_lvl = htc_backlight_transfer_bl_brightness(value, mfd->panel_info, true);
+	if (backlight_dimmer) {
+
+		if (value > 0 && value < BRI_SETTING_MIN) {
+			bl_lvl = 1;
+		} else if (value >= BRI_SETTING_MIN && value <= BRI_SETTING_DEF) {
+			bl_lvl = (value - BRI_SETTING_MIN) * ( BRI_SETTING_MID -  BRI_SETTING_LOW) /
+			                (BRI_SETTING_DEF - BRI_SETTING_MIN) +  BRI_SETTING_LOW;
+		} else if (value > BRI_SETTING_DEF && value <= BRI_SETTING_MAX) {
+			bl_lvl = (value - BRI_SETTING_DEF) * ( BRI_SETTING_HIGH -  BRI_SETTING_MID) /
+                			(BRI_SETTING_MAX - BRI_SETTING_DEF) +  BRI_SETTING_MID;
+		} else if (value > BRI_SETTING_MAX) {
+			bl_lvl = MDSS_MAX_BL_BRIGHTNESS;
+		}
+
+		
+	} else {
+		bl_lvl = htc_backlight_transfer_bl_brightness(value, mfd->panel_info, true);
+	}
+
 	if (bl_lvl < 0) {
 		MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
 							MDSS_MAX_BL_BRIGHTNESS);
