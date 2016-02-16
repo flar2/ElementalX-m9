@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -231,11 +231,11 @@ int msm_pcm_routing_reg_phy_stream(int fedai_id, int perf_mode, int dspst_id,
 				   int stream_type);
 void msm_pcm_routing_reg_psthr_stream(int fedai_id, int dspst_id,
 		int stream_type);
-int msm_pcm_routing_reg_phy_compr_stream(int fedai_id, bool perf_mode,
+int msm_pcm_routing_reg_phy_compr_stream(int fedai_id, int perf_mode,
 					  int dspst_id, int stream_type,
 					  uint32_t compr_passthr);
 
-int msm_pcm_routing_reg_phy_stream_v2(int fedai_id, bool perf_mode,
+int msm_pcm_routing_reg_phy_stream_v2(int fedai_id, int perf_mode,
 				      int dspst_id, int stream_type,
 				      struct msm_pcm_routing_evt event_info);
 
@@ -253,6 +253,10 @@ void msm_pcm_routing_release_lock(void);
 
 void msm_pcm_routing_reg_stream_app_type_cfg(int fedai_id, int app_type,
 					int acdb_dev_id, int sample_rate);
+
+int msm_pcm_routing_channel_mixer(int fedai_id, bool perf_mode,
+			int dspst_id, int stream_type, int be_id);
+
 int msm_pcm_routing_get_port(struct snd_pcm_substream *substream, u16 *port_id);
 int htc_adm_effect_control(enum HTC_ADM_EFFECT_ID effect_id, u16 port_id, uint32_t copp_id, uint32_t param_id,
 		uint32_t payload_size, void *payload );

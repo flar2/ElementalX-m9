@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014 - 2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,6 +15,7 @@
 #include "vidc_hfi_api.h"
 #include "msm_vidc_debug.h"
 #include "msm_vidc_dcvs.h"
+#include <soc/qcom/socinfo.h>
 
 #define IS_VALID_DCVS_SESSION(__cur_mbpf, __min_mbpf) \
 		((__cur_mbpf) >= (__min_mbpf))
@@ -175,9 +176,23 @@ void msm_dcvs_init_load(struct msm_vidc_inst *inst)
 
 	dcvs->load = msm_comm_get_inst_load(inst, LOAD_CALC_NO_QUIRKS);
 
-	if (dcvs->load >= DCVS_NOMINAL_LOAD) {
-		dcvs->load_low = DCVS_NOMINAL_LOAD;
-		dcvs->load_high = core->resources.max_load;
+	if (inst->session_type == MSM_VIDC_DECODER) {
+		if (dcvs->load > DCVS_NOMINAL_LOAD) {
+			dcvs->load_low = DCVS_NOMINAL_LOAD;
+			dcvs->load_high = dcvs->load =
+				core->resources.max_load;
+		} else if (dcvs->load > DCVS_SVS_LOAD &&
+				dcvs->load <= DIM_2K30) {
+			dcvs->load_low = DCVS_SVS_LOAD;
+			dcvs->load_high = DCVS_NOMINAL_LOAD;
+			dcvs->load = DCVS_NOMINAL_LOAD;
+		}
+	} else {
+		if (dcvs->load >= DCVS_NOMINAL_LOAD) {
+			dcvs->load_low = DCVS_NOMINAL_LOAD;
+			dcvs->load_high = dcvs->load =
+				core->resources.max_load;
+		}
 	}
 
 	if (inst->session_type == MSM_VIDC_ENCODER)
@@ -476,6 +491,7 @@ bool msm_dcvs_enc_check(struct msm_vidc_inst *inst)
 static int msm_dcvs_check_supported(struct msm_vidc_inst *inst)
 {
 	int rc = 0;
+	int dcvs_2k = 0, dcvs_4k = 0;
 	int num_mbs_per_frame = 0;
 	int instance_count = 0;
 	struct msm_vidc_inst *temp = NULL;
@@ -493,18 +509,48 @@ static int msm_dcvs_check_supported(struct msm_vidc_inst *inst)
 	dcvs = &inst->dcvs;
 	instance_count = msm_dcvs_count_active_instances(core);
 
-	if (instance_count == 1 && inst->session_type == MSM_VIDC_DECODER) {
+	if (instance_count == 1 && inst->session_type == MSM_VIDC_DECODER &&
+		!msm_comm_turbo_session(inst)) {
 		num_mbs_per_frame = msm_dcvs_get_mbs_per_frame(inst);
 		output_buf_req = get_buff_req_buffer(inst,
 			msm_comm_get_hal_output_buffer(inst));
 
 		is_codec_supported =
-			inst->fmts[OUTPUT_PORT]->fourcc == V4L2_PIX_FMT_H264 ||
-			inst->fmts[OUTPUT_PORT]->fourcc ==
-			V4L2_PIX_FMT_H264_NO_SC;
-		if (!is_codec_supported ||
-			!IS_VALID_DCVS_SESSION(num_mbs_per_frame,
-					DCVS_MIN_SUPPORTED_MBPERFRAME))
+			(inst->fmts[OUTPUT_PORT]->fourcc ==
+				V4L2_PIX_FMT_H264) ||
+			(inst->fmts[OUTPUT_PORT]->fourcc ==
+				V4L2_PIX_FMT_HEVC) ||
+			(inst->fmts[OUTPUT_PORT]->fourcc ==
+				V4L2_PIX_FMT_VP8) ||
+			(inst->fmts[OUTPUT_PORT]->fourcc ==
+				V4L2_PIX_FMT_H264_NO_SC);
+		/* 2K DCVS is supported for H264 only on 8992
+		 * 4K DCVS is same as earlier.
+		 */
+		if (socinfo_get_msm_cpu() == MSM_CPU_8992) {
+			if ((inst->fmts[OUTPUT_PORT]->fourcc ==
+				V4L2_PIX_FMT_H264) &&
+				(num_mbs_per_frame ==
+				DCVS_2K_MBPERFRAME))
+				dcvs_2k = 0;
+			if (!is_codec_supported &&
+				!IS_VALID_DCVS_SESSION(num_mbs_per_frame,
+				DCVS_MIN_SUPPORTED_MBPERFRAME))
+				dcvs_4k = -ENOTSUPP;
+			if (num_mbs_per_frame < DCVS_2K_MBPERFRAME)
+				dcvs_2k = dcvs_4k = -ENOTSUPP;
+		}
+
+		if (socinfo_get_msm_cpu() == MSM_CPU_8994) {
+			if (!is_codec_supported &&
+				!IS_VALID_DCVS_SESSION(num_mbs_per_frame,
+				DCVS_MIN_SUPPORTED_MBPERFRAME))
+				dcvs_4k = -ENOTSUPP;
+			if (num_mbs_per_frame <= DCVS_2K_MBPERFRAME)
+				dcvs_2k = dcvs_4k = -ENOTSUPP;
+		}
+
+		if (dcvs_2k || dcvs_4k)
 			return -ENOTSUPP;
 
 		if (!output_buf_req) {
@@ -514,7 +560,8 @@ static int msm_dcvs_check_supported(struct msm_vidc_inst *inst)
 			return -EINVAL;
 		}
 	} else if (instance_count == 1 &&
-			inst->session_type == MSM_VIDC_ENCODER) {
+			inst->session_type == MSM_VIDC_ENCODER &&
+			!msm_comm_turbo_session(inst)) {
 		if (!msm_dcvs_enc_check(inst) ||
 			!inst->dcvs.is_additional_buff_added)
 			return -ENOTSUPP;
@@ -552,8 +599,7 @@ static int msm_dcvs_check_supported(struct msm_vidc_inst *inst)
 	return rc;
 }
 
-int msm_dcvs_get_extra_buff_count(struct msm_vidc_inst *inst,
-					bool is_input_buff)
+int msm_dcvs_get_extra_buff_count(struct msm_vidc_inst *inst)
 {
 	int extra_buffer = 0;
 
@@ -564,18 +610,14 @@ int msm_dcvs_get_extra_buff_count(struct msm_vidc_inst *inst,
 
 	if (inst->session_type == MSM_VIDC_ENCODER) {
 		if (msm_dcvs_enc_check(inst)) {
-			if (is_input_buff && !inst->dcvs.is_input_buff_added)
-				extra_buffer = DCVS_ENC_EXTRA_INPUT_BUFFERS;
-			else if (!is_input_buff &&
-					!inst->dcvs.is_output_buff_added)
+			if (!inst->dcvs.is_additional_buff_added)
 				extra_buffer = DCVS_ENC_EXTRA_OUTPUT_BUFFERS;
 		}
 	}
 	return extra_buffer;
 }
 
-void msm_dcvs_set_buff_req_handled(struct msm_vidc_inst *inst,
-					bool is_input_buff)
+void msm_dcvs_set_buff_req_handled(struct msm_vidc_inst *inst)
 {
 	if (!inst) {
 		dprintk(VIDC_ERR, "%s Invalid args\n", __func__);
@@ -584,18 +626,10 @@ void msm_dcvs_set_buff_req_handled(struct msm_vidc_inst *inst,
 
 	if (inst->session_type == MSM_VIDC_ENCODER) {
 		if (msm_dcvs_enc_check(inst)) {
-			if (is_input_buff && !inst->dcvs.is_input_buff_added)
-				inst->dcvs.is_input_buff_added = true;
-			else if (!is_input_buff &&
-					!inst->dcvs.is_output_buff_added)
-				inst->dcvs.is_output_buff_added = true;
-
-			if (inst->dcvs.is_input_buff_added &&
-				inst->dcvs.is_output_buff_added) {
+			if (!inst->dcvs.is_additional_buff_added)
 				inst->dcvs.is_additional_buff_added = true;
 				dprintk(VIDC_PROF,
-					"ENC_DCVS: additional i/p o/p buffer added");
-			}
+					"ENC_DCVS: additional o/p buffer added");
 		}
 	}
 }

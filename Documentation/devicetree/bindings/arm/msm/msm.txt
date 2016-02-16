@@ -68,8 +68,11 @@ SoCs:
 - MSMTELLURIUM
   compatible = "qcom,msmtellurium"
 
-- MSMZIRC
-  compatible = "qcom,msmzirc"
+- MDM9640
+  compatible = "qcom,mdm9640"
+
+- VPIPA
+  compatible = "qcom,msmvpipa"
 
 - FSM9010
   compatible = "qcom,fsm9010"
@@ -77,7 +80,8 @@ SoCs:
 - FSM9910
   compatible = "qcom,fsm9900"
 
-
+- MSM8929
+  compatible = "qcom,msm8929"
 
 Generic board variants:
 
@@ -164,6 +168,8 @@ compatible = "qcom,msm8936-cdp"
 compatible = "qcom,msm8936-mtp"
 compatible = "qcom,msm8939-cdp"
 compatible = "qcom,msm8939-mtp"
+compatible = "qcom,msm8939-qrd-skuk"
+compatible = "qcom,msm8939-qrd-skul"
 compatible = "qcom,msm8939-rumi"
 compatible = "qcom,msm8939-sim"
 compatible = "qcom,msm8960-cdp"
@@ -185,11 +191,21 @@ compatible = "qcom,msm8994-rumi"
 compatible = "qcom,msm8994-sim"
 compatible = "qcom,msmtellurium-rumi"
 compatible = "qcom,msmtellurium-sim"
-compatible = "qcom,msmzirc-cdp"
-compatible = "qcom,msmzirc-mtp"
-compatible = "qcom,msmzirc-rumi"
-compatible = "qcom,msmzirc-sim"
+compatible = "qcom,msmterbium-rumi"
+compatible = "qcom,msmterbium-sim"
+compatible = "qcom,msmterbium-cdp"
+compatible = "qcom,msmterbium-mtp"
+compatible = "qcom,mdm9640-cdp"
+compatible = "qcom,mdm9640-mtp"
+compatible = "qcom,mdm9640-rumi"
+compatible = "qcom,mdm9640-sim"
 compatible = "qcom,fsm9010-cdp"
 compatible = "qcom,fsm9010-mtp"
 compatible = "qcom,fsm9900-cdp"
 compatible = "qcom,fsm9900-mtp"
+compatible = "qcom,msmvpipa-sim"
+compatible = "qcom,msm8929-cdp"
+compatible = "qcom,msm8929-mtp"
+compatible = "qcom,msm8929-qrd"
+compatible = "qcom,msm8929-qrd-skul"
+compatible = "qcom,msm8929-qrd-skulb"

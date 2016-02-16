@@ -1,0 +1,29 @@
+/dts-v1/;
+
+#include "msm8994-htc_himaultra.dtsi"
+#include "msm8994-htc_himaultra-pm-pmi-gpio.dtsi"
+
+/ {
+	model = "HTC Corporation. MSM8994 HIMA_ULTRA XA";
+	qcom,board-id = <0 0x0>;
+	qcom,msm-id = <366 0x0>, <371 0x0>, <373 0x0>, <370 0x0>, <365 0x0>;
+};
+
+&soc {
+	i2c@f9924000 {
+		maxim@48 {
+			eng_id = <0>;
+		};
+	};
+
+	htc,cable_detect {
+		compatible = "htc,cable-detect";
+		usb-id-connect2pm8994 = <1>;
+	};
+};
+
+&pmi8994_mpps {
+	mpp@a300 { /* MPP 4 */
+		status = "disabled";
+	};
+};

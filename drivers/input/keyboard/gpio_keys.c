@@ -68,6 +68,10 @@ struct gpio_keys_drvdata {
 
 static unsigned int vol_up_irq;
 static unsigned int vol_down_irq;
+#ifdef CONFIG_POWER_KEY_EID
+struct gpio_button_data *gb_data;
+#endif
+
 static ssize_t vol_wakeup_store(struct device *dev,
 					 struct device_attribute *attr,
 					 const char *buf, size_t count)
@@ -327,7 +331,7 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 	const struct gpio_keys_button *button = bdata->button;
 	struct input_dev *input = bdata->input;
 	unsigned int type = button->type ?: EV_KEY;
-	int state = (gpio_get_value_cansleep(button->gpio) ? 1 : 0) ^ button->active_low;
+	int state = (gpio_get_value(button->gpio) ? 1 : 0) ^ button->active_low;
 
 	if (type == EV_ABS) {
 		if (state) {
@@ -416,12 +420,47 @@ static void gpio_keys_gpio_timer(unsigned long _data)
 	schedule_work(&bdata->work);
 }
 
+#ifdef CONFIG_POWER_KEY_EID
+void power_key_resume_handler(int irq)
+{
+	struct gpio_button_data *bdata = gb_data;
+	unsigned long irqflags;
+	unsigned int type = bdata->button->type ?: EV_KEY;
+	int state = (gpio_get_value_cansleep(bdata->button->gpio) ? 1 : 0) ^ bdata->button->active_low;
+	pr_info("[KEY] %s, irq=%d, gpio=%d, state=%d\n", __func__, irq, bdata->button->gpio, state);
+
+	BUG_ON(irq != bdata->irq);
+
+	spin_lock_irqsave(&bdata->lock, irqflags);
+	if (bdata->bouncing_flag == DEBOUNCE_WAIT_IRQ) {
+		bdata->bouncing_flag = DEBOUNCE_UNKNOWN_STATE;
+		if (bdata->timer_debounce)
+			mod_timer(&bdata->timer,
+				jiffies + msecs_to_jiffies(bdata->timer_debounce));
+		else
+			schedule_work(&bdata->work);
+
+		pr_debug("[KEY] %s: key %x-%x, (%d) start debounce\n",
+			__func__, type, bdata->button->code,
+			bdata->button->gpio);
+	} else {
+		bdata->bouncing_flag = DEBOUNCE_UNSTABLE_IRQ;
+		KEY_LOGI("%s: key %x-%x, (%d) update debounce mode\n",
+			__func__, type, bdata->button->code,
+			bdata->button->gpio);
+	}
+
+	spin_unlock_irqrestore(&bdata->lock, irqflags);
+}
+#endif
+
 static irqreturn_t gpio_keys_gpio_isr(int irq, void *dev_id)
 {
 	struct gpio_button_data *bdata = dev_id;
 	unsigned long irqflags;
 	unsigned int type = bdata->button->type ?: EV_KEY;
-	pr_info("[KEY] %s, irq=%d, gpio=%d\n", __func__, irq, bdata->button->gpio);
+	int state = (gpio_get_value_cansleep(bdata->button->gpio) ? 1 : 0) ^ bdata->button->active_low;
+	pr_info("[KEY] %s, irq=%d, gpio=%d, state=%d\n", __func__, irq, bdata->button->gpio, state);
 
 	BUG_ON(irq != bdata->irq);
 
@@ -620,6 +659,10 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 		vol_up_irq = bdata->irq;
 	else if(bdata->button->code == KEY_VOLUMEDOWN)
 		vol_down_irq = bdata->irq;
+#ifdef CONFIG_POWER_KEY_EID
+	else if(bdata->button->code == KEY_POWER)
+		gb_data = bdata;
+#endif
 
 	KEY_LOGI("keycode = %d, gpio = %d, irq = %d",
 		bdata->button->code, bdata->button->gpio, bdata->irq);

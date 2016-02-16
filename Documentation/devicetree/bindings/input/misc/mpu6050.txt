@@ -2,7 +2,7 @@ InvenSense MPU6050 6 Axis gyroscope+accelerometer combo driver
 
 Required properties:
 
- - compatible		: Should be "invn,mpu6050".
+ - compatible		: Should be "invn,mpu6050" or "invn,mpu6880".
  - reg				: i2c slave address of the device.
  - pinctrl-names	: The pinctrl configration names of this sensor driver. Should be "mpu_default","mpu_sleep".
  - pinctrl-0		: The pinctrl node corresponding to "mpu_default", should be <&mpu6050_default>.
@@ -29,6 +29,7 @@ Optional properties:
 			instead of polling data.
  - invn,gpio-int	: GPIO used for interrupt.
  - invn,gpio-en		: GPIO used for power enabling.
+ - invn,vdd-min-uv	: Minimum VDD supply voltage in micro-volts.
 
 Example:
 	i2c@f9925000 {

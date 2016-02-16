@@ -29,11 +29,11 @@ struct usb_info {
 	int (*ldo_enable) (int enable);
 	void (*usb_mhl_switch)(bool);
 
-	
+	/* for notification when USB is connected or disconnected */
 	int connect_type_ready;
 	void (*usb_connected)(int);
 
-	
+	/* TODO: Dyson porting */
 	#if 0
 	enum usb_connect_type connect_type;
 	#endif
@@ -124,5 +124,5 @@ extern void android_switch_htc_mode(void);
 		pr_err("android_usb: Cannot enable %s", func);	\
 	}
 
-#endif 
+#endif /* __HTC_INFO__ */
 

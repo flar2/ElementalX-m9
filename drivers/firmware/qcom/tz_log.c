@@ -416,7 +416,7 @@ static int _disp_tz_htc_log_stats(char __user *ubuf, size_t count, loff_t *offp)
 	uint32_t r_cursor, w_cursor;
 	int ret;
 
-	if (buf != 0 && (count < MSM_TZLOG_SIZE)) {
+	if (buf != 0 && (count <= MSM_TZLOG_SIZE)) {
 		
 		r_cursor = readl_relaxed(pr_cursor);
 		w_cursor = readl_relaxed(pw_cursor);

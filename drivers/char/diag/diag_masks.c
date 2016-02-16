@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,7 +25,9 @@
 
 #define DIAG_SET_FEATURE_MASK(x) (feature_bytes[(x)/8] |= (1 << (x & 0x7)))
 
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 extern int diag_rb_enable;
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 
 struct diag_mask_info msg_mask;
 struct diag_mask_info msg_bt_mask;
@@ -62,6 +64,11 @@ static const struct diag_ssid_range_t msg_mask_tbl[] = {
 
 static int diag_apps_responds(void)
 {
+	/*
+	 * Apps processor should respond to mask commands only if the
+	 * Modem channel is up, the feature mask is received from Modem
+	 * and if Modem supports Mask Centralization.
+	 */
 	if (chk_apps_only()) {
 		if (driver->smd_data[MODEM_DATA].ch &&
 			driver->rcvd_feature_mask[MODEM_DATA]) {
@@ -126,9 +133,9 @@ static void diag_send_log_mask_update(struct diag_smd_info *smd_info,
 		ctrl_pkt.stream_id = 1;
 		ctrl_pkt.status = log_mask.status;
 		if (log_mask.status == DIAG_CTRL_MASK_VALID) {
-			mask_size = LOG_ITEMS_TO_SIZE(mask->num_items);
+			mask_size = LOG_ITEMS_TO_SIZE(mask->num_items_tools);
 			ctrl_pkt.equip_id = i;
-			ctrl_pkt.num_items = mask->num_items;
+			ctrl_pkt.num_items = mask->num_items_tools;
 			ctrl_pkt.log_mask_size = mask_size;
 		}
 		ctrl_pkt.data_len = LOG_MASK_CTRL_HEADER_LEN + mask_size;
@@ -349,7 +356,7 @@ static void diag_send_feature_mask_update(struct diag_smd_info *smd_info)
 	}
 
 	mutex_lock(&driver->diag_cntl_mutex);
-	
+	/* send feature mask update */
 	feature_mask.ctrl_pkt_id = DIAG_CTRL_MSG_FEATURE;
 	feature_mask.ctrl_pkt_data_len = sizeof(uint32_t) + FEATURE_MASK_LEN;
 	feature_mask.feature_mask_len = FEATURE_MASK_LEN;
@@ -504,7 +511,7 @@ static int diag_cmd_get_msg_mask(unsigned char *src_buf, int src_len,
 			continue;
 		}
 		mask_size = mask->range * sizeof(uint32_t);
-		
+		/* Copy msg mask only till the end of the rsp buffer */
 		if (mask_size + sizeof(rsp) > dest_len)
 			mask_size = dest_len - sizeof(rsp);
 		memcpy(dest_buf + sizeof(rsp), mask->ptr, mask_size);
@@ -574,6 +581,10 @@ static int diag_cmd_set_msg_mask(unsigned char *src_buf, int src_len,
 
 	diag_update_userspace_clients(MSG_MASKS_TYPE);
 
+	/*
+	 * Apps processor must send the response to this command. Frame the
+	 * response.
+	 */
 	rsp.cmd_code = DIAG_CMD_MSG_CONFIG;
 	rsp.sub_cmd = DIAG_CMD_OP_SET_MSG_MASK;
 	rsp.ssid_first = req->ssid_first;
@@ -588,6 +599,7 @@ static int diag_cmd_set_msg_mask(unsigned char *src_buf, int src_len,
 		mask_size = dest_len - write_len;
 	memcpy(dest_buf + write_len, src_buf + header_len, mask_size);
 	write_len += mask_size;
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 	for (i = 0; i < NUM_SMD_CONTROL_CHANNELS; i++) {
 		if (i == MODEM_DATA && (diag_rb_enable & DQ_FILTER_MASK)) {
 			printk("diag(%d): Filter Modem mask\n", __LINE__);
@@ -600,6 +612,7 @@ static int diag_cmd_set_msg_mask(unsigned char *src_buf, int src_len,
 		diag_send_msg_mask_update(&driver->smd_cntl[i],
 					  req->ssid_first, req->ssid_last);
 	}
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 end:
 	return write_len;
 }
@@ -633,6 +646,10 @@ static int diag_cmd_set_all_msg_mask(unsigned char *src_buf, int src_len,
 
 	diag_update_userspace_clients(MSG_MASKS_TYPE);
 
+	/*
+	 * Apps processor must send the response to this command. Frame the
+	 * response.
+	 */
 	rsp.cmd_code = DIAG_CMD_MSG_CONFIG;
 	rsp.sub_cmd = DIAG_CMD_OP_SET_ALL_MSG_MASK;
 	rsp.status = MSG_STATUS_SUCCESS;
@@ -641,6 +658,7 @@ static int diag_cmd_set_all_msg_mask(unsigned char *src_buf, int src_len,
 	memcpy(dest_buf, &rsp, header_len);
 	write_len += header_len;
 
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 	for (i = 0; i < NUM_SMD_CONTROL_CHANNELS; i++) {
 		if (i == MODEM_DATA && (diag_rb_enable & DQ_FILTER_MASK)) {
 			printk("diag(%d): Filter Modem mask\n", __LINE__);
@@ -653,6 +671,7 @@ static int diag_cmd_set_all_msg_mask(unsigned char *src_buf, int src_len,
 		diag_send_msg_mask_update(&driver->smd_cntl[i], ALL_SSID,
 					  ALL_SSID);
 	}
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 
 	return write_len;
 }
@@ -722,6 +741,10 @@ static int diag_cmd_update_event_mask(unsigned char *src_buf, int src_len,
 	mutex_unlock(&event_mask.lock);
 	diag_update_userspace_clients(EVENT_MASKS_TYPE);
 
+	/*
+	 * Apps processor must send the response to this command. Frame the
+	 * response.
+	 */
 	rsp.cmd_code = DIAG_CMD_SET_EVENT_MASK;
 	rsp.status = EVENT_STATUS_SUCCESS;
 	rsp.padding = 0;
@@ -731,6 +754,7 @@ static int diag_cmd_update_event_mask(unsigned char *src_buf, int src_len,
 	memcpy(dest_buf + write_len, event_mask.ptr, mask_len);
 	write_len += mask_len;
 
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 	for (i = 0; i < NUM_SMD_CONTROL_CHANNELS; i++) {
 		if (i == MODEM_DATA && (diag_rb_enable & DQ_FILTER_MASK)) {
 			printk("diag(%d): Filter Modem mask\n", __LINE__);
@@ -742,6 +766,7 @@ static int diag_cmd_update_event_mask(unsigned char *src_buf, int src_len,
 		}
 		diag_send_event_mask_update(&driver->smd_cntl[i]);
 	}
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 
 	return write_len;
 }
@@ -772,8 +797,13 @@ static int diag_cmd_toggle_events(unsigned char *src_buf, int src_len,
 	mutex_unlock(&event_mask.lock);
 	diag_update_userspace_clients(EVENT_MASKS_TYPE);
 
+	/*
+	 * Apps processor must send the response to this command. Frame the
+	 * response.
+	 */
 	header.cmd_code = DIAG_CMD_EVENT_TOGGLE;
 	header.padding = 0;
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 	for (i = 0; i < NUM_SMD_CONTROL_CHANNELS; i++) {
 		if (i == MODEM_DATA && (diag_rb_enable & DQ_FILTER_MASK)) {
 			printk("diag(%d): Filter Modem mask\n", __LINE__);
@@ -785,6 +815,7 @@ static int diag_cmd_toggle_events(unsigned char *src_buf, int src_len,
 		}
 		diag_send_event_mask_update(&driver->smd_cntl[i]);
 	}
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 	memcpy(dest_buf, &header, sizeof(header));
 	write_len += sizeof(header);
 
@@ -822,13 +853,23 @@ static int diag_cmd_get_log_mask(unsigned char *src_buf, int src_len,
 	rsp.padding[1] = 0;
 	rsp.padding[2] = 0;
 	rsp.sub_cmd = DIAG_CMD_OP_GET_LOG_MASK;
+	/*
+	 * Don't copy the response header now. Copy at the end after
+	 * calculating the status field value
+	 */
 	write_len += rsp_header_len;
 
 	log_item = (struct diag_log_mask_t *)log_mask.ptr;
 	for (i = 0; i < MAX_EQUIP_ID; i++, log_item++) {
 		if (log_item->equip_id != req->equip_id)
 			continue;
-		mask_size = LOG_ITEMS_TO_SIZE(log_item->num_items);
+		mask_size = LOG_ITEMS_TO_SIZE(log_item->num_items_tools);
+		/*
+		 * Make sure we have space to fill the response in the buffer.
+		 * Destination buffer should atleast be able to hold equip_id
+		 * (uint32_t), num_items(uint32_t), mask (mask_size) and the
+		 * response header.
+		 */
 		if ((mask_size + (2 * sizeof(uint32_t)) + rsp_header_len) >
 								dest_len) {
 			pr_err("diag: In %s, invalid length: %d, max rsp_len: %d\n",
@@ -838,7 +879,7 @@ static int diag_cmd_get_log_mask(unsigned char *src_buf, int src_len,
 		}
 		*(uint32_t *)(dest_buf + write_len) = log_item->equip_id;
 		write_len += sizeof(uint32_t);
-		*(uint32_t *)(dest_buf + write_len) = log_item->num_items;
+		*(uint32_t *)(dest_buf + write_len) = log_item->num_items_tools;
 		write_len += sizeof(uint32_t);
 		if (mask_size > 0) {
 			memcpy(dest_buf + write_len, log_item->ptr, mask_size);
@@ -881,7 +922,7 @@ static int diag_cmd_get_log_range(unsigned char *src_buf, int src_len,
 	write_len += sizeof(rsp);
 
 	for (i = 0; i < MAX_EQUIP_ID && write_len < dest_len; i++, mask++) {
-		*(uint32_t *)(dest_buf + write_len) = mask->num_items;
+		*(uint32_t *)(dest_buf + write_len) = mask->num_items_tools;
 		write_len += sizeof(uint32_t);
 	}
 
@@ -902,6 +943,7 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 	struct diag_log_mask_t *mask = (struct diag_log_mask_t *)log_mask.ptr;
 	struct diag_log_config_req_t *req;
 	struct diag_log_config_set_rsp_t rsp;
+	unsigned char *temp_buf = NULL;
 
 	if (!src_buf || !dest_buf || src_len <= 0 || dest_len <= 0) {
 		pr_err("diag: Invalid input in %s, src_buf: %p, src_len: %d, dest_buf: %p, dest_len: %d",
@@ -917,18 +959,39 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 		       __func__, req->equip_id);
 		status = LOG_STATUS_INVALID;
 	}
+
+	if (req->num_items == 0) {
+		pr_err("diag: In %s, Invalid number of items in log mask request, equip_id: %d\n",
+		       __func__, req->equip_id);
+		status = LOG_STATUS_INVALID;
+	}
+
 	mutex_lock(&log_mask.lock);
 	for (i = 0; i < MAX_EQUIP_ID && !status; i++, mask++) {
 		if (mask->equip_id != req->equip_id)
 			continue;
-		if (req->num_items < mask->num_items)
-			mask->num_items = req->num_items;
-		mask_size = LOG_ITEMS_TO_SIZE(req->num_items);
-		if (mask_size > mask->range) {
-			mask_size = mask->range;
-			mask->num_items = LOG_SIZE_TO_ITEMS(mask_size);
-			req->num_items = mask->num_items;
+		/*
+		 * If the size of the log mask cannot fit into our
+		 * buffer, trim till we have space left in the buffer.
+		 * num_items should then reflect the items that we have
+		 * in our buffer.
+		 */
+		mask->num_items_tools = (req->num_items > MAX_ITEMS_ALLOWED) ?
+					MAX_ITEMS_ALLOWED : req->num_items;
+		mask_size = LOG_ITEMS_TO_SIZE(mask->num_items_tools);
+		memset(mask->ptr, 0, mask->range_tools);
+		if (mask_size > mask->range_tools) {
+			/* Change in the mask reported by tools */
+			temp_buf = krealloc(mask->ptr, mask_size, GFP_KERNEL);
+			if (!temp_buf) {
+				log_mask.status = DIAG_CTRL_MASK_INVALID;
+				break;
+			}
+			mask->ptr = temp_buf;
+			memset(mask->ptr, 0, mask_size);
+			mask->range_tools = mask_size;
 		}
+		req->num_items = mask->num_items_tools;
 		if (mask_size > 0)
 			memcpy(mask->ptr, src_buf + read_len, mask_size);
 		log_mask.status = DIAG_CTRL_MASK_VALID;
@@ -937,8 +1000,12 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 	mutex_unlock(&log_mask.lock);
 	diag_update_userspace_clients(LOG_MASKS_TYPE);
 
+	/*
+	 * Apps processor must send the response to this command. Frame the
+	 * response.
+	 */
 	payload_len = LOG_ITEMS_TO_SIZE(req->num_items);
-	if (payload_len + rsp_header_len > dest_len) {
+	if ((payload_len + rsp_header_len > dest_len) || (payload_len == 0)) {
 		pr_err("diag: In %s, invalid length, payload_len: %d, header_len: %d, dest_len: %d\n",
 		       __func__, payload_len, rsp_header_len , dest_len);
 		status = LOG_STATUS_FAIL;
@@ -958,6 +1025,7 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 	memcpy(dest_buf + write_len, src_buf + read_len, payload_len);
 	write_len += payload_len;
 
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 	for (i = 0; i < NUM_SMD_CONTROL_CHANNELS; i++) {
 		if (i == MODEM_DATA && (diag_rb_enable & DQ_FILTER_MASK)) {
 			printk("diag(%d): Filter Modem mask\n", __LINE__);
@@ -969,6 +1037,7 @@ static int diag_cmd_set_log_mask(unsigned char *src_buf, int src_len,
 		}
 		diag_send_log_mask_update(&driver->smd_cntl[i], req->equip_id);
 	}
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 end:
 	return write_len;
 }
@@ -994,6 +1063,10 @@ static int diag_cmd_disable_log_mask(unsigned char *src_buf, int src_len,
 	mutex_unlock(&log_mask.lock);
 	diag_update_userspace_clients(LOG_MASKS_TYPE);
 
+	/*
+	 * Apps processor must send the response to this command. Frame the
+	 * response.
+	 */
 	header.cmd_code = DIAG_CMD_LOG_CONFIG;
 	header.padding[0] = 0;
 	header.padding[1] = 0;
@@ -1002,6 +1075,7 @@ static int diag_cmd_disable_log_mask(unsigned char *src_buf, int src_len,
 	header.status = LOG_STATUS_SUCCESS;
 	memcpy(dest_buf, &header, sizeof(struct diag_log_config_rsp_t));
 	write_len += sizeof(struct diag_log_config_rsp_t);
+/*++ 2014/11/25, USB Team, PCN00050 ++*/
 	for (i = 0; i < NUM_SMD_CONTROL_CHANNELS; i++) {
 		if (i == MODEM_DATA && (diag_rb_enable & DQ_FILTER_MASK)) {
 			printk("diag(%d): Filter Modem mask\n", __LINE__);
@@ -1013,6 +1087,7 @@ static int diag_cmd_disable_log_mask(unsigned char *src_buf, int src_len,
 		}
 		diag_send_log_mask_update(&driver->smd_cntl[i], ALL_EQUIP_ID);
 	}
+/*-- 2014/11/25, USB Team, PCN00050 --*/
 
 	return write_len;
 }
@@ -1196,10 +1271,12 @@ static int diag_create_log_mask_table(void)
 	for (i = 0; i < MAX_EQUIP_ID; i++, mask++) {
 		mask->equip_id = i;
 		mask->num_items = LOG_GET_ITEM_NUM(log_code_last_tbl[i]);
+		mask->num_items_tools = mask->num_items;
 		if (LOG_ITEMS_TO_SIZE(mask->num_items) > MAX_ITEMS_PER_EQUIP_ID)
 			mask->range = LOG_ITEMS_TO_SIZE(mask->num_items);
 		else
 			mask->range = MAX_ITEMS_PER_EQUIP_ID;
+		mask->range_tools = mask->range;
 		mask->ptr = kzalloc(mask->range, GFP_KERNEL);
 		if (!mask->ptr) {
 			err = -ENOMEM;
@@ -1278,7 +1355,7 @@ static int diag_build_time_mask_init(void)
 {
 	int err = 0;
 
-	
+	/* There is no need for update buffer for Build Time masks */
 	err = __diag_mask_init(&msg_bt_mask, MSG_MASK_SIZE, 0);
 	if (err)
 		return err;
@@ -1395,7 +1472,7 @@ int diag_copy_to_user_msg_mask(char __user *buf, size_t count)
 		}
 		memcpy(ptr + len, mask->ptr, copy_len);
 		len += copy_len;
-		
+		/* + sizeof(int) to account for data_type already in buf */
 		if (total_len + sizeof(int) + len > count) {
 			pr_err("diag: In %s, unable to send msg masks to user space, total_len: %d, count: %zu\n",
 			       __func__, total_len, count);
@@ -1435,7 +1512,7 @@ int diag_copy_to_user_log_mask(char __user *buf, size_t count)
 		ptr = log_mask.update_buf;
 		len = 0;
 		header.equip_id = mask->equip_id;
-		header.num_items = mask->num_items;
+		header.num_items = mask->num_items_tools;
 		memcpy(ptr, &header, sizeof(header));
 		len += sizeof(header);
 		copy_len = LOG_ITEMS_TO_SIZE(header.num_items);
@@ -1446,7 +1523,7 @@ int diag_copy_to_user_log_mask(char __user *buf, size_t count)
 		}
 		memcpy(ptr + len, mask->ptr, copy_len);
 		len += copy_len;
-		
+		/* + sizeof(int) to account for data_type already in buf */
 		if (total_len + sizeof(int) + len > count) {
 			pr_err("diag: In %s, unable to send log masks to user space, total_len: %d, count: %zu\n",
 			       __func__, total_len, count);

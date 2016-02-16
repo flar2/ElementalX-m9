@@ -24,6 +24,8 @@
 #include <linux/reboot.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/wakelock.h>
+#include <linux/htc_flags.h>
 
 #ifdef CONFIG_KPDPWR_S2_DVDD_RESET
 #include <linux/qpnp/power-on.h>
@@ -33,7 +35,11 @@ static int clear_kpdpwr_s2_rst_flag;
 #define KPDPWR_CLR_RESET_TIMER (150 * NSEC_PER_MSEC) 
 #endif 
 
+static LIST_HEAD(keycombo_list);
+
 struct keycombo_state {
+	struct list_head list;
+	struct platform_device *pdev;
 	struct input_handler input_handler;
 	unsigned long keybit[BITS_TO_LONGS(KEY_CNT)];
 	unsigned long upbit[BITS_TO_LONGS(KEY_CNT)];
@@ -52,11 +58,18 @@ struct keycombo_state {
 	int key_is_down;
 	struct wakeup_source combo_held_wake_source;
 	struct wakeup_source combo_up_wake_source;
+	unsigned long allkeystate[BITS_TO_LONGS(KEY_CNT)];
+	struct kobject *disable_reset_kobj;
+	struct workqueue_struct *disable_reset_wq;
+	unsigned int disable_reset_flag;
+	struct delayed_work disable_reset_work;
+	struct wake_lock disable_reset_wake_lock;
 };
 
-#if defined(CONFIG_POWER_KEY_CLR_RESET)
 
+#if defined(CONFIG_POWER_KEY_CLR_RESET)
 static uint32_t clr_gpio;
+static struct pinctrl *key_pinctrl;
 static struct kobject *android_key_kobj;
 
 #ifdef CONFIG_KPDPWR_S2_DVDD_RESET
@@ -88,16 +101,239 @@ static enum hrtimer_restart enable_kpd_s2_timer_func(struct hrtimer *timer)
 }
 #endif 
 
+static void disable_reset_func(struct work_struct *work)
+{
+	struct keycombo_state *state;
+	struct keycombo_platform_data *pdata;
+	unsigned long flags;
+	int key, *keyp;
+
+	list_for_each_entry(state, &keycombo_list, list) {
+	if (state->priv == NULL) {
+		spin_lock_irqsave(&state->lock, flags);
+		state->disable_reset_flag = 0;
+	}
+	}
+
+	list_for_each_entry(state, &keycombo_list, list) {
+	pdata = state->pdev->dev.platform_data;
+#if defined(CONFIG_POWER_KEY_CLR_RESET)
+	
+	state->key_down_target = 0;
+	state->key_down = 0;
+	state->key_up = 0;
+
+	if (state->priv == NULL) {
+		__clear_bit(KEY_POWER, state->keybit);
+	}
+	keyp = pdata->keys_down;
+	while ((key = *keyp++)) {
+		if (key >= KEY_MAX)
+			continue;
+		state->key_down_target++;
+		__set_bit(key, state->keybit);
+		if (test_bit(key, state->allkeystate)) {
+			__set_bit(key, state->key);
+			state->key_down++;
+		} else {
+			__clear_bit(key, state->key);
+		}
+	}
+	if (pdata->keys_up) {
+		keyp = pdata->keys_up;
+		while ((key = *keyp++)) {
+			if (key >= KEY_MAX)
+				continue;
+			__set_bit(key, state->keybit);
+			__set_bit(key, state->upbit);
+			if (test_bit(key, state->allkeystate)) {
+				__set_bit(key, state->key);
+				state->key_up++;
+			} else {
+				__clear_bit(key, state->key);
+			}
+		}
+	}
+
+	
+	if (state->key_down == state->key_down_target && state->key_up == 0) {
+		__pm_stay_awake(&state->combo_held_wake_source);
+		state->key_is_down = 1;
+		queue_delayed_work(state->wq, &state->key_down_work,
+								state->delay);
+	} else if (state->key_is_down) {
+		if (!cancel_delayed_work(&state->key_down_work)) {
+			__pm_stay_awake(&state->combo_up_wake_source);
+			queue_work(state->wq, &state->key_up_work);
+		}
+		__pm_relax(&state->combo_held_wake_source);
+		state->key_is_down = 0;
+	}
+#endif
+	}
+
+	list_for_each_entry(state, &keycombo_list, list) {
+	if (state->priv == NULL) {
+		wake_unlock(&state->disable_reset_wake_lock);
+		spin_unlock_irqrestore(&state->lock, flags);
+		KEY_LOGI("%s, %d\n", __func__, state->disable_reset_flag);
+	}
+	}
+}
+
+static ssize_t disable_reset_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	unsigned int value;
+	struct keycombo_state *state;
+	struct keycombo_platform_data *pdata;
+	unsigned long flags;
+	int key, *keyp;
+
+	if (kstrtouint(buf, 10, &value) < 0) {
+		KEY_LOGI("%s: input out of range\n",__func__);
+		return -EINVAL;
+	}
+
+	list_for_each_entry(state, &keycombo_list, list) {
+	if (state->priv == NULL) {
+		spin_lock_irqsave(&state->lock, flags);
+		wake_lock(&state->disable_reset_wake_lock);
+		state->disable_reset_flag = value;
+	}
+	}
+
+	list_for_each_entry(state, &keycombo_list, list) {
+	pdata = state->pdev->dev.platform_data;
+#if defined(CONFIG_POWER_KEY_CLR_RESET)
+	
+	state->key_down_target = 0;
+	keyp = pdata->keys_down;
+	while ((key = *keyp++)) {
+		if (key >= KEY_MAX)
+			continue;
+		__clear_bit(key, state->keybit);
+		__clear_bit(key, state->key);
+	}
+	if (pdata->keys_up) {
+		keyp = pdata->keys_up;
+		while ((key = *keyp++)) {
+			if (key >= KEY_MAX)
+				continue;
+			__clear_bit(key, state->keybit);
+			__clear_bit(key, state->key);
+			__clear_bit(key, state->upbit);
+		}
+	}
+	if (state->priv == NULL) {
+		state->key_down_target++;
+		__set_bit(KEY_POWER, state->keybit);
+	}
+
+	state->key_down = 0;
+	state->key_up = 0;
+	
+	if (test_bit(KEY_POWER, state->allkeystate) && state->priv) {
+		if (!cancel_delayed_work(&state->key_down_work)) {
+			__pm_stay_awake(&state->combo_up_wake_source);
+			queue_work(state->wq, &state->key_up_work);
+		}
+		__pm_relax(&state->combo_held_wake_source);
+		state->key_is_down = 0;
+	}
+
+	
+	if (test_bit(KEY_POWER, state->allkeystate) && state->priv == NULL) {
+		__pm_stay_awake(&state->combo_held_wake_source);
+		state->key_is_down = 1;
+		state->key_down = 1;	
+		queue_delayed_work(state->wq, &state->key_down_work,
+								state->delay);
+		__set_bit(KEY_POWER, state->key);
+	}
+#endif
+	}
+
+	list_for_each_entry(state, &keycombo_list, list) {
+	if (state->priv == NULL) {
+		spin_unlock_irqrestore(&state->lock, flags);
+
+		KEY_LOGI("%s, %d\n", __func__, state->disable_reset_flag);
+		mod_delayed_work(state->disable_reset_wq, &state->disable_reset_work,
+				msecs_to_jiffies(state->disable_reset_flag * 1000));
+	}
+	}
+	return count;
+}
+
+static ssize_t disable_reset_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct keycombo_state *state;
+	list_for_each_entry(state, &keycombo_list, list) {
+		if (state->priv == NULL)
+			break;
+
+	}
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			state->disable_reset_flag);
+}
+
+static DEVICE_ATTR(disable_reset, S_IRUGO | S_IWUSR , disable_reset_show, disable_reset_store);
+
+static int disable_reset_sysfs_init(struct keycombo_state *state)
+{
+	int ret = 0;
+
+	state->disable_reset_kobj = kobject_create_and_add("recovery", NULL);
+
+	if (state->disable_reset_kobj == NULL) {
+		KEY_LOGE("%s: create kobj failed\n", __func__);
+		ret = -ENOMEM;
+		return ret;
+	}
+
+	ret = sysfs_create_file(state->disable_reset_kobj, &dev_attr_disable_reset.attr);
+	if (ret) {
+		KEY_LOGE("%s: sysfs_create_file disable_reset failed\n", __func__);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void disable_reset_sysfs_remove(struct keycombo_state *state)
+{
+	sysfs_remove_file(state->disable_reset_kobj, &dev_attr_disable_reset.attr);
+	kobject_put(state->disable_reset_kobj);
+}
+
+static int keycombo_pinctrl_configure(struct pinctrl *key_pinctrl, bool active);
 void clear_hw_reset(void)
 {
+	int error;
+
 	KEY_LOGI("clear_hw_reset++++++++++(%d)\n", clr_gpio);
-	if (gpio_direction_output(clr_gpio, 0) < 0)
-		KEY_LOGE("gpio_direction_output GPIO %d failed\n", clr_gpio);
+	if (key_pinctrl) {
+		error = keycombo_pinctrl_configure(key_pinctrl, true);
+		if (error == 0)
+			KEY_LOGI("set pinctrl active\n");
+	} else {
+		if (gpio_direction_output(clr_gpio, 0) < 0)
+			KEY_LOGE("gpio_direction_output GPIO %d failed\n", clr_gpio);
+	}
 
 	msleep(100);
 
-	if (gpio_direction_input(clr_gpio) < 0)
-		KEY_LOGE("gpio_direction_input GPIO %d failed\n", clr_gpio);
+	if (key_pinctrl) {
+		error = keycombo_pinctrl_configure(key_pinctrl, false);
+		if (error == 0)
+			KEY_LOGI("set pinctrl normal\n");
+	} else {
+		if (gpio_direction_input(clr_gpio) < 0)
+			KEY_LOGE("gpio_direction_input GPIO %d failed\n", clr_gpio);
+	}
 	KEY_LOGI("clear_hw_reset----------\n");
 }
 
@@ -191,7 +427,39 @@ static void keycombo_sysfs_remove(void)
 	sysfs_remove_file(android_key_kobj, &dev_attr_clr_gpio.attr);
 	kobject_put(android_key_kobj);
 }
-#endif
+
+static int keycombo_pinctrl_configure(struct pinctrl *key_pinctrl,
+							bool active)
+{
+	struct pinctrl_state *set_state;
+	int retval;
+
+	if (active) {
+		set_state =
+			pinctrl_lookup_state(key_pinctrl,
+						"keycombo_active");
+		if (IS_ERR(set_state)) {
+			KEY_LOGE("%s: cannot get pinctrl active state\n", __func__);
+			return PTR_ERR(set_state);
+		}
+	} else {
+		set_state =
+			pinctrl_lookup_state(key_pinctrl,
+						"keycombo_normal");
+		if (IS_ERR(set_state)) {
+			KEY_LOGE("%s: cannot get pinctrl normal state\n", __func__);
+			return PTR_ERR(set_state);
+		}
+	}
+	retval = pinctrl_select_state(key_pinctrl, set_state);
+	if (retval) {
+		KEY_LOGE("%s: cannot set pinctrl, active = %d\n", __func__, active);
+		return retval;
+	}
+
+	return 0;
+}
+#endif 
 
 static void do_key_down(struct work_struct *work)
 {
@@ -223,6 +491,11 @@ static void keycombo_event(struct input_handle *handle, unsigned int type,
 
 	if (code >= KEY_MAX)
 		return;
+
+	if (value)
+		__set_bit(code, state->allkeystate);
+	else
+		__clear_bit(code, state->allkeystate);
 
 	if (!test_bit(code, state->keybit))
 		return;
@@ -433,6 +706,7 @@ static int keycombo_probe(struct platform_device *pdev)
 			ret = -ENOMEM;
 			goto err_parse_fail;
 		}
+		pdev->dev.platform_data = pdata;
 	} else {
 		pdata = pdev->dev.platform_data;
 		if(!pdata) {
@@ -478,6 +752,26 @@ static int keycombo_probe(struct platform_device *pdev)
 
 #if defined(CONFIG_POWER_KEY_CLR_RESET)
 	if(state->priv == NULL) {
+		
+		key_pinctrl = devm_pinctrl_get(&pdev->dev);
+		if (IS_ERR(key_pinctrl)) {
+			if (PTR_ERR(key_pinctrl) == -EPROBE_DEFER)
+				return -EPROBE_DEFER;
+
+			KEY_LOGI("Target does not use pinctrl\n");
+			key_pinctrl = NULL;
+		} else {
+			if (key_pinctrl) {
+				KEY_LOGI("control clr_gpio by pinctrl\n");
+				ret = keycombo_pinctrl_configure(key_pinctrl, false);
+				if (ret) {
+					KEY_LOGE("%s: fail to set pinctrl to normal state, %d\n",
+							__func__, ret);
+					goto err_pinctrl_configure_fail;
+				}
+			}
+		}
+
 		if (gpio_is_valid(pdata->clr_gpio)) {
 			ret = gpio_request(pdata->clr_gpio, "pwr_mistouch");
 			if (ret) {
@@ -486,19 +780,26 @@ static int keycombo_probe(struct platform_device *pdev)
 				goto err_wq_alloc_fail;
 			}
 
-			ret = gpio_direction_input(pdata->clr_gpio);
-			if (ret) {
-				KEY_LOGE("%s: Unable to set direction, %d\n", __func__, ret);
-				goto err_wq_alloc_fail;
-			}
 			clr_gpio = pdata->clr_gpio;
-			pdata->key_down_fn	= &start_reset_clear;
-			pdata->key_up_fn	= &stop_clearing;
+
+			
+			if(key_pinctrl == NULL) {
+				KEY_LOGI("control clr_gpio directly\n");
+				ret = gpio_direction_input(pdata->clr_gpio);
+				if (ret) {
+					KEY_LOGE("%s: Unable to set direction, %d\n",
+							__func__, ret);
+					goto err_wq_alloc_fail;
+				}
+			}
 		} else {
-			pr_info("%s: clr_gpio is not defined\n", __func__);
+			KEY_LOGE("%s: clr_gpio is not defined\n", __func__);
 			ret = -EIO;
 			goto err_wq_alloc_fail;
 		}
+
+		pdata->key_down_fn	= &start_reset_clear;
+		pdata->key_up_fn	= &stop_clearing;
 	}
 #endif
 
@@ -532,10 +833,27 @@ static int keycombo_probe(struct platform_device *pdev)
 		goto err_input_handler_fail;
 	}
 	platform_set_drvdata(pdev, state);
+	list_add(&state->list, &keycombo_list);
+	state->pdev = pdev;
 
 #if defined(CONFIG_POWER_KEY_CLR_RESET)
 	if(state->priv == NULL){
 		keycombo_sysfs_init();
+
+		if ((strcmp(htc_get_bootmode(), "recovery") == 0)
+			|| (strcmp(htc_get_bootmode(), "RUU") == 0)
+			|| (strcmp(htc_get_bootmode(), "download") == 0)) {
+			KEY_LOGI("%s: %s mode\n", __func__, htc_get_bootmode());
+
+			state->disable_reset_wq = create_singlethread_workqueue("disable reset wq");
+			INIT_DELAYED_WORK(&state->disable_reset_work, disable_reset_func);
+			state->disable_reset_flag = 0;
+			wake_lock_init(&state->disable_reset_wake_lock, WAKE_LOCK_SUSPEND, "keycombo_disable_reset");
+
+			ret = disable_reset_sysfs_init(state);
+			if (ret)
+				KEY_LOGE("KEY_ERR: %s: disable_reset_sysfs_init fail\n", __func__);
+		}
 	}
 #endif
 
@@ -544,6 +862,7 @@ static int keycombo_probe(struct platform_device *pdev)
 
 err_input_handler_fail:
 	destroy_workqueue(state->wq);
+err_pinctrl_configure_fail:
 err_wq_alloc_fail:
 	kfree(state);
 err_parse_fail:
@@ -556,9 +875,16 @@ err_get_pdata_fail:
 int keycombo_remove(struct platform_device *pdev)
 {
 	struct keycombo_state *state = platform_get_drvdata(pdev);
+
 #if defined(CONFIG_POWER_KEY_CLR_RESET)
+	if ((strcmp(htc_get_bootmode(), "recovery") == 0)
+		|| (strcmp(htc_get_bootmode(), "RUU") == 0)
+		|| (strcmp(htc_get_bootmode(), "download") == 0)) {
+		disable_reset_sysfs_remove(state);
+	}
 	keycombo_sysfs_remove();
 #endif
+	list_del(&state->list);
 	input_unregister_handler(&state->input_handler);
 	destroy_workqueue(state->wq);
 	kfree(state);

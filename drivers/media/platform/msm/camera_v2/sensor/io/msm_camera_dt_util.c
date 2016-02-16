@@ -22,6 +22,7 @@
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 
 static int gpio_859_index = 0; 
+static int gpio_863_index = 0; 
 
 int msm_camera_fill_vreg_params(struct camera_vreg_t *cam_vreg,
 	int num_vreg, struct msm_sensor_power_setting *power_setting,
@@ -1352,6 +1353,10 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 				{
 				    gpio_859_index ++;
 				}
+				else if (cam_vreg_gpio == 863)
+				{
+				    gpio_863_index ++;
+				}
 				
 				gpio_direction_output(cam_vreg_gpio, power_setting->config_val);
 			} else if (power_setting->seq_val < ctrl->num_vreg){
@@ -1451,6 +1456,14 @@ power_up_failed:
 				{
 				    gpio_859_index --;
 				    if (gpio_859_index == 0)
+				    {
+				        gpio_direction_output(cam_vreg_gpio, 0);
+				    }
+				}
+				else if (cam_vreg_gpio == 863)
+				{
+				    gpio_863_index --;
+				    if (gpio_863_index == 0)
 				    {
 				        gpio_direction_output(cam_vreg_gpio, 0);
 				    }
@@ -1628,6 +1641,16 @@ int msm_camera_power_down(struct msm_camera_power_ctrl_t *ctrl,
 						}
 						else
 							pr_info("%s skip power down gpio_859_index: %d\n", __func__, gpio_859_index);
+					}
+					else if (cam_vreg_gpio == 863)
+					{
+						gpio_863_index --;
+						if (gpio_863_index ==0)
+						{
+							gpio_direction_output(cam_vreg_gpio, 0);
+						}
+						else
+							pr_info("%s skip power down gpio_863_index: %d\n", __func__, gpio_863_index);
 					}
 					else
 					

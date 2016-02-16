@@ -208,9 +208,6 @@
 		}						\
 	} while (0)
 
-/*************************************************************
- *			rdev->ops traces		     *
- *************************************************************/
 
 TRACE_EVENT(rdev_suspend,
 	TP_PROTO(struct wiphy *wiphy, struct cfg80211_wowlan *wow),
@@ -1337,7 +1334,7 @@ TRACE_EVENT(rdev_testmode_dump,
 	),
 	TP_printk(WIPHY_PR_FMT, WIPHY_PR_ARG)
 );
-#endif /* CONFIG_NL80211_TESTMODE */
+#endif 
 
 TRACE_EVENT(rdev_set_bitrate_mask,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
@@ -1904,9 +1901,6 @@ TRACE_EVENT(rdev_set_ap_chanwidth,
 		  WIPHY_PR_ARG, NETDEV_PR_ARG, CHAN_DEF_PR_ARG)
 );
 
-/*************************************************************
- *	     cfg80211 exported functions traces		     *
- *************************************************************/
 
 TRACE_EVENT(cfg80211_return_bool,
 	TP_PROTO(bool ret),
@@ -2035,7 +2029,8 @@ TRACE_EVENT(cfg80211_michael_mic_failure,
 		MAC_ASSIGN(addr, addr);
 		__entry->key_type = key_type;
 		__entry->key_id = key_id;
-		memcpy(__entry->tsc, tsc, 6);
+		if (tsc)
+			memcpy(__entry->tsc, tsc, 6);
 	),
 	TP_printk(NETDEV_PR_FMT ", " MAC_PR_FMT ", key type: %d, key id: %d, tsc: %pm",
 		  NETDEV_PR_ARG, MAC_PR_ARG(addr), __entry->key_type,
@@ -2584,7 +2579,7 @@ TRACE_EVENT(cfg80211_authorization_event,
 		  WIPHY_PR_ARG, NETDEV_PR_ARG, __entry->auth_status)
 );
 
-#endif /* !__RDEV_OPS_TRACE || TRACE_HEADER_MULTI_READ */
+#endif 
 
 #undef TRACE_INCLUDE_PATH
 #define TRACE_INCLUDE_PATH .

@@ -20,7 +20,7 @@
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
- * $Id: bcmutils.c 518749 2014-12-03 10:13:43Z $
+ * $Id: bcmutils.c 598606 2015-11-10 09:05:00Z $
  */
 
 #include <bcm_cfg.h>
@@ -732,6 +732,11 @@ pktsetprio(void *pkt, bool update_vtag)
 			evh->vlan_tag = hton16(vlan_tag);
 			rc |= PKTPRIO_UPD;
 		}
+#ifdef EAPOL_PKT_PRIO
+	} else if (eh->ether_type == hton16(ETHER_TYPE_802_1X)) {
+		priority = PRIO_8021D_NC;
+		rc = PKTPRIO_DSCP;
+#endif 
 	} else if ((eh->ether_type == hton16(ETHER_TYPE_IP)) ||
 		(eh->ether_type == hton16(ETHER_TYPE_IPV6))) {
 		uint8 *ip_body = pktdata + sizeof(struct ether_header);
@@ -1717,15 +1722,22 @@ bcm_print_bytes(const char *name, const uchar *data, int len)
 {
 	int i;
 	int per_line = 0;
+	char line[80] = "";
 
 	printf("%s: %d \n", name ? name : "", len);
 	for (i = 0; i < len; i++) {
-		printf("%02x ", *data++);
+		snprintf(line, sizeof(line), "%s%02x ", line, *data++);
 		per_line++;
 		if (per_line == 16) {
 			per_line = 0;
-			printf("\n");
+			snprintf(line, sizeof(line), "%s\n", line);
+			printf("%s", line);
+			line[0] = '\0';
 		}
+	}
+	if (per_line) {
+		snprintf(line, sizeof(line), "%s\n", line);
+		printf("%s", line);
 	}
 	printf("\n");
 }

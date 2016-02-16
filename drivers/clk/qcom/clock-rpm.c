@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,7 @@
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
 #include <linux/err.h>
-#include <linux/mutex.h>
+#include <linux/rtmutex.h>
 #include <linux/clk/msm-clk-provider.h>
 #include <soc/qcom/clock-rpm.h>
 #include <soc/qcom/msm-clock-controller.h>
@@ -71,7 +71,7 @@ struct clk_rpmrs_data clk_rpmrs_data_smd = {
 	.ctx_sleep_id = MSM_RPM_CTX_SLEEP_SET,
 };
 
-static DEFINE_MUTEX(rpm_clock_lock);
+static DEFINE_RT_MUTEX(rpm_clock_lock);
 
 static void to_active_sleep_khz(struct rpm_clk *r, unsigned long rate,
 			unsigned long *active_khz, unsigned long *sleep_khz)
@@ -98,7 +98,7 @@ static int rpm_clk_prepare(struct clk *clk)
 	unsigned long peer_khz = 0, peer_sleep_khz = 0;
 	struct rpm_clk *peer = r->peer;
 
-	mutex_lock(&rpm_clock_lock);
+	rt_mutex_lock(&rpm_clock_lock);
 
 	to_active_sleep_khz(r, r->c.rate, &this_khz, &this_sleep_khz);
 
@@ -134,7 +134,7 @@ out:
 	if (!rc)
 		r->enabled = true;
 
-	mutex_unlock(&rpm_clock_lock);
+	rt_mutex_unlock(&rpm_clock_lock);
 
 	return rc;
 }
@@ -143,7 +143,7 @@ static void rpm_clk_unprepare(struct clk *clk)
 {
 	struct rpm_clk *r = to_rpm_clk(clk);
 
-	mutex_lock(&rpm_clock_lock);
+	rt_mutex_lock(&rpm_clock_lock);
 
 	if (r->c.rate) {
 		uint32_t value;
@@ -166,7 +166,7 @@ static void rpm_clk_unprepare(struct clk *clk)
 	}
 	r->enabled = false;
 out:
-	mutex_unlock(&rpm_clock_lock);
+	rt_mutex_unlock(&rpm_clock_lock);
 
 	return;
 }
@@ -177,7 +177,7 @@ static int rpm_clk_set_rate(struct clk *clk, unsigned long rate)
 	unsigned long this_khz, this_sleep_khz;
 	int rc = 0;
 
-	mutex_lock(&rpm_clock_lock);
+	rt_mutex_lock(&rpm_clock_lock);
 
 	if (r->enabled) {
 		uint32_t value;
@@ -201,7 +201,7 @@ static int rpm_clk_set_rate(struct clk *clk, unsigned long rate)
 	}
 
 out:
-	mutex_unlock(&rpm_clock_lock);
+	rt_mutex_unlock(&rpm_clock_lock);
 
 	return rc;
 }
@@ -297,6 +297,28 @@ int enable_rpm_scaling(void)
 
 	is_inited++;
 	return 0;
+}
+
+int vote_bimc(struct rpm_clk *r, uint32_t value)
+{
+	int rc;
+
+	struct msm_rpm_kvp kvp = {
+		.key = r->rpm_key,
+		.data = (void *)&value,
+		.length = sizeof(value),
+	};
+
+	rc = msm_rpm_send_message_noirq(MSM_RPM_CTX_ACTIVE_SET,
+			r->rpm_res_type, r->rpmrs_data->ctx_active_id,
+			&kvp, 1);
+	if (rc < 0) {
+		if (rc != -EPROBE_DEFER)
+			WARN(1, "BIMC vote not sent!\n");
+		return rc;
+	}
+
+	return rc;
 }
 
 struct clk_ops clk_ops_rpm = {

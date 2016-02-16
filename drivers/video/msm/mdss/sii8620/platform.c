@@ -51,11 +51,17 @@
 #include "../mdss_hdmi_mhl.h"
 
 
+/* System GPIOs assigned to control various starter kit signals */
 
 #define GPIO_EXP_ADDR				0x40
 
-#define RESET_PULSE_WIDTH			1	
+#define RESET_PULSE_WIDTH			1	/* In ms	*/
 
+/*
+ * NOTE: The following GPIO expander register type address
+ * offsets are all defined with the address auto-increment
+ * bit set (0x80)
+ */
 #define GPIO_EXP_INPUT_REGS_OFFSET		0x80
 #define GPIO_EXP_OUTPUT_REGS_OFFSET		0x88
 #define GPIO_EXP_POL_INVERT_REGS_OFFSET		0x90
@@ -153,6 +159,9 @@ enum si_spi_opcodes {
 struct spi_xfer_mem {
 	u8 *tx_buf;
 	u8 *rx_buf;
+	/* block commands are asynchronous to normal cbus traffic
+	   and CANNOT share a buffer.
+	 */
 	uint8_t *block_tx_buffers;
 	struct spi_transfer spi_xfer[2];
 	struct spi_message spi_cmd;
@@ -190,7 +199,7 @@ bool input_dev_ucp = 1;
 bool input_dev_rbp = 1;
 int hdcp_content_type;
 bool use_spi = 0;
-int crystal_khz = 19200; 
+int crystal_khz = 19200; /* SiI8620 SK has 19.2MHz crystal */
 int use_heartbeat;
 
 bool wait_for_user_intr;
@@ -495,6 +504,10 @@ int si_device_dbg_i2c_reg_xfer(void *dev_context, u8 page, u8 offset,
 
 #if defined(DEBUG)
 
+/*
+ * Return a pointer to the file name part of the
+ * passed path spec string.
+ */
 char *find_file_name(const char *path_spec)
 {
 	char *pc;
@@ -536,7 +549,7 @@ void print_formatted_debug_msg(char *file_spec, const char *func_name,
 	msg_offset += len;
 	remaining_msg_len -= len;
 
-	
+	/* Only print the file name, not the path */
 	if (file_spec != NULL)
 		file_spec = find_file_name(file_spec);
 
@@ -612,9 +625,9 @@ void dump_transfer(enum tx_interface_types if_type,
 		};
 
 		if (count > 1) {
-			
+			/* 3 chars per byte displayed */
 			buf_size += count * 3;
-			
+			/* plus per display row overhead */
 			buf_size += ((count / 16) + 1) * 8;
 		}
 
@@ -654,7 +667,7 @@ void dump_transfer(enum tx_interface_types if_type,
 		kfree(buf);
 	}
 }
-#endif 
+#endif /* #if defined(DEBUG) */
 
 static struct mhl_drv_info drv_info = {
 	.drv_context_size = sizeof(struct drv_hw_context),
@@ -669,7 +682,7 @@ static void toggle_reset_n(void)
 	MHL_TX_DBG_INFO("Toggle MHL_RST_B/RESET_N pin. Resets 8620 only.\n");
 	gpio_set_value(drv_info.reset_pin, 0);
 
-	
+	/* Without this, we see a 500ns reset pulse. Enforce 1ms.*/
 	msleep(RESET_PULSE_WIDTH);
 
 	gpio_set_value(drv_info.reset_pin, 1);
@@ -678,7 +691,7 @@ static void toggle_reset_n(void)
 
 void platform_mhl_tx_hw_reset(uint32_t reset_period, uint32_t reset_delay)
 {
-	
+	/* then reset the chip */
 	toggle_reset_n();
 
 	if (reset_delay)
@@ -690,6 +703,11 @@ void platform_mhl_tx_hw_reset(uint32_t reset_period, uint32_t reset_delay)
 	}
 }
 
+/*
+ * since we've agreed that the interrupt pin will never move
+ *  we've special cased it for performance reasons.
+ * This is why there is no set_pin() index for it.
+ */
 int is_interrupt_asserted(void)
 {
 	return (gpio_get_value(drv_info.intr_pin) ? 0 : 1);
@@ -946,7 +964,7 @@ int mhl_tx_read_reg_block_spi_emsc(void *drv_context, u16 count, u8 * values)
 		MHL_TX_DBG_ERR("SPI eMSC read block failed ");
 	} else {
 		memcpy(values, spi_mem.rx_buf, count);
-		
+		/* DUMP_SPI_TRANSFER(page, offset, count, values, false); */
 	}
 
 	return ret;
@@ -996,8 +1014,11 @@ int mhl_tx_write_block_spi_emsc(void *drv_context, struct block_req *req)
 	u16 length;
 	int ret;
 
+	/* DUMP_SPI_TRANSFER(page, offset, req->count, req->payload->as_bytes,
+	 * true);
+	 */
 
-	
+	/* dummy bytes will always be zero */
 	length = EMSC_WRITE_SPI_CMD_SIZE + req->count;
 
 	if (length > MAX_SPI_EMSC_BLOCK_SIZE) {
@@ -1075,6 +1096,10 @@ int mhl_tx_modify_reg(void *drv_context, u16 address, u8 mask, u8 value)
 		return reg_value;
 }
 
+/*
+ * Return a value indicating how upstream HPD is
+ * implemented on this platform.
+ */
 enum hpd_control_mode platform_get_hpd_control_mode(void)
 {
 	return HPD_CTRL_OPEN_DRAIN;
@@ -1085,7 +1110,7 @@ static int si_8620_add_i2c(struct i2c_client *client)
 	struct i2c_adapter *adapter = client->adapter;
 	int idx;
 
-	
+	/* "Hotplug" the MHL transmitter device onto the 2nd I2C bus  for BB-xM or 4th for pandaboard*/
 	i2c_bus_adapter = adapter;
 	if (i2c_bus_adapter == NULL) {
 		pr_err("%s() failed to get i2c adapter\n", __func__);
@@ -1181,7 +1206,7 @@ static int mhl_get_gpio_dt_data(struct device *dev)
 		gpio_request_one(drv_info.reset_pin, GPIOF_OUT_INIT_HIGH, NULL);
 		gpio_direction_output(drv_info.reset_pin, 1);
 		gpio_set_value_cansleep(drv_info.reset_pin, 1);
-		msleep(100); 
+		msleep(100); /* Timing to Access I2C */
 	}
 
 	drv_info.intr_pin = of_get_named_gpio(of_node, "mhl-intr-gpio", 0);
@@ -1241,7 +1266,7 @@ static int mhl_get_dt_data(struct device *dev)
 		return -EINVAL;
 	}
 
-	
+	/* parse phandle for hdmi tx */
 	hdmi_tx_node = of_parse_phandle(of_node, "qcom,hdmi-tx-map", 0);
 	if (!hdmi_tx_node) {
 		pr_err("%s: can't find hdmi phandle\n", __func__);
@@ -1257,7 +1282,7 @@ static int mhl_get_dt_data(struct device *dev)
 		__func__, (unsigned long int)drv_info.hdmi_pdev);
 
 	return 0;
-} 
+} /* mhl_tx_get_dt_data */
 
 void si_wakeup_mhl(void)
 {
@@ -1360,9 +1385,14 @@ int si_8620_pm_suspend(struct device *dev)
 		goto done;
 
 	status = mhl_handle_power_change_request(dev, false);
-	
-	
-	
+	/*
+	 * Set MHL/USB switch to USB
+	 * NOTE: Switch control is implemented differently on each
+	 * version of the starter kit.
+	 */
+	/* FIXME: force to switch to MHL since cable detect function is not ready */
+	//gpio_set_value_cansleep(drv_info.dpdn_pin, 0);
+	//gpio_set_value_cansleep(drv_info.dpdn_pin_, 0);
 
 	up(&platform_lock);
 done:
@@ -1377,9 +1407,9 @@ int si_8620_pm_resume(struct device *dev)
 	if (status)
 		goto done;
 
-	
-	
-	
+	/* FIXME: force to switch to MHL since cable detect function is not ready */
+	//gpio_set_value_cansleep(drv_info.dpdn_pin, 1);
+	//gpio_set_value_cansleep(drv_info.dpdn_pin_, 1);
 	status = mhl_handle_power_change_request(dev, true);
 
 	up(&platform_lock);
@@ -1517,7 +1547,7 @@ static int si_8620_mhl_tx_spi_probe(struct spi_device *spi)
 		ret = -ENOMEM;
 		goto failed;
 	}
-	
+	/* ret = mhl_tx_init(&drv_info, &spi_dev->dev); */
 	if (ret) {
 		pr_err("%s(): mhl_tx_init failed, error code %d\n",
 		       __func__, ret);
@@ -1660,7 +1690,7 @@ static int __init si_8620_init(void)
 	platform_flags &= ~PLATFORM_FLAG_HEARTBEAT_MASK;
 	switch (use_heartbeat) {
 	case 0:
-		
+		/* don't do anything with heatbeat */
 		break;
 	case 1:
 		platform_flags |= PLATFORM_VALUE_ISSUE_HEARTBEAT;
@@ -1722,7 +1752,7 @@ static unsigned int debug_level_stack_ptr;
 void push_debug_level(int new_verbosity)
 {
 	if (debug_level_stack_ptr < ARRAY_SIZE(debug_level_stack)) {
-		
+		/* stack is initially empty */
 		debug_level_stack[debug_level_stack_ptr++] = debug_level;
 		debug_level = new_verbosity;
 	} else {

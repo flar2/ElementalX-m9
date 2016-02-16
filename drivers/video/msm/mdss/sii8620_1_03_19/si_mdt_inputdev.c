@@ -417,7 +417,7 @@ void generate_event_keyboard(struct mhl_dev_context *dev_context,
 
 	register_device(dev_context, MDT_TYPE_KEYBOARD);
 
-	memcpy(keycodes_new, &keyboard_packet->header, HID_INPUT_REPORT_CNT);
+	memcpy(keycodes_new, &keyboard_packet->header, sizeof(uint8_t));
 	MHL_TX_DBG_INFO("Key (scancode %02X) asserted.\n", keycodes_new[1]);
 
 	if (dev_keyboard == 0) {

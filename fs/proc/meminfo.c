@@ -38,6 +38,9 @@ void driver_report_meminfo(struct seq_file *m)
 	uintptr_t ion_inuse = msm_ion_heap_meminfo(false);
 	unsigned long free_cma = free_cma_pages();
 
+	/*
+	 * display in kilobytes.
+	 */
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 
 	seq_printf(m,
@@ -63,6 +66,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	unsigned long pages[NR_LRU_LISTS];
 	int lru;
 
+/*
+ * display in kilobytes.
+ */
 #define K(x) ((x) << (PAGE_SHIFT - 10))
 	si_meminfo(&i);
 	si_swapinfo(&i);
@@ -80,6 +86,9 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	for (lru = LRU_BASE; lru < NR_LRU_LISTS; lru++)
 		pages[lru] = global_page_state(NR_LRU_BASE + lru);
 
+	/*
+	 * Tagged format, for easy grepping and expansion.
+	 */
 	seq_printf(m,
 		"MemTotal:       %8lu kB\n"
 		"MemFree:        %8lu kB\n"

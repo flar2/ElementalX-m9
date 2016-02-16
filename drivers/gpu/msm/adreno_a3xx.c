@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -41,10 +41,10 @@ const unsigned int a3xx_registers[] = {
 	/* CP REGISTERS */
 	0x01c0, 0x01c1, 0x01c3, 0x01c5, 0x01c7, 0x01c7, 0x01c9, 0x01ca,
 	0x01cc, 0x01cd, 0x01d4, 0x01dd, 0x01ea, 0x01ea, 0x01ec, 0x01f1,
-	0x01f5, 0x01fa, 0x01fc, 0x01ff, 0x0440, 0x0440, 0x0443, 0x0443,
-	0x0445, 0x0445, 0x044d, 0x044f, 0x0452, 0x046f, 0x047c, 0x047c,
-	0x047f, 0x047f, 0x0578, 0x057f, 0x0600, 0x0602, 0x0605, 0x0607,
-	0x060a, 0x060e, 0x0612, 0x0614,
+	0x01f5, 0x01f6, 0x01f8, 0x01f9, 0x01fc, 0x01ff, 0x0440, 0x0440,
+	0x0443, 0x0443, 0x0445, 0x0445, 0x044d, 0x044f, 0x0452, 0x046f,
+	0x047c, 0x047c, 0x047f, 0x047f, 0x0578, 0x057f, 0x0600, 0x0602,
+	0x0605, 0x0607, 0x060a, 0x060e, 0x0612, 0x0614,
 	/* VSC REGISTERS */
 	0x0c01, 0x0c02, 0x0c06, 0x0c1d,
 	/* PC REGISTERS */
@@ -1065,6 +1065,10 @@ int a3xx_perfcounter_enable(struct adreno_device *adreno_dev,
 		/* wait for the above commands submitted to complete */
 		ret = adreno_ringbuffer_waittimestamp(rb, rb->timestamp,
 				ADRENO_IDLE_TIMEOUT);
+		if (ret)
+			KGSL_DRV_ERR(rb->device,
+			"Perfcounter %u/%u/%u start via commands failed %d\n",
+			group, counter, countable, ret);
 	} else {
 		/* Select the desired perfcounter */
 		kgsl_regwrite(&adreno_dev->dev, reg->select, countable);
@@ -1317,6 +1321,7 @@ uint64_t a3xx_perfcounter_read(struct adreno_device *adreno_dev,
 	 (1 << A3XX_INT_CP_IB1_INT) |            \
 	 (1 << A3XX_INT_CP_IB2_INT) |            \
 	 (1 << A3XX_INT_CP_RB_INT) |             \
+	 (1 << A3XX_INT_CACHE_FLUSH_TS) |	 \
 	 (1 << A3XX_INT_CP_REG_PROTECT_FAULT) |  \
 	 (1 << A3XX_INT_CP_AHB_ERROR_HALT) |     \
 	 (1 << A3XX_INT_UCHE_OOB_ACCESS))
@@ -1344,7 +1349,7 @@ static struct adreno_irq_funcs a3xx_irq_funcs[] = {
 	ADRENO_IRQ_CALLBACK(NULL),	       /* 17 - CP_RB_DONE_TS */
 	ADRENO_IRQ_CALLBACK(NULL),	       /* 18 - CP_VS_DONE_TS */
 	ADRENO_IRQ_CALLBACK(NULL),	       /* 19 - CP_PS_DONE_TS */
-	ADRENO_IRQ_CALLBACK(NULL),	       /* 20 - CP_CACHE_FLUSH_TS */
+	ADRENO_IRQ_CALLBACK(adreno_cp_callback), /* 20 - CP_CACHE_FLUSH_TS */
 	/* 21 - CP_AHB_ERROR_FAULT */
 	ADRENO_IRQ_CALLBACK(a3xx_err_callback),
 	ADRENO_IRQ_CALLBACK(NULL),	       /* 22 - Unused */

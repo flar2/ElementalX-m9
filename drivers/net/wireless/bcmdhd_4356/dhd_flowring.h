@@ -49,7 +49,7 @@
 
 #define DHD_FLOW_PRIO_AC_MAP		0
 #define DHD_FLOW_PRIO_TID_MAP		1
-
+#define DHD_FLOW_PRIO_LLR_MAP		2
 
 typedef struct dhd_pkttag_fr {
 	uint16  flowid;
@@ -135,7 +135,7 @@ extern void dhd_flow_queue_init(dhd_pub_t *dhdp, flow_queue_t *queue, int max);
 extern void dhd_flow_queue_register(flow_queue_t *queue, flow_queue_cb_t cb);
 extern int  dhd_flow_queue_enqueue(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt);
 extern void * dhd_flow_queue_dequeue(dhd_pub_t *dhdp, flow_queue_t *queue);
-extern void dhd_flow_queue_reinsert(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt);
+extern int  dhd_flow_queue_reinsert(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt);
 
 extern int  dhd_flow_rings_init(dhd_pub_t *dhdp, uint32 num_flow_rings);
 

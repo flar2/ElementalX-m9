@@ -472,9 +472,11 @@ int hima_wifi_power(int on)
     int err = -1;
 
     if (on) {
-        err = wlan_seci_gpio_init(&gpio_seci_in, 1);
-        if (err != 0)
-            goto err_power;
+        if (gpio_seci_in.prop == false) {
+            err = wlan_seci_gpio_init(&gpio_seci_in, 1);
+            if (err != 0)
+                goto err_power;
+        }
         err = bcm_gpio_set(&gpio_wl_en, WLAN_EN_HIGH);
     } else {
         if (gpio_seci_in.prop == true)
@@ -529,10 +531,9 @@ int lock_wlan_seci_gpio(void)
 }
 EXPORT_SYMBOL(lock_wlan_seci_gpio);
 
-int get_gpio4_state(bool *state)
+bool get_gpio4_state(void)
 {
-   *state = gpio_seci_in.prop;
-   return 0;
+	return gpio_seci_in.prop;
 }
 EXPORT_SYMBOL(get_gpio4_state);
 

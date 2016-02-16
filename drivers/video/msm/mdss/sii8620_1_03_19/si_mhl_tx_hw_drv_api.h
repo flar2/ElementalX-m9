@@ -16,22 +16,25 @@
 #if !defined(SI_MHL_TX_DRV_API_H)
 #define SI_MHL_TX_DRV_API_H
 
+/*
+ * Structure to hold command details from upper layer to CBUS module
+ */
 struct cbus_req {
 	struct list_head link;
 	union {
 		struct {
-			uint8_t cancel:1; 
+			uint8_t cancel:1; /* this command has been canceled */
 			uint8_t resvd:7;
 		} flags;
 		uint8_t as_uint8;
 	} status;
 	uint8_t retry_count;
-	uint8_t command;	
+	uint8_t command;	/* VS_CMD or RCP opcode */
 	uint8_t reg;
 	uint8_t reg_data;
-	uint8_t burst_offset;	
-	uint8_t length;		
-	uint8_t msg_data[16];	
+	uint8_t burst_offset;	/* register offset */
+	uint8_t length;		/* Only applicable to write burst */
+	uint8_t msg_data[16];	/* scratch pad data area. */
 	const char *function;
 	int line;
 	int sequence;
@@ -40,9 +43,12 @@ struct cbus_req {
 				uint8_t data1);
 };
 struct SI_PACK_THIS_STRUCT tport_hdr_and_burst_id_t {
+	/* waste two bytes to save on memory copying when submitting BLOCK
+	 * transactions
+	 */
 	struct SI_PACK_THIS_STRUCT standard_transport_header_t tport_hdr;
 
-	
+	/* sub-payloads start here */
 	struct MHL_burst_id_t burst_id;
 };
 union SI_PACK_THIS_STRUCT emsc_payload_t {
@@ -55,7 +61,7 @@ struct SI_PACK_THIS_STRUCT block_req {
 	const char *function;
 	int line;
 	int sequence;
-	uint16_t count;		
+	uint16_t count;		/* (size - 1) see MHL spec section 13.5.7.2 */
 	uint8_t space_remaining;
 	uint8_t sub_payload_size;
 	uint8_t *platform_header;
@@ -93,6 +99,10 @@ struct bist_stat_info {
 	uint16_t avlink_stat;
 };
 
+/*
+ * The APIs listed below must be implemented by the MHL transmitter
+ * hardware support module.
+ */
 
 struct drv_hw_context;
 struct interrupt_info;
@@ -213,4 +223,4 @@ enum tdm_vc_num {
 int si_mhl_tx_drv_set_tdm_slot_allocation(struct drv_hw_context *hw_context,
 	uint8_t *vc_slot_counts, bool program);
 
-#endif 
+#endif /* if !defined(SI_MHL_TX_DRV_API_H) */

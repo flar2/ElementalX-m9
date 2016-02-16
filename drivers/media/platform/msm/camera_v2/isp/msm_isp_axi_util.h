@@ -68,4 +68,4 @@ void msm_isp_notify(struct vfe_device *vfe_dev, uint32_t event_type,
 void msm_isp_process_axi_irq(struct vfe_device *vfe_dev,
 	uint32_t irq_status0, uint32_t irq_status1,
 	struct msm_isp_timestamp *ts);
-#endif /* __MSM_ISP_AXI_UTIL_H__ */
+#endif 

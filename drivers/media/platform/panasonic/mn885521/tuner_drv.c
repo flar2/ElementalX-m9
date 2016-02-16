@@ -180,6 +180,9 @@ static struct file_operations TunerFileOperations =
    .ioctl   = tuner_module_entry_ioctl,
 #else  
    .unlocked_ioctl = tuner_module_entry_ioctl,
+   #ifdef CONFIG_COMPAT
+   .compat_ioctl = tuner_module_entry_ioctl,
+   #endif
 #endif 
    .open    = tuner_module_entry_open,
    .release = tuner_module_entry_close
@@ -340,115 +343,118 @@ int poweron_tuner(struct fullseg_platform_data *gpios, int on)
 	if (on)
 	{
 		printk("[FULLSEG] %s, on\r\n", __func__); 
-                ret = gpio_direction_output(gpios->_1v8_en, 0);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->_1v8_en);
-                        return ret;
-                }
-		mdelay(10);
-
+		ret = gpio_direction_output(gpios->_1v8_en, 0);
+		if (ret < 0) {
+			pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+			gpio_free(gpios->_1v8_en);
+			return ret;
+		}
+		
+		
 		gpio_set_value(gpios->_1v8_en, 1);
-		mdelay(10);
-
+		
 		gpio_direction_output(gpios->_1v1_en, 0);
-		mdelay(10);
-
-                gpio_set_value(gpios->_1v1_en, 1);
-		mdelay(10);
-
-        	ret = gpio_direction_output(gpios->npdreg, 1);
-	        if (ret < 0) {
-        	        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                	gpio_free(gpios->npdreg);
-	                return ret;
-        	}
-		msleep(10); 
-
-                ret = gpio_direction_output(gpios->npdxtal, 1);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->npdxtal);
-                        return ret;
-                }
-                msleep(10); 
-
-                ret = gpio_direction_output(gpios->nrst, 1);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->nrst);
-                        return ret;
-                }
+		
+        gpio_set_value(gpios->_1v1_en, 1);
 
 		
-        	fm_fullseg_antenna_sw_power_enable();
+		printk("[FULLSEG] %s, set gpio state to low\r\n", __func__);
+		ret = gpio_direction_output(gpios->nrst, 0);
+		msleep(10); 
+		ret = gpio_direction_output(gpios->npdxtal, 0);
+		ret = gpio_direction_output(gpios->npdreg, 0);
+		msleep(10);
+
+        ret = gpio_direction_output(gpios->npdreg, 1);
+	    if (ret < 0) {
+  			pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+  			gpio_free(gpios->npdreg);
+			return ret;
+        }
+		msleep(10); 
+
+		ret = gpio_direction_output(gpios->npdxtal, 1);
+		if (ret < 0) {
+			pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+			gpio_free(gpios->npdxtal);
+			return ret;
+		}
+		msleep(10); 
+
+        ret = gpio_direction_output(gpios->nrst, 1);
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+            gpio_free(gpios->nrst);
+            return ret;
+		}
+
+		
+        fm_fullseg_antenna_sw_power_enable();
 
 		gpio_free(gpios->fm_fullseg_ant_sw);
-                ret = gpio_request(gpios->fm_fullseg_ant_sw, "fm_fullseg_ant_sw");
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_request failed %d\n", __func__, ret);
-                        return ret;
-                }
+        ret = gpio_request(gpios->fm_fullseg_ant_sw, "fm_fullseg_ant_sw");
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_request failed %d\n", __func__, ret);
+            return ret;
+        }
 	
-                ret = gpio_direction_output(gpios->fm_fullseg_ant_sw, 1);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->fm_fullseg_ant_sw);
-                        return ret;
-                }
+        ret = gpio_direction_output(gpios->fm_fullseg_ant_sw, 1);
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+            gpio_free(gpios->fm_fullseg_ant_sw);
+            return ret;
+		}
+
 	}else{
 		printk("[FULLSEG] %s, off\r\n", __func__);
-                ret = gpio_direction_output(gpios->fm_fullseg_ant_sw, 0);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->fm_fullseg_ant_sw);
-                        return ret;
-                }
+        ret = gpio_direction_output(gpios->fm_fullseg_ant_sw, 0);
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+            gpio_free(gpios->fm_fullseg_ant_sw);
+            return ret;
+        }
 		
-	        fm_fullseg_antenna_sw_power_disable();
+	    fm_fullseg_antenna_sw_power_disable();
 
-                ret = gpio_direction_output(gpios->nrst, 0);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->nrst);
-                        return ret;
-                }
+        ret = gpio_direction_output(gpios->nrst, 0);
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+            gpio_free(gpios->nrst);
+            return ret;
+        }
 		msleep(10); 
 
-                ret = gpio_direction_output(gpios->npdxtal, 0);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->npdxtal);
-                        return ret;
-                }
-
-                ret = gpio_direction_output(gpios->npdreg, 0);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->npdreg);
-                        return ret;
-                }
-                msleep(10); 
-
+        ret = gpio_direction_output(gpios->npdxtal, 0);
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+            gpio_free(gpios->npdxtal);
+            return ret;
+        }
+        ret = gpio_direction_output(gpios->npdreg, 0);
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+            gpio_free(gpios->npdreg);
+            return ret;
+		}
                 
-                
+
 		gpio_direction_output(gpios->_1v1_en, 0);
-                gpio_set_value(gpios->_1v1_en, 0);
-                mdelay(10);
+        gpio_set_value(gpios->_1v1_en, 0);
 
 		
-                ret = gpio_direction_output(gpios->_1v8_en, 0);
-                if (ret < 0) {
-                        pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
-                        gpio_free(gpios->_1v8_en);
-                        return ret;
-                }
-                gpio_set_value(gpios->_1v8_en, 0);
-                mdelay(10);
-
+        ret = gpio_direction_output(gpios->_1v8_en, 0);
+        if (ret < 0) {
+        	pr_err("[FULLSEG] %s: gpio_direction_output failed %d\n", __func__, ret);
+            gpio_free(gpios->_1v8_en);
+            return ret;
+		}
+        gpio_set_value(gpios->_1v8_en, 0);
+        mdelay(10);
 
 	}
+
 	return ret;
+
 }
 static int read_gpio_from_dt(struct device_node *dt, struct fullseg_platform_data *pdata)
 {
@@ -496,27 +502,8 @@ static int read_gpio_from_dt(struct device_node *dt, struct fullseg_platform_dat
                 pdata->_1v1_en = of_get_named_gpio(dt, "fullseg,1v1_en", 0);
                 printk("%s: pdata->_1v1_en = %d\n", __func__, pdata->_1v1_en);
         }
+
 		
-		prop = of_find_property(dt, "fullseg,ts_clk", NULL);
-        if (prop) {
-                pdata->ts_clk= of_get_named_gpio(dt, "fullseg,ts_clk", 0);
-                printk("%s: pdata->ts_clk = %d\n", __func__, pdata->ts_clk);
-        }
-		prop = of_find_property(dt, "fullseg,ts_en", NULL);
-        if (prop) {
-                pdata->ts_en= of_get_named_gpio(dt, "fullseg,ts_en", 0);
-                printk("%s: pdata->ts_en = %d\n", __func__, pdata->ts_en);
-        }
-		prop = of_find_property(dt, "fullseg,ts_data", NULL);
-		if (prop) {
-                pdata->ts_data= of_get_named_gpio(dt, "fullseg,ts_data", 0);
-                printk("%s: pdata->ts_data = %d\n", __func__, pdata->ts_data);
-        }
-		prop = of_find_property(dt, "fullseg,ts_sync", NULL);
-		if (prop) {
-                pdata->ts_sync= of_get_named_gpio(dt, "fullseg,ts_sync", 0);
-                printk("%s: pdata->ts_sync = %d\n", __func__, pdata->ts_sync);
-        }
 		
 
         return 0;

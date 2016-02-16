@@ -84,6 +84,7 @@ static ktime_t start;
 static int touch_init = 0;
 static int keypad_init = 0;
 
+static int max_input_current;
 extern int htc_battery_set_max_input_current(int target_ma);
 
 struct projector_dev {
@@ -237,6 +238,12 @@ static void usb_setup_android_projector(struct work_struct *work)
 		schedule_work(&projector_dev->notifier_work);
 	}
 }
+
+static void battery_set_max_input_current(struct work_struct *work)
+{
+	htc_battery_set_max_input_current(max_input_current);
+}
+static DECLARE_WORK(set_current_work, battery_set_max_input_current);
 
 static inline struct projector_dev *proj_func_to_dev(struct usb_function *f)
 {
@@ -1560,7 +1567,7 @@ static int projector_ctrlrequest(struct usb_composite_dev *cdev,
 				if (!w_value)
 					projector_enable_fb_work(projector_dev, 1);
 				else
-					send_fb(projector_dev);
+					queue_work(projector_dev->wq_display, &projector_dev->send_fb_work_legacy);
 				value = 0;
 				break;
 
@@ -1599,8 +1606,8 @@ static int projector_ctrlrequest(struct usb_composite_dev *cdev,
 				}
 				break;
 			case HSML_06_REQ_SET_MAX_CHARGING_CURRENT:
-				
-				htc_battery_set_max_input_current((int)w_value);
+				max_input_current = (int) w_value;
+				schedule_work(&set_current_work);
 				value = 0;
 				break;
 

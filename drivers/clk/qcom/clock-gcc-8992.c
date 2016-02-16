@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -65,7 +65,6 @@ static DEFINE_VDD_REGULATORS(vdd_dig, VDD_DIG_NUM, 1, vdd_corner, NULL);
 
 #define GPLL0_MODE                                       (0x0000)
 #define SYS_NOC_USB3_AXI_CBCR                            (0x03FC)
-#define MSS_CFG_AHB_CBCR                                 (0x0280)
 #define MSS_Q6_BIMC_AXI_CBCR                             (0x0284)
 #define USB_30_BCR                                       (0x03C0)
 #define USB30_MASTER_CBCR                                (0x03C8)
@@ -257,7 +256,7 @@ static struct pll_vote_clk gpll4 = {
 	.status_mask = BIT(30),
 	.base = &virt_base,
 	.c = {
-		.rate = 1536000000,
+		.rate = 1376000000,
 		.parent = &gcc_xo.c,
 		.dbg_name = "gpll4",
 		.ops = &clk_ops_pll_vote,
@@ -1103,8 +1102,8 @@ static struct clk_freq_tbl ftbl_sdcc1_apps_clk_src[] = {
 	F(  25000000, gpll0_out_main,   12,    1,     2),
 	F(  50000000, gpll0_out_main,   12,    0,     0),
 	F( 100000000, gpll0_out_main,    6,    0,     0),
-	F( 192000000, gpll4_out_main,    2,    0,     0),
-	F( 384000000, gpll4_out_main,    1,    0,     0),
+	F( 172000000, gpll4_out_main,    2,    0,     0),
+	F( 344000000, gpll4_out_main,    1,    0,     0),
 	F_END
 };
 
@@ -1838,17 +1837,6 @@ static struct branch_clk gcc_gp3_clk = {
 	},
 };
 
-static struct branch_clk gcc_mss_cfg_ahb_clk = {
-	.cbcr_reg = MSS_CFG_AHB_CBCR,
-	.has_sibling = 1,
-	.base = &virt_base,
-	.c = {
-		.dbg_name = "gcc_mss_cfg_ahb_clk",
-		.ops = &clk_ops_branch,
-		CLK_INIT(gcc_mss_cfg_ahb_clk.c),
-	},
-};
-
 static struct branch_clk gcc_mss_q6_bimc_axi_clk = {
 	.cbcr_reg = MSS_Q6_BIMC_AXI_CBCR,
 	.has_sibling = 0,
@@ -2142,15 +2130,25 @@ static struct branch_clk gcc_usb3_phy_aux_clk = {
 	},
 };
 
-static struct branch_clk gcc_usb3_phy_pipe_clk = {
-	.cbcr_reg = USB3_PHY_PIPE_CBCR,
-	.bcr_reg = USB3PHY_PHY_BCR,
-	.has_sibling = 1,
+static struct gate_clk gcc_usb3_phy_pipe_clk = {
+	.en_reg = USB3_PHY_PIPE_CBCR,
+	.en_mask = BIT(0),
+	.delay_us = 50,
 	.base = &virt_base,
 	.c = {
 		.dbg_name = "gcc_usb3_phy_pipe_clk",
-		.ops = &clk_ops_branch,
+		.ops = &clk_ops_gate,
 		CLK_INIT(gcc_usb3_phy_pipe_clk.c),
+	},
+};
+
+static struct reset_clk gcc_usb3phy_phy_reset = {
+	.reset_reg = USB3PHY_PHY_BCR,
+	.base = &virt_base,
+	.c = {
+		.dbg_name = "gcc_usb3phy_phy_reset",
+		.ops = &clk_ops_rst,
+		CLK_INIT(gcc_usb3phy_phy_reset.c),
 	},
 };
 
@@ -2239,7 +2237,6 @@ static struct mux_clk gcc_debug_mux = {
 		{ &debug_mmss_clk.c, 0x002b },
 		{ &debug_rpm_clk.c, 0xffff },
 		{ &gcc_sys_noc_usb3_axi_clk.c, 0x0006 },
-		{ &gcc_mss_cfg_ahb_clk.c, 0x0030 },
 		{ &gcc_mss_q6_bimc_axi_clk.c, 0x0031 },
 		{ &gcc_usb30_master_clk.c, 0x0050 },
 		{ &gcc_usb30_sleep_clk.c, 0x0051 },
@@ -2424,7 +2421,6 @@ static struct clk_lookup msm_clocks_gcc_8992[] = {
 	CLK_LIST(gcc_gp1_clk),
 	CLK_LIST(gcc_gp2_clk),
 	CLK_LIST(gcc_gp3_clk),
-	CLK_LIST(gcc_mss_cfg_ahb_clk),
 	CLK_LIST(gcc_mss_q6_bimc_axi_clk),
 	CLK_LIST(gcc_pcie_0_aux_clk),
 	CLK_LIST(gcc_pcie_0_cfg_ahb_clk),
@@ -2451,6 +2447,7 @@ static struct clk_lookup msm_clocks_gcc_8992[] = {
 	CLK_LIST(gcc_usb30_sleep_clk),
 	CLK_LIST(gcc_usb3_phy_aux_clk),
 	CLK_LIST(gcc_usb3_phy_pipe_clk),
+	CLK_LIST(gcc_usb3phy_phy_reset),
 	CLK_LIST(gcc_usb_hs_ahb_clk),
 	CLK_LIST(gcc_usb_hs_system_clk),
 	CLK_LIST(gcc_usb_phy_cfg_ahb2phy_clk),

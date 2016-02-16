@@ -349,10 +349,10 @@ country EG:
 	(5250 - 5330 @ 40), (N/A, 20), DFS
 
 country ES: DFS-ETSI
-	(2402 - 2482 @ 40),(N/A, 20)
-	(5170 - 5250 @ 80),(N/A, 20)
-	(5250 - 5330 @ 80),(N/A, 20), DFS
-	(5490 - 5710 @ 80),(N/A, 27), DFS
+	(2402 - 2482 @ 40), (N/A, 20)
+	(5170 - 5250 @ 80), (N/A, 20)
+	(5250 - 5330 @ 80), (N/A, 20), DFS
+	(5490 - 5710 @ 80), (N/A, 27), DFS
 	# 60 gHz band channels 1-4, ref: Etsi En 302 567
 	(57240 - 65880 @ 2160), (N/A, 40), NO-OUTDOOR
 
@@ -496,8 +496,8 @@ country HU: DFS-ETSI
 
 country ID:
 	# ref: http://www.postel.go.id/content/ID/regulasi/standardisasi/kepdir/bwa%205,8%20ghz.pdf
-	(2402 - 2482 @ 40), (N/A, 30)
-	(5735 - 5815 @ 80), (N/A, 30)
+	(2402 - 2482 @ 20), (N/A, 30)
+	(5735 - 5815 @ 20), (N/A, 30)
 
 country IE: DFS-ETSI
 	(2402 - 2482 @ 40), (N/A, 20)
@@ -553,8 +553,8 @@ country JO:
 country JP:
 	(2402 - 2482 @ 40), (N/A, 20)
 	(2474 - 2494 @ 20), (N/A, 20), NO-OFDM
-	(5170 - 5250 @ 80), (N/A, 20)
-	(5250 - 5330 @ 80), (N/A, 20), DFS
+	(5170 - 5250 @ 80), (N/A, 20), NO-OUTDOOR
+	(5250 - 5330 @ 80), (N/A, 20), NO-OUTDOOR, DFS
 	(5490 - 5710 @ 80), (N/A, 20), DFS
 
 country KE:

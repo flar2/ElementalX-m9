@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014, Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2015, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -61,6 +61,11 @@ struct lsm_common {
 };
 
 static struct lsm_common lsm_common;
+/*
+ * mmap_handle_p can point either client->sound_model.mem_map_handle or
+ * lsm_common.mmap_handle_for_cal.
+ * mmap_lock must be held while accessing this.
+ */
 static spinlock_t mmap_lock;
 static uint32_t *mmap_handle_p;
 
@@ -282,6 +287,12 @@ void q6lsm_client_free(struct lsm_client *client)
 	kfree(client);
 }
 
+/*
+ * q6lsm_apr_send_pkt : If wait == true, hold mutex to prevent from preempting
+ *			other thread's wait.
+ *			If mmap_handle_p != NULL, disable irq and spin lock to
+ *			protect mmap_handle_p
+ */
 static int q6lsm_apr_send_pkt(struct lsm_client *client, void *handle,
 			      void *data, bool wait, uint32_t *mmap_p)
 {
@@ -631,6 +642,11 @@ int q6lsm_set_data(struct lsm_client *client,
 	int rc = 0;
 
 	if (!client->confidence_levels) {
+		/*
+		 * It is possible that confidence levels are
+		 * not provided. This is not a error condition.
+		 * Return gracefully without any error
+		 */
 		pr_debug("%s: no conf levels to set\n",
 			__func__);
 		return rc;
@@ -685,7 +701,7 @@ int q6lsm_register_sound_model(struct lsm_client *client,
 	cmd.model_addr_lsw = lower_32_bits(client->sound_model.phys);
 	cmd.model_addr_msw = upper_32_bits(client->sound_model.phys);
 	cmd.model_size = client->sound_model.size;
-	
+	/* read updated mem_map_handle by q6lsm_mmapcallback */
 	rmb();
 	cmd.mem_map_handle = client->sound_model.mem_map_handle;
 
@@ -864,7 +880,7 @@ static int q6lsm_send_cal(struct lsm_client *client)
 		rc = -EINVAL;
 		goto unlock;
 	}
-	
+	/* Cache mmap address, only map once or if new addr */
 	lsm_common.common_client[client->session].session = client->session;
 	q6lsm_add_hdr(client, &params.hdr, sizeof(params), true);
 	params.hdr.opcode = LSM_SESSION_CMD_SET_PARAMS;
@@ -931,6 +947,9 @@ static struct lsm_client *q6lsm_get_lsm_client(int session_id)
 	return client;
 }
 
+/*
+ * q6lsm_mmapcallback : atomic context
+ */
 static int q6lsm_mmapcallback(struct apr_client_data *data, void *priv)
 {
 	unsigned long flags;
@@ -966,7 +985,7 @@ static int q6lsm_mmapcallback(struct apr_client_data *data, void *priv)
 		if (atomic_read(&client->cmd_state) == CMD_STATE_WAIT_RESP) {
 			spin_lock_irqsave(&mmap_lock, flags);
 			*mmap_handle_p = command;
-			
+			/* spin_unlock_irqrestore implies barrier */
 			spin_unlock_irqrestore(&mmap_lock, flags);
 			atomic_set(&client->cmd_state, CMD_STATE_CLEARED);
 			wake_up(&client->cmd_wait);
@@ -980,11 +999,11 @@ static int q6lsm_mmapcallback(struct apr_client_data *data, void *priv)
 			break;
 		case LSM_SESSION_CMD_SHARED_MEM_MAP_REGIONS:
 			if (retcode != 0) {
-				
+				/* error state, signal to stop waiting */
 				if (atomic_read(&client->cmd_state) ==
 					CMD_STATE_WAIT_RESP) {
 					spin_lock_irqsave(&mmap_lock, flags);
-					
+					/* implies barrier */
 					spin_unlock_irqrestore(&mmap_lock,
 						flags);
 					atomic_set(&client->cmd_state,
@@ -1036,6 +1055,15 @@ int q6lsm_snd_model_buf_alloc(struct lsm_client *client, size_t len)
 		client->sound_model.size = len;
 		pad_zero = (LSM_ALIGN_BOUNDARY -
 			    (len % LSM_ALIGN_BOUNDARY));
+		if ((len > SIZE_MAX - pad_zero) ||
+		    (len + pad_zero >
+		     SIZE_MAX - cal_block->cal_data.size)) {
+			pr_err("%s: invalid allocation size, len = %zd, pad_zero =%zd, cal_size = %zd\n",
+				__func__, len, pad_zero,
+				cal_block->cal_data.size);
+			rc = -EINVAL;
+			goto fail;
+		}
 
 		total_mem = PAGE_ALIGN(pad_zero + len +
 			cal_block->cal_data.size);
@@ -1142,7 +1170,7 @@ int q6lsm_lab_control(struct lsm_client *client, u32 enable)
 		pr_err("%s: invalid param client %p\n", __func__, client);
 		return -EINVAL;
 	}
-	
+	/* enable/disable lab on dsp */
 	q6lsm_add_hdr(client, &lab_enable.hdr, sizeof(lab_enable), true);
 	lab_enable.hdr.opcode = LSM_SESSION_CMD_SET_PARAMS;
 	lab_enable.data_payload_size = sizeof(struct lsm_lab_enable);
@@ -1161,15 +1189,15 @@ int q6lsm_lab_control(struct lsm_client *client, u32 enable)
 	}
 	if (!enable)
 		goto exit;
-	
+	/* lab session is being enabled set the config values */
 	q6lsm_add_hdr(client, &lab_config.hdr, sizeof(lab_config), true);
 	lab_config.hdr.opcode = LSM_SESSION_CMD_SET_PARAMS;
-	lab_config.data_payload_size = sizeof(struct lsm_lab_enable);
+	lab_config.data_payload_size = sizeof(struct lsm_lab_config);
 	lab_config.data_payload_addr_lsw = 0;
 	lab_config.data_payload_addr_msw = 0;
 	lab_config.mem_map_handle = 0;
 	lab_config.lab_config.common.module_id = LSM_MODULE_ID_LAB;
-	lab_config.lab_config.common.param_id = LSM_PARAM_ID_LAB_ENABLE;
+	lab_config.lab_config.common.param_id = LSM_PARAM_ID_LAB_CONFIG;
 	lab_config.lab_config.common.param_size = sizeof(struct lsm_lab_config)
 	- sizeof(struct lsm_param_payload_common);
 	lab_config.lab_config.minor_version = 1;
@@ -1178,7 +1206,7 @@ int q6lsm_lab_control(struct lsm_client *client, u32 enable)
 	if (rc) {
 		pr_err("%s: Lab config failed rc %d disable lab\n",
 		 __func__, rc);
-		
+		/* Lab config failed disable lab */
 		lab_enable.lab_enable.enable = 0;
 		if (q6lsm_apr_send_pkt(client, client->apr,
 			&lab_enable, true, NULL))

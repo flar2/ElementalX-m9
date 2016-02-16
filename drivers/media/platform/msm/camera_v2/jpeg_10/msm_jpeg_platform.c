@@ -312,7 +312,7 @@ int msm_jpeg_platform_init(struct platform_device *pdev,
 		return -ENODEV;
 	}
 	jpeg_irq = jpeg_irq_res->start;
-	JPEG_DBG("%s base address: 0x%lx, jpeg irq number: %d\n", __func__,
+	JPEG_PR_ERR("%s base address: 0x%lx, jpeg irq number: %d\n", __func__,
 		(unsigned long)jpeg_mem->start, jpeg_irq);
 
 	pgmn_dev->jpeg_bus_client =
@@ -371,7 +371,7 @@ int msm_jpeg_platform_init(struct platform_device *pdev,
 		JPEG_PR_ERR("%s: ioremap failed\n", __func__);
 		goto fail_vbif;
 	}
-	JPEG_DBG("%s:%d] jpeg_vbif 0x%lx", __func__, __LINE__,
+	JPEG_PR_ERR("%s:%d] jpeg_vbif 0x%lx", __func__, __LINE__,
 		(unsigned long)pgmn_dev->jpeg_vbif);
 
 	rc = msm_jpeg_attach_iommu(pgmn_dev);
@@ -393,7 +393,7 @@ int msm_jpeg_platform_init(struct platform_device *pdev,
 	*irq  = jpeg_irq;
 
 	pgmn_dev->jpeg_client = msm_ion_client_create(dev_name(&pdev->dev));
-	JPEG_DBG("%s:%d] success\n", __func__, __LINE__);
+	JPEG_PR_ERR("%s:%d] success\n", __func__, __LINE__);
 
 	pgmn_dev->state = MSM_JPEG_INIT;
 	return rc;
@@ -418,7 +418,7 @@ fail_fs:
 
 fail_remap:
 	release_mem_region(jpeg_mem->start, resource_size(jpeg_mem));
-	JPEG_DBG("%s:%d] fail\n", __func__, __LINE__);
+	JPEG_PR_ERR("%s:%d] fail\n", __func__, __LINE__);
 	return rc;
 }
 
@@ -442,7 +442,7 @@ int msm_jpeg_platform_release(struct resource *mem, void *base, int irq,
 
 	msm_cam_clk_enable(&pgmn_dev->pdev->dev, pgmn_dev->jpeg_clk_info,
 	pgmn_dev->jpeg_clk, pgmn_dev->num_clk, 0);
-	JPEG_DBG("%s:%d] clock disbale done", __func__, __LINE__);
+	JPEG_PR_ERR("%s:%d] clock disbale done", __func__, __LINE__);
 
 	if (pgmn_dev->jpeg_fs) {
 		result = regulator_disable(pgmn_dev->jpeg_fs);
@@ -458,7 +458,7 @@ int msm_jpeg_platform_release(struct resource *mem, void *base, int irq,
 	release_mem_region(mem->start, resource_size(mem));
 	ion_client_destroy(pgmn_dev->jpeg_client);
 	pgmn_dev->state = MSM_JPEG_IDLE;
-	JPEG_DBG("%s:%d] success\n", __func__, __LINE__);
+	JPEG_PR_ERR("%s:%d] success\n", __func__, __LINE__);
 	return result;
 }
 

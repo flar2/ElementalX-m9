@@ -57,6 +57,9 @@ static int dhd_dongle_up = FALSE;
 static s32 wl_dongle_up(struct net_device *ndev);
 static s32 wl_dongle_down(struct net_device *ndev);
 
+/**
+ * Function implementations
+ */
 
 s32 dhd_cfg80211_init(struct bcm_cfg80211 *cfg)
 {
@@ -94,11 +97,11 @@ s32 dhd_cfg80211_set_p2p_info(struct bcm_cfg80211 *cfg, int val)
 	WL_ERR(("Set : op_mode=0x%04x\n", dhd->op_mode));
 #ifdef ARP_OFFLOAD_SUPPORT
 	if (dhd->arp_version == 1) {
-		
+		/* IF P2P is enabled, disable arpoe */
 		dhd_arp_offload_set(dhd, 0);
 		dhd_arp_offload_enable(dhd, false);
 	}
-#endif 
+#endif /* ARP_OFFLOAD_SUPPORT */
 
 	return 0;
 }
@@ -111,11 +114,11 @@ s32 dhd_cfg80211_clean_p2p_info(struct bcm_cfg80211 *cfg)
 
 #ifdef ARP_OFFLOAD_SUPPORT
 	if (dhd->arp_version == 1) {
-		
+		/* IF P2P is disabled, enable arpoe back for STA mode. */
 		dhd_arp_offload_set(dhd, dhd_arp_mode);
 		dhd_arp_offload_enable(dhd, true);
 	}
-#endif 
+#endif /* ARP_OFFLOAD_SUPPORT */
 
 	return 0;
 }

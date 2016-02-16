@@ -20,6 +20,10 @@
 
 static DEFINE_SPINLOCK(sched_debug_lock);
 
+/*
+ * This allows printing both to /proc/sched_debug and
+ * to the console
+ */
 #define SEQ_printf(m, x...)			\
  do {						\
 	if (m)					\
@@ -28,6 +32,9 @@ static DEFINE_SPINLOCK(sched_debug_lock);
 		printk(x);			\
  } while (0)
 
+/*
+ * Ease the printing of nsec fields:
+ */
 static long long nsec_high(unsigned long long nsec)
 {
 	if ((long long)nsec < 0) {
@@ -225,6 +232,16 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 			cfs_rq->throttled);
 	SEQ_printf(m, "  .%-30s: %d\n", "throttle_count",
 			cfs_rq->throttle_count);
+	SEQ_printf(m, "  .%-30s: %d\n", "runtime_enabled",
+			cfs_rq->runtime_enabled);
+#ifdef CONFIG_SCHED_HMP
+	SEQ_printf(m, "  .%-30s: %d\n", "nr_big_tasks",
+			cfs_rq->hmp_stats.nr_big_tasks);
+	SEQ_printf(m, "  .%-30s: %d\n", "nr_small_tasks",
+			cfs_rq->hmp_stats.nr_small_tasks);
+	SEQ_printf(m, "  .%-30s: %llu\n", "cumulative_runnable_avg",
+			cfs_rq->hmp_stats.cumulative_runnable_avg);
+#endif
 #endif
 
 	print_cfs_group_stats(m, cpu, cfs_rq->tg);
@@ -310,8 +327,10 @@ do {									\
 	P(max_freq);
 #endif
 #ifdef CONFIG_SCHED_HMP
-	P(nr_big_tasks);
-	P(nr_small_tasks);
+	P(hmp_stats.nr_big_tasks);
+	P(hmp_stats.nr_small_tasks);
+	SEQ_printf(m, "  .%-30s: %llu\n", "hmp_stats.cumulative_runnable_avg",
+			rq->hmp_stats.cumulative_runnable_avg);
 #endif
 #undef P
 #undef PN
@@ -438,6 +457,13 @@ void sysrq_sched_debug_show(void)
 }
 #endif
 
+/*
+ * This itererator needs some explanation.
+ * It returns 1 for the header position.
+ * This means 2 is cpu 0.
+ * In a hotplugged system some cpus, including cpu 0, may be missing so we have
+ * to use cpumask_* to iterate over the cpus.
+ */
 static void *sched_debug_start(struct seq_file *file, loff_t *offset)
 {
 	unsigned long n = *offset;
@@ -581,7 +607,7 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 
 		avg_atom = p->se.sum_exec_runtime;
 		if (nr_switches)
-			do_div(avg_atom, nr_switches);
+			avg_atom = div64_ul(avg_atom, nr_switches);
 		else
 			avg_atom = -1LL;
 

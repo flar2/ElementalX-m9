@@ -52,6 +52,9 @@ static const char *handler[]= {
 
 int show_unhandled_signals = 1;
 
+/*
+ * Dump out the contents of some memory nicely...
+ */
 static void dump_mem(const char *lvl, const char *str, unsigned long bottom,
 		     unsigned long top)
 {
@@ -59,6 +62,11 @@ static void dump_mem(const char *lvl, const char *str, unsigned long bottom,
 	mm_segment_t fs;
 	int i;
 
+	/*
+	 * We need to switch to kernel mode so that we can use __get_user
+	 * to safely read from kernel space.  Note that we now dump the
+	 * code first, just in case the backtrace kills us.
+	 */
 	fs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -101,6 +109,11 @@ static void dump_instr(const char *lvl, struct pt_regs *regs)
 	char str[sizeof("00000000 ") * 5 + 2 + 1], *p = str;
 	int i;
 
+	/*
+	 * We need to switch to kernel mode so that we can use __get_user
+	 * to safely read from kernel space.  Note that we now dump the
+	 * code first, just in case the backtrace kills us.
+	 */
 	fs = get_fs();
 	set_fs(KERNEL_DS);
 
@@ -140,6 +153,9 @@ static void dump_backtrace(struct pt_regs *regs, struct task_struct *tsk)
 		frame.sp = current_sp;
 		frame.pc = (unsigned long)dump_backtrace;
 	} else {
+		/*
+		 * task blocked in __switch_to
+		 */
 		frame.fp = thread_saved_fp(tsk);
 		frame.sp = thread_saved_sp(tsk);
 		frame.pc = thread_saved_pc(tsk);
@@ -184,7 +200,7 @@ static int __die(const char *str, int err, struct thread_info *thread,
 	pr_emerg("Internal error: %s: %x [#%d]" S_PREEMPT S_SMP "\n",
 		 str, err, ++die_counter);
 
-	
+	/* trap and error numbers are mostly meaningless on ARM */
 	ret = notify_die(DIE_OOPS, str, regs, err, 0, SIGSEGV);
 	if (ret == NOTIFY_STOP)
 		return ret;
@@ -213,12 +229,12 @@ static unsigned long oops_begin(void)
 
 	oops_enter();
 
-	
+	/* racy, but better than risking deadlock. */
 	raw_local_irq_save(flags);
 	cpu = smp_processor_id();
 	if (!arch_spin_trylock(&die_lock)) {
 		if (cpu == die_owner)
-			;
+			/* nested oops. should stop eventually */;
 		else
 			arch_spin_lock(&die_lock);
 	}
@@ -245,7 +261,7 @@ static void oops_end(unsigned long flags, struct pt_regs *regs, int notify)
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
 	die_nest_count--;
 	if (!die_nest_count)
-		
+		/* Nest count reaches zero, release the lock. */
 		arch_spin_unlock(&die_lock);
 	raw_local_irq_restore(flags);
 	oops_exit();
@@ -271,6 +287,9 @@ static void oops_end(unsigned long flags, struct pt_regs *regs, int notify)
 		do_exit(SIGSEGV);
 }
 
+/*
+ * This function is protected against re-entrancy.
+ */
 void die(const char *str, struct pt_regs *regs, int err)
 {
 	struct thread_info *thread = current_thread_info();
@@ -338,7 +357,7 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 	siginfo_t info;
 	void __user *pc = (void __user *)instruction_pointer(regs);
 
-	
+	/* check for AArch32 breakpoint instructions */
 	if (!aarch32_break_handler(regs))
 		return;
 	if (user_mode(regs)) {
@@ -356,7 +375,7 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 			goto die_sig;
 		}
 	} else {
-		
+		/* kernel mode */
 		instr = *((u32 *)pc);
 	}
 
@@ -405,6 +424,9 @@ asmlinkage long do_ni_syscall(struct pt_regs *regs)
 	return sys_ni_syscall();
 }
 
+/*
+ * bad_mode handles the impossible case in the exception vector.
+ */
 asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 {
 	siginfo_t info;

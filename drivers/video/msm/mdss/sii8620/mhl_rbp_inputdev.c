@@ -96,7 +96,7 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 	MHL_TX_DBG_ERR("received 0x%02x: %s(%d) in state: %s(%d)\n",
 		       current_button, event_strings[event], event,
 		       state_strings[current_rbp_state], current_rbp_state);
-	
+	/* now process the event according to the current state */
 	switch (current_rbp_state) {
 	case ph0_idle:
 		switch (event) {
@@ -105,14 +105,14 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 			status =
 			    rbp_trigger_button_action(dev_context,
 						      current_index, 1);
-			
+			/* no update for current_rbp_state */
 			break;
 		case rbp_normal_button_release:
 		case rbp_normal_button_release_same:
 			status =
 			    rbp_trigger_button_action(dev_context,
 						      current_index, 0);
-			
+			/* no update for current_rbp_state */
 			break;
 		case rbp_press_and_hold_button_press:
 		case rbp_press_and_hold_button_press_same:
@@ -132,7 +132,7 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 		default:
 			MHL_TX_DBG_ERR("unexpected event: %d in state: %d\n",
 				       event, current_rbp_state);
-			
+			/* no update for current_rbp_state */
 			status = -EINVAL;
 		}
 		break;
@@ -143,7 +143,7 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 			mhl_tx_stop_timer(dev_context,
 					  dev_context->timer_T_press_mode);
 			rbp_trigger_button_action(dev_context, prev_index, 0);
-			
+			/* OK to overwrite status */
 			status =
 			    rbp_trigger_button_action(dev_context,
 						      current_index, 1);
@@ -168,7 +168,7 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 			status =
 			    rbp_trigger_button_action(dev_context, prev_index,
 						      1);
-			
+			/* no update for current_rbp_state */
 			break;
 		case rbp_press_and_hold_button_press_same:
 			mhl_tx_stop_timer(dev_context,
@@ -202,7 +202,7 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 		default:
 			MHL_TX_DBG_ERR("unexpected event: %d in state: %d\n",
 				       event, current_rbp_state);
-			
+			/* no update for current_rbp_state */
 			status = -EINVAL;
 		}
 		break;
@@ -248,7 +248,7 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 			status =
 			    rbp_trigger_button_action(dev_context, prev_index,
 						      1);
-			
+			/* no update for current_rbp_state */
 			break;
 		case rbp_press_and_hold_button_release:
 			mhl_tx_stop_timer(dev_context,
@@ -278,7 +278,7 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 		default:
 			MHL_TX_DBG_ERR("unexpected event: %d in state: %d\n",
 				       event, current_rbp_state);
-			
+			/* no update for current_rbp_state */
 			status = -EINVAL;
 		}
 		break;
@@ -292,6 +292,11 @@ static int handle_rbp_event(struct mhl_dev_context *dev_context,
 int generate_rbp_input_event(struct mhl_dev_context *dev_context,
 	uint8_t rbp_buttoncode)
 {
+	/*
+	   Since, in MHL, bit 7 == 1 indicates button release,
+	   and, in Linux, zero means button release,
+	   we use XOR (^) to invert the sense.
+	 */
 	enum rbp_event_e event;
 	int mhl_button_press;
 	int status = -EINVAL;

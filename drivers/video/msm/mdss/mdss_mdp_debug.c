@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,6 +21,126 @@
 #include "mdss_mdp_debug.h"
 
 #define BUF_DUMP_LAST_N 10
+
+static struct debug_bus dbg_bus_8994[] = {
+	/* VIG QSEED */
+	{ 0x298, 4, 0},
+	{ 0x298, 4, 1},
+	{ 0x298, 24, 0},
+	{ 0x298, 24, 1},
+	{ 0x298, 42, 0},
+	{ 0x298, 42, 1},
+	{ 0x298, 88, 0},
+	{ 0x298, 88, 1},
+	/* RGB SCALE */
+	{ 0x298, 12, 0},
+	{ 0x298, 12, 1},
+	{ 0x298, 34, 0},
+	{ 0x298, 34, 1},
+	{ 0x298, 52, 0},
+	{ 0x298, 52, 1},
+	{ 0x298, 96, 0},
+	{ 0x298, 96, 1},
+	/* VIG CSC */
+	{ 0x298, 5, 0},
+	{ 0x298, 5, 1},
+	{ 0x298, 25, 0},
+	{ 0x298, 25, 1},
+	{ 0x298, 43, 0},
+	{ 0x298, 43, 1},
+	{ 0x298, 89, 0},
+	{ 0x298, 89, 1},
+	/* VIG SPA */
+	{ 0x298, 6, 0},
+	{ 0x298, 26, 0},
+	{ 0x298, 44, 0},
+	{ 0x298, 90, 0},
+	/* DSPP_PA */
+	{ 0x348, 13, 0},
+	{ 0x348, 19, 0},
+	{ 0x348, 25, 0},
+	{ 0x348, 3, 0},
+	/* VIG ISC */
+	{ 0x298, 7, 0},
+	{ 0x298, 7, 1},
+	{ 0x298, 7, 3},
+	{ 0x298, 27, 0},
+	{ 0x298, 27, 1},
+	{ 0x298, 27, 3},
+	{ 0x298, 45, 0},
+	{ 0x298, 45, 1},
+	{ 0x298, 45, 3},
+	{ 0x298, 91, 0},
+	{ 0x298, 91, 1},
+	{ 0x298, 91, 3},
+	/* RGB IGC */
+	{ 0x298, 13, 0},
+	{ 0x298, 13, 1},
+	{ 0x298, 13, 3},
+	{ 0x298, 35, 0},
+	{ 0x298, 35, 1},
+	{ 0x298, 35, 3},
+	{ 0x298, 53, 0},
+	{ 0x298, 53, 1},
+	{ 0x298, 53, 3},
+	{ 0x298, 97, 0},
+	{ 0x298, 97, 1},
+	{ 0x298, 97, 3},
+	/* DMA IGC */
+	{ 0x298, 58, 0},
+	{ 0x298, 58, 1},
+	{ 0x298, 58, 3},
+	{ 0x298, 65, 0},
+	{ 0x298, 65, 1},
+	{ 0x298, 65, 3},
+	/* DSPP IGC */
+	{ 0x348, 14, 0},
+	{ 0x348, 14, 1},
+	{ 0x348, 14, 3},
+	{ 0x348, 20, 0},
+	{ 0x348, 20, 1},
+	{ 0x348, 20, 3},
+	{ 0x348, 26, 0},
+	{ 0x348, 26, 1},
+	{ 0x348, 26, 3},
+	{ 0x348, 4, 0},
+	{ 0x348, 4, 1},
+	{ 0x348, 4, 3},
+	/* DSPP DITHER */
+	{ 0x348, 18, 1},
+	{ 0x348, 24, 1},
+	{ 0x348, 30, 1},
+	{ 0x348, 8, 1},
+	/*PPB 0*/
+	{ 0x348, 31, 0},
+	{ 0x348, 33, 0},
+	{ 0x348, 35, 0},
+	{ 0x348, 42, 0},
+	/*PPB 1*/
+	{ 0x348, 32, 0},
+	{ 0x348, 34, 0},
+	{ 0x348, 36, 0},
+	{ 0x348, 43, 0},
+};
+
+void mdss_mdp_hw_rev_debug_caps_init(struct mdss_data_type *mdata)
+{
+	mdata->dbg_bus = NULL;
+	mdata->dbg_bus_size = 0;
+
+	switch (mdata->mdp_rev) {
+	case MDSS_MDP_HW_REV_105:
+	case MDSS_MDP_HW_REV_109:
+	case MDSS_MDP_HW_REV_110:
+		mdata->dbg_bus = dbg_bus_8994;
+		mdata->dbg_bus_size = ARRAY_SIZE(dbg_bus_8994);
+		break;
+	default:
+		break;
+	}
+
+	return;
+}
 
 static void __print_time(char *buf, u32 size, u64 ts)
 {
@@ -111,9 +231,11 @@ static void __dump_mixer(struct seq_file *s, struct mdss_mdp_mixer *mixer)
 		return;
 
 	seq_printf(s, "\n%s Mixer #%d  res=%dx%d  %s\n",
-		mixer->type == MDSS_MDP_MIXER_TYPE_INTF ? "Intf" : "Writeback",
-		mixer->num, mixer->width, mixer->height,
-		mixer->cursor_enabled ? "w/cursor" : "");
+			mixer->type != MDSS_MDP_MIXER_TYPE_WRITEBACK ?
+			(mixer->type != MDSS_MDP_MIXER_TYPE_INTF ?
+			 "Intf without DSPP" : "Intf") : "Writeback",
+			mixer->num, mixer->width, mixer->height,
+			mixer->cursor_enabled ? "w/cursor" : "");
 
 	for (i = 0; i < ARRAY_SIZE(mixer->stage_pipe); i++) {
 		pipe = mixer->stage_pipe[i];
@@ -161,6 +283,38 @@ static void __dump_buf_data(struct seq_file *s, struct msm_fb_data_type *mfd)
 	mutex_unlock(&mdp5_data->list_lock);
 }
 
+static void __dump_timings(struct seq_file *s, struct mdss_mdp_ctl *ctl)
+{
+	struct mdss_panel_info *pinfo;
+
+	if (!ctl || !ctl->panel_data)
+		return;
+
+	pinfo = &ctl->panel_data->panel_info;
+	seq_printf(s, "Panel #%d %dx%dp%d\n",
+			pinfo->pdest, pinfo->xres, pinfo->yres,
+			mdss_panel_get_framerate(pinfo));
+	seq_printf(s, "\tvbp=%d vfp=%d vpw=%d hbp=%d hfp=%d hpw=%d\n",
+			pinfo->lcdc.v_back_porch,
+			pinfo->lcdc.v_front_porch,
+			pinfo->lcdc.v_pulse_width,
+			pinfo->lcdc.h_back_porch,
+			pinfo->lcdc.h_front_porch,
+			pinfo->lcdc.h_pulse_width);
+
+	if (pinfo->lcdc.border_bottom || pinfo->lcdc.border_top ||
+			pinfo->lcdc.border_left ||
+			pinfo->lcdc.border_right) {
+		seq_printf(s, "\tborder (l,t,r,b):[%d,%d,%d,%d] off xy:%d,%d\n",
+				pinfo->lcdc.border_left,
+				pinfo->lcdc.border_top,
+				pinfo->lcdc.border_right,
+				pinfo->lcdc.border_bottom,
+				ctl->border_x_off,
+				ctl->border_y_off);
+	}
+}
+
 static void __dump_ctl(struct seq_file *s, struct mdss_mdp_ctl *ctl)
 {
 	struct mdss_mdp_perf_params *perf;
@@ -170,7 +324,13 @@ static void __dump_ctl(struct seq_file *s, struct mdss_mdp_ctl *ctl)
 	seq_printf(s, "\n--[ Control path #%d - ", ctl->num);
 
 	if (ctl->panel_data) {
-		seq_puts(s, mdss_panel2str(ctl->panel_data->panel_info.type));
+		struct mdss_mdp_ctl *sctl = mdss_mdp_get_split_ctl(ctl);
+
+		seq_printf(s, "%s%s]--\n",
+			sctl && sctl->panel_data ? "DUAL " : "",
+			mdss_panel2str(ctl->panel_data->panel_info.type));
+		__dump_timings(s, ctl);
+		__dump_timings(s, sctl);
 	} else {
 		struct mdss_mdp_mixer *mixer;
 		mixer = ctl->mixer_left;
@@ -181,9 +341,9 @@ static void __dump_ctl(struct seq_file *s, struct mdss_mdp_ctl *ctl)
 		} else {
 			seq_puts(s, "unknown");
 		}
+		seq_puts(s, "]--\n");
 	}
 	perf = &ctl->cur_perf;
-	seq_puts(s, "]--\n");
 	seq_printf(s, "MDP Clk=%u  Final BW=%llu\n",
 			perf->mdp_clk_rate,
 			perf->bw_ctl);
@@ -289,6 +449,10 @@ static void __stats_ctl_dump(struct mdss_mdp_ctl *ctl, struct seq_file *s)
 				ctl->intf_num, ctl->play_cnt);
 		seq_printf(s, "vsync: %08u \tunderrun: %08u\n",
 				ctl->vsync_cnt, ctl->underrun_cnt);
+		if (ctl->mfd) {
+			seq_printf(s, "user_bl: %08u \tmod_bl: %08u\n",
+				ctl->mfd->bl_level, ctl->mfd->bl_level_scaled);
+		}
 	} else {
 		seq_printf(s, "wb: \tmode=%x \tplay: %08u\n",
 				ctl->opmode, ctl->play_cnt);
@@ -346,6 +510,8 @@ int mdss_mdp_debugfs_init(struct mdss_data_type *mdata)
 			&mdss_debugfs_buffers_fops);
 	debugfs_create_file("stat", 0644, mdd->root, mdata,
 			&mdss_debugfs_stats_fops);
+	debugfs_create_bool("serialize_wait4pp", 0644, mdd->root,
+		(u32 *)&mdata->serialize_wait4pp);
 
 	return 0;
 }

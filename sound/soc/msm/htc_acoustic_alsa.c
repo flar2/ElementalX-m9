@@ -32,6 +32,9 @@ struct device_info {
 #define D(fmt, args...) printk(KERN_INFO "[AUD] htc-acoustic: "fmt, ##args)
 #define E(fmt, args...) printk(KERN_ERR "[AUD] htc-acoustic: "fmt, ##args)
 
+static DEFINE_MUTEX(write_lock);
+static struct apr_svc *adsp_core_handle;
+
 static DEFINE_MUTEX(api_lock);
 static struct acoustic_ops default_acoustic_ops;
 static struct acoustic_ops *the_ops = &default_acoustic_ops;
@@ -563,6 +566,108 @@ acoustic_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return rc;
 }
 
+int32_t adsp_core_handle_fn(struct apr_client_data *data, void *priv)
+{
+    if (data->opcode == RESET_EVENTS) {
+        E("%s: Reset event is received: %d %d apr[%p]\n",
+                __func__,
+                data->reset_event,
+                data->reset_proc,
+                adsp_core_handle);
+        if(adsp_core_handle!=NULL) {
+	        apr_reset(adsp_core_handle);
+	        adsp_core_handle = NULL;
+		}
+        return 0;
+    }
+    E("%s: avcs command send done\n", __func__);
+    return 0;
+}
+
+void acoustic_adsp_core_open(void) {
+	if (adsp_core_handle==NULL) {
+		adsp_core_handle = apr_register("ADSP", "CORE", adsp_core_handle_fn,
+			0xFFFFFFFF, NULL);
+		if (adsp_core_handle==NULL) {
+			E("%s: Unable to register apr\n", __func__);
+		}
+	}
+}
+
+int acoustic_adspcrash(void)
+{
+	#define AVCS_CMD_ADSP_CRASH    0x0001FFFF
+
+	struct avcs_crash_params {
+		struct apr_hdr	hdr;
+		uint32_t crash_type;
+	};
+
+	struct avcs_crash_params config;
+	int ret = 0;
+
+	config.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+	config.hdr.pkt_size = sizeof(struct avcs_crash_params);
+	config.hdr.src_port = 0;
+	config.hdr.dest_port = 0;
+	config.hdr.token = 0;
+	config.hdr.opcode = AVCS_CMD_ADSP_CRASH;
+	config.crash_type = 0;
+
+	acoustic_adsp_core_open();
+	if(adsp_core_handle!=NULL) {
+		E("%s: apr_send_pkt ++\n", __func__);
+		ret = apr_send_pkt((void*)adsp_core_handle, (uint32_t *)(&config));
+		E("%s: apr_send_pkt: rc %d --\n", __func__, ret);
+	}
+	return ret;
+}
+
+static ssize_t acoustic_write(struct file * filp, const char __user * user_buffer, size_t size, loff_t * offset)
+{
+	#define STRING_ADSPCRASH "adspcrash"
+
+	unsigned char *buffer = NULL;
+	unsigned long ret = 0;
+
+
+	E("%s ++\n", __func__);
+	mutex_lock(&write_lock);
+
+	buffer = (char*)kzalloc(size, GFP_KERNEL);
+
+	if(NULL==buffer) {
+		size = 0;
+		ret = ENOMEM;
+		goto write_error;
+	}
+
+	ret = copy_from_user(buffer, user_buffer, size);
+
+	if(ret) {
+		size = 0;
+		goto write_error;
+	}
+
+	E("%s: %s size %zu\n", __func__, buffer, size);
+
+    
+	if(0==strncmp(STRING_ADSPCRASH, buffer, sizeof(STRING_ADSPCRASH)-1))
+	{
+		E("%s: %s %zu\n", __func__, STRING_ADSPCRASH, sizeof(STRING_ADSPCRASH)-1);
+		acoustic_adspcrash();
+	}
+
+write_error:
+	kfree(buffer);
+	mutex_unlock(&write_lock);
+	E("%s: ret %lu --\n", __func__, ret);
+
+	return size;
+
+}
+
 static ssize_t beats_print_name(struct switch_dev *sdev, char *buf)
 {
 	return sprintf(buf, "Beats\n");
@@ -914,6 +1019,7 @@ static struct file_operations acoustic_fops = {
 	.release = acoustic_release,
 	.unlocked_ioctl = acoustic_ioctl,
 	.compat_ioctl = acoustic_ioctl,
+	.write = acoustic_write,
 };
 
 static struct miscdevice acoustic_misc = {
@@ -979,6 +1085,8 @@ static int __init acoustic_init(void)
 	notifier.id = HEADSET_REG_HS_INSERT;
 	notifier.func = htc_acoustic_hsnotify;
 	headset_notifier_register(&notifier);
+
+	adsp_core_handle = NULL;
 
 	return 0;
 }

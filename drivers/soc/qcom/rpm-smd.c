@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,6 +23,7 @@
 #include <linux/irq.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
+#include <linux/rtmutex.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/device.h>
@@ -1148,11 +1149,11 @@ static int msm_rpm_send_data(struct msm_rpm_request *cdata,
 int msm_rpm_send_request(struct msm_rpm_request *handle)
 {
 	int ret;
-	static DEFINE_MUTEX(send_mtx);
+	static DEFINE_RT_MUTEX(send_mtx);
 
-	mutex_lock(&send_mtx);
+	rt_mutex_lock(&send_mtx);
 	ret = msm_rpm_send_data(handle, MSM_RPM_MSG_REQUEST_TYPE, false);
-	mutex_unlock(&send_mtx);
+	rt_mutex_unlock(&send_mtx);
 
 	return ret;
 }
@@ -1213,11 +1214,14 @@ int smd_interrupt_id(smd_channel_t *ch);
 
 int msm_rpm_wait_for_ack_handle(struct msm_rpm_wait_data *elem)
 {
+	static DEFINE_RT_MUTEX(msm_rpm_smd_lock);
 	unsigned int remain = 0;
 	int retry = MAX_MSM_RPM_WAIT_RETRY;
 
 	do {
+		rt_mutex_lock(&msm_rpm_smd_lock);
 		remain = wait_for_completion_timeout(&elem->ack, msecs_to_jiffies(SMD_CHANNEL_NOTIF_TIMEOUT));
+		rt_mutex_unlock(&msm_rpm_smd_lock);
 
 		
 		if (0 == remain) {
@@ -1259,12 +1263,12 @@ int msm_rpm_wait_for_ack_handle(struct msm_rpm_wait_data *elem)
 
 					pr_warn("%s: IRQ %d is pending = %d\n", __func__, smd_irq, rpm_smd_irq_is_pending);
 
-					if (smd_irq_chip->irq_enable) {
+					if (smd_irq_chip && smd_irq_chip->irq_enable) {
 						pr_warn("%s: try to enable rpm smd irq %d.\n", __func__, smd_irq);
 						smd_irq_chip->irq_enable(smd_irq_data);
 					}
 
-					if (smd_irq_chip->irq_unmask) {
+					if (smd_irq_chip && smd_irq_chip->irq_unmask) {
 						pr_warn("%s: try to unmask rpm smd irq %d.\n", __func__, smd_irq);
 						smd_irq_chip->irq_unmask(smd_irq_data);
 					}

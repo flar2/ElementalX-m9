@@ -108,6 +108,7 @@ static int chg_limit_active_mask;
 #ifdef CONFIG_DUTY_CYCLE_LIMIT
 static int chg_limit_timer_sub_mask;
 #endif
+static int chg_restrict;
 
 #define SUSPEND_HIGHFREQ_CHECK_BIT_TALK		(1)
 #define SUSPEND_HIGHFREQ_CHECK_BIT_SEARCH	(1<<1)
@@ -118,6 +119,7 @@ static int suspend_highfreq_check_reason;
 #define CONTEXT_STATE_BIT_SEARCH		(1<<1)
 #define CONTEXT_STATE_BIT_NAVIGATION		(1<<2)
 #define CONTEXT_STATE_BIT_MUSIC			(1<<3)
+#define CONTEXT_STATE_BIT_NET_TALK		(1<<4)
 static int context_state;
 
 #define STATE_WORKQUEUE_PENDING			(1)
@@ -130,10 +132,17 @@ static int context_state;
 #define BATT_TIMER_CHECK_TIME				(360)
 #define BATT_TIMER_UPDATE_TIME				(60)
 
+#define SMALL_CHG_TEMP_SOFT     390
+#define SMALL_CHG_TEMP_HEAVY_LOW    440
+#define SMALL_CHG_TEMP_HEAVY_HIGH    460
+
+
 #define HTC_EXT_UNKNOWN_USB_CHARGER		(1<<0)
 #define HTC_EXT_CHG_UNDER_RATING		(1<<1)
 #define HTC_EXT_CHG_SAFTY_TIMEOUT		(1<<2)
 #define HTC_EXT_CHG_FULL_EOC_STOP		(1<<3)
+#define HTC_EXT_BAD_CABLE_USED			(1<<4)
+
 
 #ifdef CONFIG_ARCH_MSM8X60_LTE
 #endif
@@ -411,6 +420,16 @@ static void unknown_usb_detect_worker(struct work_struct *work)
 int usb_type_event_notify(int result)
 {
 	pr_info("[BATT] %s result : %d\n", __func__, result);
+
+	
+	
+	if(latest_chg_src == CHARGER_BATTERY &&
+		result >= CONNECT_TYPE_NONE	&&
+		result <= CONNECT_TYPE_9V_AC){
+		pr_info("[BATT] %s Cable removed USB sent event:%d, skip it\n", __func__, result);
+		return 0;
+	}
+
 	switch(result)
 	{
 		
@@ -916,7 +935,6 @@ static int htc_battery_set_charging(int ctl)
 	return rc;
 }
 
-#ifdef CONFIG_ARCH_MSM8974
 struct mutex iusb_limit_lock;
 static void set_limit_input_current_with_reason(bool enable, int reason)
 {
@@ -929,36 +947,45 @@ static void set_limit_input_current_with_reason(bool enable, int reason)
 		else
 			iusb_limit_reason &= ~reason;
 
-		if (prev_iusb_limit_reason != iusb_limit_reason) {
+		
+		
 			if (htc_batt_info.icharger &&
 					htc_batt_info.icharger->set_limit_input_current) {
-				htc_batt_info.icharger->set_limit_input_current(!!iusb_limit_reason, iusb_limit_reason);
+				htc_batt_info.icharger->set_limit_input_current(
+						!!iusb_limit_reason, iusb_limit_reason);
 			}
-		}
+		
 	}
 	mutex_unlock(&iusb_limit_lock);
 }
-#endif
 
 struct mutex chg_limit_lock;
-static void set_limit_charge_with_reason(bool enable, int reason)
+static void set_limit_charge_with_reason(bool enable, int reason, int restrict)
 {
 	int prev_chg_limit_reason;
+	int prev_chg_restrict = RESTRICT_NONE;
 #ifdef CONFIG_DUTY_CYCLE_LIMIT
 	int chg_limit_current;
 #endif
 	mutex_lock(&chg_limit_lock);
 	prev_chg_limit_reason = chg_limit_reason;
+	prev_chg_restrict = chg_restrict;
+	chg_restrict = restrict;
+
+	BATT_LOG("chg_limit_reason:0x%x->0x%d, chg_restrict:%d-->%d, "
+			"enable:%d, reason:0x%x, restrict:%d",
+			prev_chg_limit_reason, chg_limit_reason, prev_chg_restrict, chg_restrict,
+			enable, reason, restrict);
+
 	if (chg_limit_active_mask & reason) {
 		if (enable)
 			chg_limit_reason |= reason;
 		else
 			chg_limit_reason &= ~reason;
 
-		if (prev_chg_limit_reason ^ chg_limit_reason) {
-			BATT_LOG("chg_limit_reason:0x%x->0x%d",
-							prev_chg_limit_reason, chg_limit_reason);
-			if (!!prev_chg_limit_reason != !!chg_limit_reason &&
+		if ((prev_chg_limit_reason ^ chg_limit_reason) || (prev_chg_restrict != chg_restrict)) {
+			if (((!!prev_chg_limit_reason != !!chg_limit_reason) ||
+					(prev_chg_restrict != chg_restrict)) &&
 					htc_batt_info.icharger &&
 					htc_batt_info.icharger->set_limit_charge_enable) {
 #ifdef CONFIG_DUTY_CYCLE_LIMIT
@@ -966,7 +993,8 @@ static void set_limit_charge_with_reason(bool enable, int reason)
 				htc_batt_info.icharger->set_limit_charge_enable(chg_limit_reason,
 						chg_limit_timer_sub_mask, chg_limit_current);
 #else
-				htc_batt_info.icharger->set_limit_charge_enable(!!chg_limit_reason);
+				htc_batt_info.icharger->set_limit_charge_enable(!!chg_limit_reason,
+						chg_limit_reason, restrict);
 #endif
 			}
 		}
@@ -1038,7 +1066,7 @@ static void __context_event_handler(enum batt_context_event event)
 #ifdef CONFIG_ARCH_MSM8974
 		set_limit_input_current_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_TALK);
 #else
-		set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_TALK);
+		set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_TALK, RESTRICT_HEAVY);
 #endif
 		suspend_highfreq_check_reason |= SUSPEND_HIGHFREQ_CHECK_BIT_TALK;
 		break;
@@ -1046,15 +1074,21 @@ static void __context_event_handler(enum batt_context_event event)
 #ifdef CONFIG_ARCH_MSM8974
 		set_limit_input_current_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_TALK);
 #else
-		set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_TALK);
+		set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_TALK, RESTRICT_HEAVY);
 #endif
 		suspend_highfreq_check_reason &= ~SUSPEND_HIGHFREQ_CHECK_BIT_TALK;
 		break;
+	case EVENT_NET_TALK_START:
+		set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_NET_TALK, RESTRICT_HEAVY);
+		break;
+	case EVENT_NET_TALK_STOP:
+		set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_NET_TALK, RESTRICT_HEAVY);
+		break;
 	case EVENT_NAVIGATION_START:
-		set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_NAVI);
+		set_limit_input_current_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_NAVI);
 		break;
 	case EVENT_NAVIGATION_STOP:
-		set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_NAVI);
+		set_limit_input_current_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_NAVI);
 		break;
 	case EVENT_NETWORK_SEARCH_START:
 		suspend_highfreq_check_reason |= SUSPEND_HIGHFREQ_CHECK_BIT_SEARCH;
@@ -1094,6 +1128,16 @@ static int htc_batt_context_event_handler(enum batt_context_event event)
 		if (!(context_state & CONTEXT_STATE_BIT_TALK))
 			goto exit;
 		context_state &= ~CONTEXT_STATE_BIT_TALK;
+		break;
+	case EVENT_NET_TALK_START:
+		if (context_state & CONTEXT_STATE_BIT_NET_TALK)
+			goto exit;
+		context_state |= CONTEXT_STATE_BIT_NET_TALK;
+		break;
+	case EVENT_NET_TALK_STOP:
+		if (!(context_state & CONTEXT_STATE_BIT_NET_TALK))
+			goto exit;
+		context_state &= ~CONTEXT_STATE_BIT_NET_TALK;
 		break;
 	case EVENT_NETWORK_SEARCH_START:
 		if (context_state & CONTEXT_STATE_BIT_SEARCH)
@@ -1807,7 +1851,10 @@ static void batt_update_info_from_gauge(void)
 	if (htc_battery_cell_get_cur_cell())
 		htc_batt_info.rep.full_bat = htc_battery_cell_get_cur_cell()->capacity;
 #else
-		htc_batt_info.rep.full_bat = 2840;
+	
+	if (htc_batt_info.igauge->get_battery_capacity)
+		htc_batt_info.igauge->get_battery_capacity(
+				&htc_batt_info.rep.full_bat);
 #endif
 
 	htc_batt_info.igauge->get_battery_soc(
@@ -1828,44 +1875,96 @@ inline static int is_voltage_critical_low(int voltage_mv)
 
 #define CHG_ONE_PERCENT_LIMIT_PERIOD_MS	(1000 * 60)
 #define LEVEL_GAP_BETWEEN_UI_AND_RAW		3
+#define LOW_LEVEL_CURRENT_THRESOLD		500000
+#define LOW_UI_LEVEL_THRESOLD			10
 static void batt_check_overload(unsigned long time_since_last_update_ms)
 {
-	static unsigned int overload_count;
+	static unsigned int s_overload_count;
 	static unsigned long time_accumulation;
+	static unsigned long s_pre_raw_level;
+	static bool s_first_time = true;
 	int is_full = 0;
+	int is_ocv_update = 0;
 
 	if(htc_batt_info.igauge && htc_batt_info.igauge->is_battery_full)
 		htc_batt_info.igauge->is_battery_full(&is_full);
 
-	pr_debug("[BATT] Chk overload by CS=%d V=%d I=%d count=%d overload=%d "
+	if (htc_batt_info.igauge && htc_batt_info.igauge->check_soc_for_sw_ocv)
+		is_ocv_update = htc_batt_info.igauge->check_soc_for_sw_ocv();
+
+	pr_debug("[BATT] Chk overload by CS=%d V=%d I=%d overload=%d "
 			"is_full=%d\n",
 			htc_batt_info.rep.charging_source, htc_batt_info.rep.batt_vol,
-			htc_batt_info.rep.batt_current, overload_count, htc_batt_info.rep.overload,
+			htc_batt_info.rep.batt_current, htc_batt_info.rep.overload,
 			is_full);
-	if ((htc_batt_info.rep.charging_source > 0) &&
-			(!is_full) &&
-			((htc_batt_info.rep.batt_current / 1000) >
-				htc_batt_info.overload_curr_thr_ma)) {
-		time_accumulation += time_since_last_update_ms;
-		if (time_accumulation >= CHG_ONE_PERCENT_LIMIT_PERIOD_MS) {
-			if (overload_count++ < 3) {
-				htc_batt_info.rep.overload = 0;
-			} else
-				htc_batt_info.rep.overload = 1;
+
+	
+	
+	if(htc_batt_info.rep.charging_source > 0 &&
+			htc_batt_info.rep.level == 100 &&
+			(s_pre_raw_level - htc_batt_info.rep.level_raw) > 0 &&
+			!s_first_time &&
+			!is_ocv_update &&
+			(htc_batt_info.rep.batt_current / 1000) >
+					htc_batt_info.overload_curr_thr_ma ){
 
 			
 			if ((htc_batt_info.rep.level - htc_batt_info.rep.level_raw)
-					>= LEVEL_GAP_BETWEEN_UI_AND_RAW)
-				htc_batt_info.rep.overload = 1;
+						> LEVEL_GAP_BETWEEN_UI_AND_RAW)
+					htc_batt_info.rep.overload = 1;
+	}
+	
+	
+	else if ((htc_batt_info.rep.charging_source > 0) &&
+				(!is_full) &&
+				htc_batt_info.rep.level >= LOW_UI_LEVEL_THRESOLD &&
+				((htc_batt_info.rep.batt_current / 1000) >
+					htc_batt_info.overload_curr_thr_ma)) {
+			time_accumulation += time_since_last_update_ms;
+			if (time_accumulation >= CHG_ONE_PERCENT_LIMIT_PERIOD_MS) {
+				if (s_overload_count++ < 3) {
+					htc_batt_info.rep.overload = 0;
+				} else
+					htc_batt_info.rep.overload = 1;
 
-			time_accumulation = 0;
-		}
-	} else { 
-			overload_count = 0;
+				
+				if ((htc_batt_info.rep.level - htc_batt_info.rep.level_raw)
+						>= LEVEL_GAP_BETWEEN_UI_AND_RAW)
+					htc_batt_info.rep.overload = 1;
+
+				time_accumulation = 0;
+			}
+	}
+	
+	
+	
+	else if ((htc_batt_info.rep.charging_source > 0) &&
+				(!is_full) &&
+				!s_first_time &&
+				!is_ocv_update &&
+				htc_batt_info.rep.level < LOW_UI_LEVEL_THRESOLD &&
+				((htc_batt_info.rep.batt_current / 1000) >
+					htc_batt_info.overload_curr_thr_ma)) {
+					if(htc_batt_info.rep.batt_current >= LOW_LEVEL_CURRENT_THRESOLD)
+						htc_batt_info.rep.overload = 1;
+					else if((s_pre_raw_level - htc_batt_info.rep.level_raw) > 0)
+						htc_batt_info.rep.overload = 1;
+					else if(s_overload_count++ < 3)
+						htc_batt_info.rep.overload = 0;
+					else
+						htc_batt_info.rep.overload = 1;
+	}
+	else { 
+			s_overload_count = 0;
 			time_accumulation = 0;
 			htc_batt_info.rep.overload = 0;
 	}
+
+
+	s_pre_raw_level = htc_batt_info.rep.level_raw;
+	s_first_time = false;
 }
+
 
 #if defined(CONFIG_MACH_B2_WLJ)
 static void batt_monitor_usb_overheat(int usb_temp)
@@ -1947,6 +2046,7 @@ static void adjust_store_level(int *store_level, int drop_raw, int drop_ui, int 
 #define ONE_MINUTES_MS					(1000 * (60 + 10))
 #define FOURTY_MINUTES_MS				(1000 * (2400 + 10))
 #define SIXTY_MINUTES_MS				(1000 * (3600 + 10))
+#define DEMO_GAP_WA						6
 static void batt_level_adjust(unsigned long time_since_last_update_ms)
 {
 	static int first = 1;
@@ -1983,8 +2083,9 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 		return;
 	}
 
-	if ((htc_batt_info.rep.charging_source == 0)
-			&& (stored_level_flag == false)) {
+	if (((htc_batt_info.rep.charging_source == 0)
+			&& (stored_level_flag == false)) ||
+			htc_batt_info.rep.overload ) {
 		store_level = prev_level - htc_batt_info.rep.level_raw;
 		BATT_LOG("%s: Cable plug out, to store difference between"
 			" UI & SOC. store_level:%d, prev_level:%d, raw_level:%d"
@@ -1993,9 +2094,9 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 	} else if (htc_batt_info.rep.charging_source > 0)
 		stored_level_flag = false;
 
-	if (!prev_batt_info_rep->charging_enabled &&
+	if ((!prev_batt_info_rep->charging_enabled &&
 			!((prev_batt_info_rep->charging_source == 0) &&
-				htc_batt_info.rep.charging_source > 0)) {
+				htc_batt_info.rep.charging_source > 0)) || htc_batt_info.rep.overload) {
 		if (time_accumulated_level_change < DISCHG_UPDATE_PERIOD_MS
 				&& !first) {
 			
@@ -2136,6 +2237,21 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 						, store_level, prev_level, dropping_level
 						, htc_batt_info.rep.level);
 			}
+
+			if (store_level >= 2 && prev_level <= 10) {
+				dropping_level = prev_level - htc_batt_info.rep.level;
+				if((dropping_level == 1) || (dropping_level == 0)) {
+					store_level = store_level - (2 - dropping_level);
+					htc_batt_info.rep.level = htc_batt_info.rep.level -
+						(2 - dropping_level);
+				}
+				pr_info("[BATT] remap: UI level <= 10%% "
+						"and allow drop 2%% maximum, "
+						"store_level:%d%%, dropping_level:%d%%, "
+						"prev_level:%d%%, level:%d%%.\n"
+						, store_level, dropping_level, prev_level
+						, htc_batt_info.rep.level);
+			}
 		}
 		if ((htc_batt_info.rep.level == 0) && (prev_level > 1)) {
 			htc_batt_info.rep.level = 1;
@@ -2194,8 +2310,10 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 				
 				if (0 < htc_batt_info.rep.full_level_dis_batt_chg &&
 						htc_batt_info.rep.full_level_dis_batt_chg < 100) {
-					if(htc_batt_info.rep.level >
-							htc_batt_info.rep.full_level_dis_batt_chg) {
+					if((htc_batt_info.rep.level >
+							htc_batt_info.rep.full_level_dis_batt_chg) &&
+							(htc_batt_info.rep.level <
+							(htc_batt_info.rep.full_level_dis_batt_chg + DEMO_GAP_WA))) {
 						pr_info("[BATT] block current_level=%d at "
 								"full_level_dis_batt_chg=%d\n",
 								htc_batt_info.rep.level,
@@ -2215,6 +2333,16 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 		schedule_delayed_work(&check_consistent_work,
 				msecs_to_jiffies(CHECK_CONSISTENT_DELAY_MS));
 
+	
+	store_level = htc_batt_info.rep.level - htc_batt_info.rep.level_raw;
+
+	
+	if (htc_batt_info.rep.level == 0 && htc_batt_info.rep.batt_vol > 3400 && htc_batt_info.rep.batt_temp > 0) {
+		pr_info("Not reach shutdown voltage, vol:%d\n", htc_batt_info.rep.batt_vol);
+		htc_batt_info.rep.level = 1;
+		store_level = 1;
+	}
+
 	change_level_by_consistent_and_store_into_emmc();
 
 	if (htc_batt_info.rep.level != prev_level)
@@ -2226,57 +2354,70 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 
 static void batt_update_limited_charge(void)
 {
+	static bool high_temp_reached = FALSE;
 	if (htc_batt_info.state & STATE_EARLY_SUSPEND) {
 		
-		if ((!(chg_limit_reason & HTC_BATT_CHG_LIMIT_BIT_THRML)) &&
-				htc_batt_info.rep.batt_temp > 450) {
-			set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_THRML);
-		} else if ((chg_limit_reason & HTC_BATT_CHG_LIMIT_BIT_THRML) &&
-				htc_batt_info.rep.batt_temp <= 430) {
-			set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML);
+		if (htc_batt_info.rep.batt_temp >= SMALL_CHG_TEMP_HEAVY_HIGH) {
+			high_temp_reached = TRUE;
+			set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_SOFT);
+		} else if (htc_batt_info.rep.batt_temp < SMALL_CHG_TEMP_HEAVY_HIGH && high_temp_reached == FALSE) {
+			set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_NONE);
+		} else if (htc_batt_info.rep.batt_temp < SMALL_CHG_TEMP_HEAVY_LOW && high_temp_reached) {
+			high_temp_reached = FALSE;
+			set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_NONE);
 		} else {
 			
 		}
 	} else {
 #if !(defined(CONFIG_MACH_B2_WLJ))
 		
-		if ((!(chg_limit_reason & HTC_BATT_CHG_LIMIT_BIT_THRML)) &&
-				htc_batt_info.rep.batt_temp > 390) {
-			set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_THRML);
-		} else if ((chg_limit_reason & HTC_BATT_CHG_LIMIT_BIT_THRML) &&
-				htc_batt_info.rep.batt_temp <= 370) {
-			set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML);
-		} else {
+		if (htc_batt_info.rep.batt_temp >= SMALL_CHG_TEMP_HEAVY_HIGH) {
+			high_temp_reached = TRUE;
+			set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_HEAVY);
+		} else if ((htc_batt_info.rep.batt_temp > SMALL_CHG_TEMP_SOFT)
+				&& (htc_batt_info.rep.batt_temp < SMALL_CHG_TEMP_HEAVY_LOW) && high_temp_reached) {
+			high_temp_reached = FALSE;
+			set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_SOFT);
+		} else if ((htc_batt_info.rep.batt_temp > SMALL_CHG_TEMP_SOFT)
+				&& (htc_batt_info.rep.batt_temp < SMALL_CHG_TEMP_HEAVY_HIGH) && high_temp_reached==FALSE) {
+			set_limit_charge_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_SOFT);
+		} else if (htc_batt_info.rep.batt_temp <= SMALL_CHG_TEMP_SOFT) {
+			high_temp_reached = FALSE;
+			set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_NONE);
+		}
+		else {
 			
 		}
 #else
-		set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML);
+		set_limit_charge_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_THRML, RESTRICT_HEAVY);
 #endif
 	}
 }
 
-#ifdef CONFIG_ARCH_MSM8974
 static void batt_update_limited_input_current(void)
 {
 	if (htc_batt_info.state & STATE_EARLY_SUSPEND) {
 		
 		if(iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_TALK) {
 			
-		} else if ((iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_KDDI) &&
-			htc_batt_info.rep.charging_source > HTC_PWR_SOURCE_TYPE_BATT) {
-			set_limit_input_current_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_KDDI);
+		} else if (htc_batt_info.rep.charging_source > HTC_PWR_SOURCE_TYPE_BATT) {
+			
+			if (iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_KDDI)
+				set_limit_input_current_with_reason(false, HTC_BATT_CHG_LIMIT_BIT_KDDI);
 		}
 	} else {
 		
 		if(iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_TALK) {
 			
-		} else if ((!(iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_KDDI) &&
-			htc_batt_info.rep.charging_source > HTC_PWR_SOURCE_TYPE_BATT)) {
+		} else if (htc_batt_info.rep.charging_source > HTC_PWR_SOURCE_TYPE_BATT) {
+			
+			if (iusb_limit_reason & HTC_BATT_CHG_LIMIT_BIT_NAVI)
+				set_limit_input_current_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_NAVI);
+			
 			set_limit_input_current_with_reason(true, HTC_BATT_CHG_LIMIT_BIT_KDDI);
 		}
 	}
 }
-#endif
 
 static void sw_safety_timer_check(unsigned long time_since_last_update_ms)
 {
@@ -2349,6 +2490,15 @@ void update_htc_extension_state(void)
 		htc_batt_info.htc_extension |= HTC_EXT_CHG_FULL_EOC_STOP;
 	else
 		htc_batt_info.htc_extension &= ~HTC_EXT_CHG_FULL_EOC_STOP;
+
+	if(htc_batt_info.icharger && htc_batt_info.icharger->is_bad_cable_used){
+		int isBadCable = 0;
+		htc_batt_info.icharger->is_bad_cable_used(&isBadCable);
+		if(isBadCable == 1)
+			htc_batt_info.htc_extension |= HTC_EXT_BAD_CABLE_USED;
+		else
+			htc_batt_info.htc_extension &= ~HTC_EXT_BAD_CABLE_USED;
+	}
 }
 
 static void batt_error_handle(void)
@@ -2366,6 +2516,11 @@ static void batt_error_handle(void)
 			}
 		}
 	}
+
+	if (htc_batt_info.icharger &&
+			htc_batt_info.icharger->reset_chg_en_when_chg_error)
+		
+		htc_batt_info.icharger->reset_chg_en_when_chg_error();
 }
 
 static void cable_status_check(int chg_src, int chg_en)
@@ -2468,11 +2623,19 @@ static void batt_worker(struct work_struct *work)
 
 	
 	batt_update_limited_charge();
-#ifdef CONFIG_ARCH_MSM8974
-	batt_update_limited_input_current();
-#endif
+
 	
 	batt_check_overload(time_since_last_update_ms);
+
+
+	
+	if(htc_batt_info.icharger &&
+	   htc_batt_info.icharger->set_aicl_deglitch_wa_check &&
+	   htc_batt_info.rep.charging_source > 0 &&
+	   htc_batt_info.rep.charging_source < CHARGER_MHL_UNKNOWN &&
+	   htc_batt_info.rep.batt_vol >= 4200){
+		htc_batt_info.icharger->set_aicl_deglitch_wa_check();
+	}
 
 	
 	if (need_sw_stimer)
@@ -2695,13 +2858,20 @@ static void batt_worker(struct work_struct *work)
 #endif
 
 	
+	batt_update_limited_input_current();
+
+	
 	if(htc_batt_info.rep.charging_source < CHARGER_MHL_UNKNOWN)
 		cable_status_check(htc_batt_info.rep.charging_source,
 								htc_batt_info.rep.charging_enabled);
 
 	
-	if (prev_safety_timer_disable_flag != safety_timer_disable_flag)
-		htc_batt_info.icharger->set_safety_timer_disable(safety_timer_disable_flag);
+	if (htc_batt_info.icharger && htc_batt_info.icharger->set_safety_timer_disable) {
+		if (prev_safety_timer_disable_flag != safety_timer_disable_flag) {
+			htc_batt_info.icharger->set_safety_timer_disable(safety_timer_disable_flag);
+		}
+		prev_safety_timer_disable_flag = safety_timer_disable_flag;
+	}
 
 	
 	if(qb_mode_enter)
@@ -3366,7 +3536,9 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.guage_driver = 0,
 	.chg_limit_active_mask = HTC_BATT_CHG_LIMIT_BIT_TALK |
 								HTC_BATT_CHG_LIMIT_BIT_NAVI |
-								HTC_BATT_CHG_LIMIT_BIT_THRML,
+								HTC_BATT_CHG_LIMIT_BIT_THRML |
+								HTC_BATT_CHG_LIMIT_BIT_NET_TALK |
+								HTC_BATT_CHG_LIMIT_BIT_KDDI,
 #ifdef CONFIG_DUTY_CYCLE_LIMIT
 	.chg_limit_timer_sub_mask = HTC_BATT_CHG_LIMIT_BIT_THRML,
 #endif
@@ -3405,12 +3577,17 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.icharger.set_safety_timer_disable = pmi8994_set_safety_timer_disable,
 	.icharger.usbin_mode_charge = pmi8994_usbin_mode_charge,
 	.icharger.is_charger_error_handle = pmi8994_is_charger_error_handle,
+	.icharger.reset_chg_en_when_chg_error = pmi8994_reset_chg_en_when_chg_error,
 	.icharger.is_cable_exist_check = pmi8994_check_cable_status,
 	.icharger.set_limit_charge_enable = pmi8994_limit_charge_enable,
 	.icharger.is_battery_full_eoc_stop = pmi8994_is_batt_full_eoc_stop,
 	.icharger.get_cable_type_by_usb_detect = pmi8994_get_cable_type_by_usb_detect,
 	.icharger.prepare_suspend = pmi8994_prepare_suspend,
 	.icharger.complete_resume = pmi8994_complete_resume,
+	.icharger.max_input_current = pm8994_set_hsml_target_ma,
+	.icharger.set_limit_input_current = pmi8994_limit_input_current,
+	.icharger.is_bad_cable_used = pmi8994_is_bad_cable_used,
+	.icharger.set_aicl_deglitch_wa_check = pmi8994_set_aicl_deglitch_wa_check,
 
 	
 	.igauge.name = "pmi8994",
@@ -3421,6 +3598,7 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.igauge.is_battery_temp_fault = pmi8994_is_batt_temperature_fault,
 	.igauge.is_battery_full = pmi8994_is_batt_full,
 	.igauge.get_battery_id = pmi8994_fg_get_batt_id,
+	.igauge.get_battery_capacity = pmi8994_fg_get_batt_capacity,
 	.igauge.get_battery_id_mv = pmi8994_fg_get_batt_id_ohm,
 	.igauge.get_attr_text = pmi8994_gauge_get_attr_text,
 	.igauge.store_battery_gauge_data = pmi8994_fg_store_battery_gauge_data_emmc,
@@ -3433,7 +3611,6 @@ static struct htc_battery_platform_data htc_battery_pdev_data = {
 	.icharger.get_charging_source = pm8941_get_charging_source,
 	.icharger.get_charging_enabled = pm8941_get_charging_enabled,
 
-	.icharger.set_limit_input_current = pm8941_limit_input_current,
 	.icharger.set_chg_iusbmax = pm8941_set_chg_iusbmax,
 	.icharger.set_chg_curr_settled = pm8941_set_chg_curr_settled,
 	.icharger.set_chg_vin_min = pm8941_set_chg_vin_min,
@@ -3514,9 +3691,7 @@ static int __init htc_battery_init(void)
 	mutex_init(&htc_batt_timer.schedule_lock);
 	mutex_init(&cable_notifier_lock);
 	mutex_init(&chg_limit_lock);
-#ifdef CONFIG_ARCH_MSM8974
 	mutex_init(&iusb_limit_lock);
-#endif
 	mutex_init(&context_event_handler_lock);
 #ifdef CONFIG_HTC_BATT_ALARM
 	mutex_init(&batt_set_alarm_lock);

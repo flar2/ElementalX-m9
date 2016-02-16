@@ -135,16 +135,10 @@ unsigned int nf_iterate(struct list_head *head,
 {
 	unsigned int verdict;
 
-	/*
-	 * The caller must not block between calls to this
-	 * function because of risk of continuing from deleted element.
-	 */
 	list_for_each_entry_continue_rcu((*elemp), head, list) {
 		if (hook_thresh > (*elemp)->priority)
 			continue;
 
-		/* Optimization: we don't need to hold module
-		   reference here, since function can't sleep. --RR */
 repeat:
 		verdict = (*elemp)->hook(hook, skb, indev, outdev, okfn);
 		if (verdict != NF_ACCEPT) {
@@ -165,8 +159,6 @@ repeat:
 }
 
 
-/* Returns 1 if okfn() needs to be executed by the caller,
- * -EPERM for NF_DROP, 0 otherwise. */
 int nf_hook_slow(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
 		 struct net_device *indev,
 		 struct net_device *outdev,
@@ -177,7 +169,7 @@ int nf_hook_slow(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
 	unsigned int verdict;
 	int ret = 0;
 
-	/* We may already have this, but read-locks nest anyway */
+	
 	rcu_read_lock();
 
 	elem = list_entry_rcu(&nf_hooks[pf][hook], struct nf_hook_ops, list);
@@ -214,7 +206,7 @@ int skb_make_writable(struct sk_buff *skb, unsigned int writable_len)
 	if (writable_len > skb->len)
 		return 0;
 
-	/* Not exclusive use of packet?  Must copy. */
+	
 	if (!skb_cloned(skb)) {
 		if (writable_len <= skb_headlen(skb))
 			return 1;
@@ -231,9 +223,6 @@ int skb_make_writable(struct sk_buff *skb, unsigned int writable_len)
 EXPORT_SYMBOL(skb_make_writable);
 
 #if IS_ENABLED(CONFIG_NF_CONNTRACK)
-/* This does not belong here, but locally generated errors need it if connection
-   tracking in use: without this, connection may not be in hash table, and hence
-   manufactured ICMP or RST packets will not be associated with it. */
 void (*ip_ct_attach)(struct sk_buff *, struct sk_buff *) __rcu __read_mostly;
 EXPORT_SYMBOL(ip_ct_attach);
 
@@ -272,7 +261,7 @@ EXPORT_SYMBOL_GPL(nfq_ct_hook);
 struct nfq_ct_nat_hook __rcu *nfq_ct_nat_hook __read_mostly;
 EXPORT_SYMBOL_GPL(nfq_ct_nat_hook);
 
-#endif /* CONFIG_NF_CONNTRACK */
+#endif 
 
 #ifdef CONFIG_NF_NAT_NEEDED
 void (*nf_nat_decode_session_hook)(struct sk_buff *, struct flowi *);

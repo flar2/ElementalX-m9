@@ -24,6 +24,11 @@
  * $Id: dhd_linux.h 399301 2013-04-29 21:41:52Z $
  */
 
+/* wifi platform functions for power, interrupt and pre-alloc, either
+ * from Android-like platform device data, or Broadcom wifi platform
+ * device data.
+ *
+ */
 #ifndef __DHD_LINUX_H__
 #define __DHD_LINUX_H__
 
@@ -35,14 +40,15 @@
 #ifdef DHD_WMF
 #include <dhd_wmf_linux.h>
 #endif
+/* Linux wireless extension support */
 #if defined(WL_WIRELESS_EXT)
 #include <wl_iw.h>
-#endif 
+#endif /* defined(WL_WIRELESS_EXT) */
 #if defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
-#endif 
+#endif /* defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND) */
 
-#define DHD_REGISTRATION_TIMEOUT  12000  
+#define DHD_REGISTRATION_TIMEOUT  12000  /* msec : allowed time to finished dhd registration */
 
 typedef struct wifi_adapter_info {
 	const char	*name;
@@ -50,7 +56,7 @@ typedef struct wifi_adapter_info {
 	uint		intr_flags;
 	const char	*fw_path;
 	const char	*nv_path;
-	void		*wifi_plat_data;	
+	void		*wifi_plat_data;	/* wifi ctrl func, for backward compatibility */
 	uint		bus_type;
 	uint		bus_num;
 	uint		slot_num;
@@ -61,13 +67,14 @@ typedef struct bcmdhd_wifi_platdata {
 	wifi_adapter_info_t	*adapters;
 } bcmdhd_wifi_platdata_t;
 
+/** Per STA params. A list of dhd_sta objects are managed in dhd_if */
 typedef struct dhd_sta {
-	uint16 flowid[NUMPRIO]; 
-	void * ifp;             
-	struct ether_addr ea;   
-	struct list_head list;  
-	int idx;                
-	int ifidx;              
+	uint16 flowid[NUMPRIO]; /* allocated flow ring ids (by priority) */
+	void * ifp;             /* associated dhd_if */
+	struct ether_addr ea;   /* stations ethernet mac address */
+	struct list_head list;  /* link into dhd_if::sta_list */
+	int idx;                /* index of self in dhd_pub::sta_pool[] */
+	int ifidx;              /* index of interface in dhd */
 } dhd_sta_t;
 typedef dhd_sta_t dhd_sta_pool_t;
 
@@ -88,5 +95,5 @@ bool dhd_update_fw_nv_path(struct dhd_info *dhdinfo);
 
 #ifdef DHD_WMF
 dhd_wmf_t* dhd_wmf_conf(dhd_pub_t *dhdp, uint32 idx);
-#endif 
-#endif 
+#endif /* DHD_WMF */
+#endif /* __DHD_LINUX_H__ */

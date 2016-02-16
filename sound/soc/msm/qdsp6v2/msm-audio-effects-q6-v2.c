@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,9 +32,9 @@ bool msm_audio_effects_is_effmodule_supp_in_top(int effect_module,
 		case ASM_STREAM_POSTPROC_TOPO_ID_SA_PLUS:
 		case ASM_STREAM_POSTPROC_TOPO_ID_HPX_PLUS:
 		case ASM_STREAM_POSTPROC_TOPO_ID_HPX_MASTER:
-		
+		// htc_audio ++
 		case HTC_POPP_TOPOLOGY:
-		
+		// htc_audio --
 			return true;
 		default:
 			return false;
@@ -742,6 +742,11 @@ int msm_audio_effects_popless_eq_handler(struct audio_client *ac,
 			}
 			for (j = 0; j < eq->config.num_bands; j++) {
 				idx = *values++;
+				if (idx >= MAX_EQ_BANDS) {
+					pr_err("EQ_CONFIG:invalid band index\n");
+					rc = -EINVAL;
+					goto invalid_config;
+				}
 				eq->per_band_cfg[idx].band_idx = idx;
 				eq->per_band_cfg[idx].filter_type = *values++;
 				eq->per_band_cfg[idx].freq_millihertz =

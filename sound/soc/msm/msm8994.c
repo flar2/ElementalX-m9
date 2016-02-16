@@ -1,4 +1,4 @@
-/* Copyright (c) 2014 - 2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,6 +19,7 @@
 #include <linux/qpnp/clkdiv.h>
 #include <linux/regulator/consumer.h>
 #include <linux/io.h>
+#include <linux/input.h>
 #include <linux/module.h>
 #include <linux/switch.h>
 #include <sound/core.h>
@@ -45,7 +46,7 @@
 #define DRV_NAME "msm8994-asoc-snd"
 
 #define MSM8994_BRINGUP	(0)	
-#define MSM8994_LDO_WR	(1)	
+#define MSM8994_LDO_WR	(0)	
 				
 #define SAMPLING_RATE_8KHZ      8000
 #define SAMPLING_RATE_16KHZ     16000
@@ -182,6 +183,7 @@ static int hph_en_ready = 0;
 #endif
 
 static int slim0_rx_sample_rate = SAMPLING_RATE_48KHZ;
+static int slim0_tx_sample_rate = SAMPLING_RATE_48KHZ;
 static int slim0_rx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int hdmi_rx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
@@ -275,6 +277,14 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.use_vddio_meas = true,
 	.enable_anc_mic_detect = false,
 	.hw_jack_type = SIX_POLE_JACK,
+	.key_code[0] = KEY_MEDIA,
+	.key_code[1] = KEY_VOICECOMMAND,
+	.key_code[2] = KEY_VOLUMEUP,
+	.key_code[3] = KEY_VOLUMEDOWN,
+	.key_code[4] = 0,
+	.key_code[5] = 0,
+	.key_code[6] = 0,
+	.key_code[7] = 0,
 };
 #endif
 static struct afe_clk_cfg mi2s_tx_clk = {
@@ -569,7 +579,7 @@ static int msm8994_liquid_dock_notify_handler(struct notifier_block *this,
 		if (ret < 0) {
 			pr_err("%s: Request Irq Failed err = %d\n",
 				__func__, ret);
-			goto fail_dock_gpio;
+			goto fail_gpio_irq;
 		}
 
 		switch_set_state(&msm8994_liquid_dock_dev->audio_sdev,
@@ -587,9 +597,10 @@ static int msm8994_liquid_dock_notify_handler(struct notifier_block *this,
 	}
 	return NOTIFY_OK;
 
-fail_dock_gpio:
+fail_gpio_irq:
 	gpio_free(msm8994_liquid_dock_dev->plug_gpio);
 
+fail_dock_gpio:
 	return NOTIFY_DONE;
 }
 
@@ -1151,6 +1162,105 @@ static int msm_slim_0_rx_ch_put(struct snd_kcontrol *kcontrol,
 	pr_debug("%s: msm_slim_0_rx_ch = %d\n", __func__,
 		 msm_slim_0_rx_ch);
 	return 1;
+}
+
+static int slim0_tx_sample_rate_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int sample_rate_val = 0;
+
+	switch (slim0_tx_sample_rate) {
+	case SAMPLING_RATE_192KHZ:
+		sample_rate_val = 2;
+		break;
+	case SAMPLING_RATE_96KHZ:
+		sample_rate_val = 1;
+		break;
+	case SAMPLING_RATE_48KHZ:
+	default:
+		sample_rate_val = 0;
+		break;
+	}
+
+	ucontrol->value.integer.value[0] = sample_rate_val;
+	pr_debug("%s: slim0_tx_sample_rate = %d\n", __func__,
+				slim0_tx_sample_rate);
+
+	return 0;
+}
+
+static int slim0_tx_sample_rate_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int rc = 0;
+
+	pr_debug("%s: ucontrol value = %ld\n", __func__,
+			ucontrol->value.integer.value[0]);
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 2:
+		slim0_tx_sample_rate = SAMPLING_RATE_192KHZ;
+		break;
+	case 1:
+		slim0_tx_sample_rate = SAMPLING_RATE_96KHZ;
+		break;
+	case 0:
+		slim0_tx_sample_rate = SAMPLING_RATE_48KHZ;
+		break;
+	default:
+		rc = -EINVAL;
+		pr_err("%s: invalid sample rate being passed\n", __func__);
+		break;
+	}
+
+	pr_debug("%s: slim0_tx_sample_rate = %d\n", __func__,
+			slim0_tx_sample_rate);
+
+	return rc;
+}
+
+static int slim0_tx_bit_format_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+
+	switch (slim0_tx_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_LE:
+		ucontrol->value.integer.value[0] = 1;
+		break;
+
+	case SNDRV_PCM_FORMAT_S16_LE:
+	default:
+		ucontrol->value.integer.value[0] = 0;
+		break;
+	}
+
+	pr_debug("%s: slim0_tx_bit_format = %d, ucontrol value = %ld\n",
+			 __func__, slim0_tx_bit_format,
+			ucontrol->value.integer.value[0]);
+
+	return 0;
+}
+
+static int slim0_tx_bit_format_put(struct snd_kcontrol *kcontrol,
+				   struct snd_ctl_elem_value *ucontrol)
+{
+	int rc = 0;
+
+	switch (ucontrol->value.integer.value[0]) {
+	case 1:
+		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S24_LE;
+		break;
+	case 0:
+		slim0_tx_bit_format = SNDRV_PCM_FORMAT_S16_LE;
+		break;
+	default:
+		pr_err("%s: invalid value %ld\n", __func__,
+		       ucontrol->value.integer.value[0]);
+		rc = -EINVAL;
+		break;
+	}
+
+	return rc;
 }
 
 static int msm_slim_0_tx_ch_get(struct snd_kcontrol *kcontrol,
@@ -2479,6 +2589,10 @@ static int msm_slim_0_rx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	pr_debug("%s()\n", __func__);
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   slim0_rx_bit_format);
+        if(htc_acoustic_query_feature(HTC_AUD_24BIT)) {
+                param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+                        SNDRV_PCM_FORMAT_S24_LE);
+        }
 	rate->min = rate->max = slim0_rx_sample_rate;
 	channels->min = channels->max = msm_slim_0_rx_ch;
 
@@ -2501,7 +2615,7 @@ static int msm_slim_0_tx_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	pr_debug("%s()\n", __func__);
 	param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 				   slim0_tx_bit_format);
-	rate->min = rate->max = 48000;
+	rate->min = rate->max = slim0_tx_sample_rate;
 	channels->min = channels->max = msm_slim_0_tx_ch;
 
 	return 0;
@@ -2623,6 +2737,10 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 			quat_mi2s_sample_rate_get, quat_mi2s_sample_rate_put),
 
 
+	SOC_ENUM_EXT("SLIM_0_TX Format", msm_snd_enum[4],
+			slim0_tx_bit_format_get, slim0_tx_bit_format_put),
+	SOC_ENUM_EXT("SLIM_0_TX SampleRate", msm_snd_enum[5],
+			slim0_tx_sample_rate_get, slim0_tx_sample_rate_put),
 
 };
 #ifdef USE_CODEC_MBHC
@@ -3244,21 +3362,21 @@ static void *def_codec_mbhc_cal(void)
 	btn_high = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg,
 					       MBHC_BTN_DET_V_BTN_HIGH);
 	btn_low[0] = -50;
-	btn_high[0] = 20;
-	btn_low[1] = 21;
-	btn_high[1] = 61;
-	btn_low[2] = 62;
-	btn_high[2] = 104;
-	btn_low[3] = 105;
-	btn_high[3] = 148;
-	btn_low[4] = 149;
-	btn_high[4] = 189;
-	btn_low[5] = 190;
-	btn_high[5] = 228;
-	btn_low[6] = 229;
-	btn_high[6] = 269;
-	btn_low[7] = 270;
-	btn_high[7] = 500;
+	btn_high[0] = 90;
+	btn_low[1] = 130;
+	btn_high[1] = 220;
+	btn_low[2] = 235;
+	btn_high[2] = 335;
+	btn_low[3] = 375;
+	btn_high[3] = 655;
+	btn_low[4] = 656;
+	btn_high[4] = 660;
+	btn_low[5] = 661;
+	btn_high[5] = 670;
+	btn_low[6] = 671;
+	btn_high[6] = 680;
+	btn_low[7] = 681;
+	btn_high[7] = 690;
 	n_ready = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg, MBHC_BTN_DET_N_READY);
 	n_ready[0] = 80;
 	n_ready[1] = 68;
@@ -4051,6 +4169,20 @@ static struct snd_soc_dai_link msm8994_common_dai_links[] = {
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "tomtom_mad1",
 		.codec_name = "tomtom_codec",
+	},
+	{
+		.name = "MultiMedia3 Record",
+		.stream_name = "MultiMedia3 Capture",
+		.cpu_dai_name = "MultiMedia3",
+		.platform_name = "msm-pcm-dsp.0",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
 	},
 	
 	

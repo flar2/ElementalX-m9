@@ -56,22 +56,6 @@ static loff_t lseek_execute(struct file *file, struct inode *inode,
 	return offset;
 }
 
-/**
- * generic_file_llseek_size - generic llseek implementation for regular files
- * @file:	file structure to seek on
- * @offset:	file offset to seek to
- * @whence:	type of seek
- * @size:	max size of this file in file system
- * @eof:	offset used for SEEK_END position
- *
- * This is a variant of generic_file_llseek that allows passing in a custom
- * maximum file size and a custom EOF position, for e.g. hashed directories
- *
- * Synchronization:
- * SEEK_SET and SEEK_END are unsynchronized (but atomic on 64bit platforms)
- * SEEK_CUR is synchronized against other SEEK_CURs, but not read/writes.
- * read/writes behave like SEEK_SET against seeks.
- */
 loff_t
 generic_file_llseek_size(struct file *file, loff_t offset, int whence,
 		loff_t maxsize, loff_t eof)
@@ -83,37 +67,18 @@ generic_file_llseek_size(struct file *file, loff_t offset, int whence,
 		offset += eof;
 		break;
 	case SEEK_CUR:
-		/*
-		 * Here we special-case the lseek(fd, 0, SEEK_CUR)
-		 * position-querying operation.  Avoid rewriting the "same"
-		 * f_pos value back to the file because a concurrent read(),
-		 * write() or lseek() might have altered it
-		 */
 		if (offset == 0)
 			return file->f_pos;
-		/*
-		 * f_lock protects against read/modify/write race with other
-		 * SEEK_CURs. Note that parallel writes and reads behave
-		 * like SEEK_SET.
-		 */
 		spin_lock(&file->f_lock);
 		offset = lseek_execute(file, inode, file->f_pos + offset,
 				       maxsize);
 		spin_unlock(&file->f_lock);
 		return offset;
 	case SEEK_DATA:
-		/*
-		 * In the generic case the entire file is data, so as long as
-		 * offset isn't at the end of the file then the offset is data.
-		 */
 		if (offset >= eof)
 			return -ENXIO;
 		break;
 	case SEEK_HOLE:
-		/*
-		 * There is a virtual hole at the end of the file, so as long as
-		 * offset isn't i_size or larger, return i_size.
-		 */
 		if (offset >= eof)
 			return -ENXIO;
 		offset = eof;
@@ -124,16 +89,6 @@ generic_file_llseek_size(struct file *file, loff_t offset, int whence,
 }
 EXPORT_SYMBOL(generic_file_llseek_size);
 
-/**
- * generic_file_llseek - generic llseek implementation for regular files
- * @file:	file structure to seek on
- * @offset:	file offset to seek to
- * @whence:	type of seek
- *
- * This is a generic implemenation of ->llseek useable for all normal local
- * filesystems.  It just updates the file offset to the value specified by
- * @offset and @whence.
- */
 loff_t generic_file_llseek(struct file *file, loff_t offset, int whence)
 {
 	struct inode *inode = file->f_mapping->host;
@@ -144,14 +99,6 @@ loff_t generic_file_llseek(struct file *file, loff_t offset, int whence)
 }
 EXPORT_SYMBOL(generic_file_llseek);
 
-/**
- * fixed_size_llseek - llseek implementation for fixed-sized devices
- * @file:	file structure to seek on
- * @offset:	file offset to seek to
- * @whence:	type of seek
- * @size:	size of the file
- *
- */
 loff_t fixed_size_llseek(struct file *file, loff_t offset, int whence, loff_t size)
 {
 	switch (whence) {
@@ -164,17 +111,6 @@ loff_t fixed_size_llseek(struct file *file, loff_t offset, int whence, loff_t si
 }
 EXPORT_SYMBOL(fixed_size_llseek);
 
-/**
- * noop_llseek - No Operation Performed llseek implementation
- * @file:	file structure to seek on
- * @offset:	file offset to seek to
- * @whence:	type of seek
- *
- * This is an implementation of ->llseek useable for the rare special case when
- * userspace expects the seek to succeed but the (device) file is actually not
- * able to perform the seek. In this case you use noop_llseek() instead of
- * falling back to the default implementation of ->llseek.
- */
 loff_t noop_llseek(struct file *file, loff_t offset, int whence)
 {
 	return file->f_pos;
@@ -205,22 +141,12 @@ loff_t default_llseek(struct file *file, loff_t offset, int whence)
 			offset += file->f_pos;
 			break;
 		case SEEK_DATA:
-			/*
-			 * In the generic case the entire file is data, so as
-			 * long as offset isn't at the end of the file then the
-			 * offset is data.
-			 */
 			if (offset >= inode->i_size) {
 				retval = -ENXIO;
 				goto out;
 			}
 			break;
 		case SEEK_HOLE:
-			/*
-			 * There is a virtual hole at the end of the file, so
-			 * as long as offset isn't i_size or larger, return
-			 * i_size.
-			 */
 			if (offset >= inode->i_size) {
 				retval = -ENXIO;
 				goto out;
@@ -267,7 +193,7 @@ SYSCALL_DEFINE3(lseek, unsigned int, fd, off_t, offset, unsigned int, whence)
 		loff_t res = vfs_llseek(f.file, offset, whence);
 		retval = res;
 		if (res != (loff_t)retval)
-			retval = -EOVERFLOW;	/* LFS: should only happen on 32 bit platforms */
+			retval = -EOVERFLOW;	
 	}
 	fdput(f);
 	return retval;
@@ -311,11 +237,6 @@ out_putf:
 }
 #endif
 
-/*
- * rw_verify_area doesn't like huge counts. We limit
- * them to something that fits in "int" so that others
- * won't have to do range checks all the time.
- */
 int rw_verify_area(int read_write, struct file *file, loff_t *ppos, size_t count)
 {
 	struct inode *inode;
@@ -329,7 +250,7 @@ int rw_verify_area(int read_write, struct file *file, loff_t *ppos, size_t count
 	if (unlikely(pos < 0)) {
 		if (!unsigned_offsets(file))
 			return retval;
-		if (count >= -pos) /* both values are in 0..LLONG_MAX */
+		if (count >= -pos) 
 			return -EOVERFLOW;
 	} else if (unlikely((loff_t) (pos + count) < 0)) {
 		if (!unsigned_offsets(file))
@@ -411,7 +332,7 @@ ssize_t do_sync_write(struct file *filp, const char __user *buf, size_t len, lof
 	kiocb.ki_left = len;
 	kiocb.ki_nbytes = len;
 
-	ret = filp->f_op->aio_write(&kiocb, &iov, 1, kiocb.ki_pos);
+	ret = filp->f_op->aio_write(&kiocb, &iov, 1, *ppos);
 	if (-EIOCBQUEUED == ret)
 		ret = wait_on_sync_kiocb(&kiocb);
 	*ppos = kiocb.ki_pos;
@@ -447,9 +368,11 @@ ssize_t __kernel_write(struct file *file, const char *buf, size_t count, loff_t 
 	return ret;
 }
 
+extern atomic_t em_remount;
 ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
 	ssize_t ret;
+	struct super_block *sb = file->f_path.dentry->d_sb;
 
 	if (!(file->f_mode & FMODE_WRITE))
 		return -EBADF;
@@ -457,6 +380,12 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 		return -EINVAL;
 	if (unlikely(!access_ok(VERIFY_READ, buf, count)))
 		return -EFAULT;
+	if (atomic_read(&em_remount) && sb && (sb->s_flags & MS_EMERGENCY_RO)) {
+		printk_ratelimited(KERN_WARNING "VFS reject: %s pid:%d(%s)(parent:%d/%s) file %s count %lu\n", __func__,
+				current->pid, current->comm, current->parent->pid,
+				current->parent->comm, file->f_path.dentry->d_name.name, (unsigned long) count);
+		return -EROFS;
+	}
 
 	ret = rw_verify_area(WRITE, file, pos, count);
 	if (ret >= 0) {
@@ -559,9 +488,6 @@ SYSCALL_DEFINE4(pwrite64, unsigned int, fd, const char __user *, buf,
 	return ret;
 }
 
-/*
- * Reduce an iovec's length in-place.  Return the resulting number of segments
- */
 unsigned long iov_shorten(struct iovec *iov, unsigned long nr_segs, size_t to)
 {
 	unsigned long seg = 0;
@@ -598,7 +524,6 @@ static ssize_t do_sync_readv_writev(struct file *filp, const struct iovec *iov,
 	return ret;
 }
 
-/* Do it by hand, with file-ops */
 static ssize_t do_loop_readv_writev(struct file *filp, struct iovec *iov,
 		unsigned long nr_segs, loff_t *ppos, io_fn_t fn)
 {
@@ -630,7 +555,6 @@ static ssize_t do_loop_readv_writev(struct file *filp, struct iovec *iov,
 	return ret;
 }
 
-/* A write operation does a read from user space and vice versa */
 #define vrfy_dir(type) ((type) == READ ? VERIFY_WRITE : VERIFY_READ)
 
 ssize_t rw_copy_check_uvector(int type, const struct iovec __user * uvector,
@@ -642,20 +566,11 @@ ssize_t rw_copy_check_uvector(int type, const struct iovec __user * uvector,
 	ssize_t ret;
 	struct iovec *iov = fast_pointer;
 
-	/*
-	 * SuS says "The readv() function *may* fail if the iovcnt argument
-	 * was less than or equal to 0, or greater than {IOV_MAX}.  Linux has
-	 * traditionally returned zero for zero segments, so...
-	 */
 	if (nr_segs == 0) {
 		ret = 0;
 		goto out;
 	}
 
-	/*
-	 * First get the "struct iovec" from user memory and
-	 * verify all the pointers
-	 */
 	if (nr_segs > UIO_MAXIOV) {
 		ret = -EINVAL;
 		goto out;
@@ -672,22 +587,11 @@ ssize_t rw_copy_check_uvector(int type, const struct iovec __user * uvector,
 		goto out;
 	}
 
-	/*
-	 * According to the Single Unix Specification we should return EINVAL
-	 * if an element length is < 0 when cast to ssize_t or if the
-	 * total length would overflow the ssize_t return value of the
-	 * system call.
-	 *
-	 * Linux caps all read/write calls to MAX_RW_COUNT, and avoids the
-	 * overflow case.
-	 */
 	ret = 0;
 	for (seg = 0; seg < nr_segs; seg++) {
 		void __user *buf = iov[seg].iov_base;
 		ssize_t len = (ssize_t)iov[seg].iov_len;
 
-		/* see if we we're about to use an invalid len or if
-		 * it's about to overflow ssize_t */
 		if (len < 0) {
 			ret = -EINVAL;
 			goto out;
@@ -1088,9 +992,6 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 	ssize_t retval;
 	int fl;
 
-	/*
-	 * Get input file, and verify that it is ok..
-	 */
 	retval = -EBADF;
 	in = fdget(in_fd);
 	if (!in.file)
@@ -1110,9 +1011,6 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 		goto fput_in;
 	count = retval;
 
-	/*
-	 * Get output file, and verify that it is ok..
-	 */
 	retval = -EBADF;
 	out = fdget(out_fd);
 	if (!out.file)
@@ -1140,12 +1038,6 @@ static ssize_t do_sendfile(int out_fd, int in_fd, loff_t *ppos,
 
 	fl = 0;
 #if 0
-	/*
-	 * We need to debate whether we can enable this or not. The
-	 * man page documents EAGAIN return for the output at least,
-	 * and the application is arguably buggy if it doesn't expect
-	 * EAGAIN on a non-blocking file descriptor.
-	 */
 	if (in.file->f_flags & O_NONBLOCK)
 		fl = SPLICE_F_NONBLOCK;
 #endif

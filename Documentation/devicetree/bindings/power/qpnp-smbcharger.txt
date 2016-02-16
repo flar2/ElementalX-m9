@@ -28,6 +28,11 @@ Parent node required properties:
 			sub node devices.
 - #address-cells:	Must be <1>
 - #size-cells:		Must be <1>
+- qcom,pmic-revid:      Should specify the phandle of PMIC
+                        revid module. This is used to identify
+                        the PMIC subtype.
+
+
 
 Sub node required properties:
 - reg:			The SPMI address for this peripheral
@@ -196,10 +201,32 @@ Optional Properties:
 				the line from the battery connectors through
 				vph_power. This is used to calculate maximum
 				available current of the battery.
+- qcom,vled-max-uv:		The maximum input voltage of the flash leds.
+				This is used to calculate maximum available
+				current of the battery.
 - qcom,autoadjust-vfloat	A boolean property that when set, makes the
 				driver automatically readjust vfloat using the
 				fuel gauge ADC readings to make charging more
 				accurate.
+- qcom,jeita-temp-hard-limit	property when present will enable or disable
+				the jeita temperature hard limit based on the
+				value 1 or 0. Specify 0 if the jeita temp hard
+				limit needs to be disabled. If it is not present,
+				jeita temperature hard limit will be based on what
+				the bootloader had set earlier.
+- qcom,low-volt-dcin:		A boolean property which upon set will enable the
+				AICL deglitch configuration dynamically. This needs
+				to be set if the DCIN supply is going to be less
+				than or equal to 5V.
+- qcom,force-aicl-rerun:	A boolean property which upon set will enable the
+				AICL rerun by default along with the deglitch time
+				configured to long interval (20 ms). Also, specifying
+				this property will not adjust the AICL deglitch time
+				dynamically for handling the battery over-voltage
+				oscillations when the charger is headroom limited.
+- qcom,ibat-ocp-threshold-ua	Maximum current before the battery will trigger
+				overcurrent protection. Use the recommended
+				battery pack value minus some margin.
 - qcom,soft-vfloat-comp-disabled	Set this property when the battery is
 					powered via external source and could
 					go above the float voltage.
@@ -217,6 +244,10 @@ Optional Properties:
 					charger current reduces beyond this threshold
 					parallel charger is disabled. Must be specified
 					if parallel charger is used.
+- qcom,battery-data			Points to the phandle of node which
+					contains the battery-profiles supported
+					by the charger/FG.
+- qcom,enable-hvdcp-9v			A bool property to enable 9V HVDCP 2.0 detection.
 
 Example:
 	qcom,qpnp-smbcharger {

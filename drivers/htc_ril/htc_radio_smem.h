@@ -3,9 +3,12 @@
 
 #include <linux/types.h>
 
+//hTC radio smem driver version
 #define HTC_RADIO_SMEM_VERSION	0x20140901
+//smlog magic number
 #define HTC_SMLOG_MAGIC_NUMBER  0x534D4C4F
 
+//APP run mode
 #define APP_IN_BOOTLOADER       (1 << 0)
 #define APP_IN_TESTBOOTLOADER   (1 << 1)
 #define APP_IN_DIAG             (1 << 2)
@@ -33,10 +36,10 @@ struct htc_smem_type
 	uint8_t     RCMS_name[64];
 	uint32_t    htc_smem_ce_radio_dbg_ril_fatal;
 	uint8_t     SKU_Name[128];
-	
+	/* totally used 252 byte */
 	uint8_t		reserved[772];
-	
+	/* totally 1024 bytes */
 };
 
 phys_addr_t get_smem_base(void);
-#endif 
+#endif /* end of _HTC_RADIO_SMEM_H */

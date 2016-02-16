@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,12 +34,15 @@
 #include <soc/qcom/watchdog.h>
 
 #include "htc_restart_handler.h"
+#include <linux/qpnp/power-on.h>
+#include <linux/qpnp/qpnp-smbcharger.h>
 
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
 #define EMERGENCY_DLOAD_MAGIC3    0x77777777
 
 #define SCM_IO_DISABLE_PMIC_ARBITER	1
+#define SCM_IO_DEASSERT_PS_HOLD		2
 #define SCM_WDOG_DEBUG_BOOT_PART	0x9
 #define SCM_DLOAD_MODE			0X10
 #define SCM_EDLOAD_MODE			0X01
@@ -50,7 +53,10 @@ extern int cable_source;
 
 static int restart_mode;
 static bool scm_pmic_arbiter_disable_supported;
+static bool scm_deassert_ps_hold_supported;
 static void __iomem *msm_ps_hold;
+static phys_addr_t tcsr_boot_misc_detect;
+
 static int in_panic;
 static int panic_prep_restart(struct notifier_block *this,
 			      unsigned long event, void *ptr)
@@ -85,8 +91,12 @@ int scm_set_dload_mode(int arg1, int arg2)
 		.arginfo = SCM_ARGS(2),
 	};
 
-	if (!scm_dload_supported)
+	if (!scm_dload_supported) {
+		if (tcsr_boot_misc_detect)
+			return scm_io_write(tcsr_boot_misc_detect, arg1);
+
 		return 0;
+	}
 
 	if (!is_scm_armv8())
 		return scm_call_atomic2(SCM_SVC_BOOT, SCM_DLOAD_CMD, arg1,
@@ -113,6 +123,12 @@ static void set_dload_mode(int on)
 
 	dload_mode_enabled = on;
 }
+
+static bool get_dload_mode(void)
+{
+        return dload_mode_enabled;
+}
+
 
 static void enable_emergency_dload_mode(void)
 {
@@ -163,6 +179,12 @@ static int dload_set(const char *val, struct kernel_param *kp)
 static void enable_emergency_dload_mode(void)
 {
 	pr_err("dload mode is not enabled on target\n");
+}
+
+
+static bool get_dload_mode(void)
+{
+        return false;
 }
 
 #endif
@@ -218,8 +240,44 @@ static void halt_spmi_pmic_arbiter(void)
 static bool hard_reset = 0;
 module_param(hard_reset, bool, 0600);
 
+static enum pon_power_off_type htc_restart_cmd_to_type(const char* cmd)
+{
+	int i;
+
+	struct {
+		const char* cmd;
+		enum pon_power_off_type type;
+	} cmd_type[] = {
+		{"power-key-force-hard", PON_POWER_OFF_WARM_RESET},
+		{"force-dog-bark", PON_POWER_OFF_WARM_RESET},
+			
+		{"oem-61", PON_POWER_OFF_WARM_RESET},
+		{"oem-62", PON_POWER_OFF_WARM_RESET},
+		{"oem-63", PON_POWER_OFF_WARM_RESET},
+		{"oem-93", PON_POWER_OFF_WARM_RESET},
+		{"oem-94", PON_POWER_OFF_WARM_RESET},
+		{"oem-95", PON_POWER_OFF_WARM_RESET},
+		{"oem-96", PON_POWER_OFF_WARM_RESET},
+		{"oem-97", PON_POWER_OFF_WARM_RESET},
+		{"oem-98", PON_POWER_OFF_WARM_RESET},
+		{"oem-99", PON_POWER_OFF_WARM_RESET},
+	};
+
+	if (in_panic)
+		return PON_POWER_OFF_WARM_RESET;
+
+	cmd = cmd ? : "";
+	for (i = 0; i < ARRAY_SIZE(cmd_type); i++)
+		if (!strncmp(cmd, cmd_type[i].cmd, strlen(cmd_type[i].cmd)))
+			return cmd_type[i].type;
+
+	return PON_POWER_OFF_HARD_RESET; 
+}
+
 static void msm_restart_prepare(char mode, const char *cmd)
 {
+	bool need_warm_reset = false;
+
 #ifdef CONFIG_MSM_DLOAD_MODE
 
 
@@ -227,11 +285,36 @@ static void msm_restart_prepare(char mode, const char *cmd)
 			(in_panic || restart_mode == RESTART_DLOAD));
 #endif
 
+	need_warm_reset = (get_dload_mode() ||
+				(cmd != NULL && cmd[0] != '\0'));
+
+	if (qpnp_pon_check_hard_reset_stored()) {
+		if (get_dload_mode() ||
+			((cmd != NULL && cmd[0] != '\0') &&
+			strcmp(cmd, "recovery") &&
+			strcmp(cmd, "bootloader") &&
+			strcmp(cmd, "rtc") &&
+			strcmp(cmd, "dm-verity device corrupted") &&
+			strcmp(cmd, "dm-verity enforcing") &&
+			strcmp(cmd, "keys clear")))
+			need_warm_reset = true;
+	}
+
 	
+	if (need_warm_reset) {
+		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+	} else {
+		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+	}
+
 	if(hard_reset)
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_DVDD_HARD_RESET);
-	else
+	else if(pmi8994_is_HVDCP_9V_done()) {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+		pr_info("%s: Set WARM RESET due to reset with QC2.0: %d\r\n",
+				__func__, pmi8994_is_HVDCP_9V_done());
+	} else
+		qpnp_pon_system_pwr_off(htc_restart_cmd_to_type(cmd));
 
 	pr_info("%s: restart by command: [%s]\r\n", __func__, (cmd) ? cmd : "");
 
@@ -239,13 +322,30 @@ static void msm_restart_prepare(char mode, const char *cmd)
 		
 	} else if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_BOOTLOADER);
 			set_restart_action(RESTART_REASON_BOOTLOADER, NULL);
 		} else if (!strncmp(cmd, "recovery", 8)) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_RECOVERY);
 			set_restart_action(RESTART_REASON_RECOVERY, NULL);
 		} else if (!strcmp(cmd, "eraseflash")) {
 			set_restart_action(RESTART_REASON_ERASE_FLASH, NULL);
 		} else if (!strcmp(cmd, "power-key-force-hard")) {
-			set_restart_action(RESTART_REASON_RAMDUMP, "Powerkey Hard Reset - SW");
+			if(pmi8994_is_HVDCP_9V_done())
+				set_restart_action(RESTART_REASON_REBOOT, "Powerkey Hard Reset with QC2.0");
+			else
+				set_restart_action(RESTART_REASON_RAMDUMP, "Powerkey Hard Reset - SW");
+		} else if (!strcmp(cmd, "rtc")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_RTC);
+			set_restart_action(RESTART_REASON_ALARM, "Alarm");
+		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+			set_restart_action(RESTART_REASON_DM_VERITY_DEVICE_CORRUPTED, "DM verity device corrupted");
+		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+			set_restart_action(RESTART_REASON_DM_VERITY_ENFORCING, "DM verity enforcing");
+		} else if (!strcmp(cmd, "keys clear")) {
+			set_restart_action(RESTART_REASON_KEYS_CLEAR, "Keys clear");
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			code = simple_strtoul(cmd + 4, NULL, 16) & 0xff;
@@ -283,6 +383,23 @@ static void msm_restart_prepare(char mode, const char *cmd)
 	}
 }
 
+static void deassert_ps_hold(void)
+{
+	struct scm_desc desc = {
+		.args[0] = 0,
+		.arginfo = SCM_ARGS(1),
+	};
+
+	if (scm_deassert_ps_hold_supported) {
+		
+		scm_call2_atomic(SCM_SIP_FNID(SCM_SVC_PWR,
+				 SCM_IO_DEASSERT_PS_HOLD), &desc);
+	}
+
+	
+	__raw_writel(0, msm_ps_hold);
+}
+
 static void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
 {
 	int ret;
@@ -314,7 +431,7 @@ static void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
 		pr_err("Failed to disable secure wdog debug: %d\n", ret);
 
 	halt_spmi_pmic_arbiter();
-	__raw_writel(0, msm_ps_hold);
+	deassert_ps_hold();
 
 	mdelay(10000);
 }
@@ -336,6 +453,11 @@ static void do_msm_poweroff(void)
 	qpnp_pon_set_s3_timer(2); 
 
 	if (cable_source > 0) {
+		if (pmi8994_is_HVDCP_9V_done()) {
+			ret = downgrade_hvdcp_9v_to_5v();
+			if (ret)
+				pr_err("Failed to downgrade hvdcp before shutdown, ret: %d\n", ret);
+		}
 		set_restart_action(RESTART_REASON_OFFMODE_CHARGE, NULL);
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
 	} else {
@@ -354,8 +476,7 @@ static void do_msm_poweroff(void)
 		pr_err("Failed to disable wdog debug: %d\n", ret);
 
 	halt_spmi_pmic_arbiter();
-	
-	__raw_writel(0, msm_ps_hold);
+	deassert_ps_hold();
 
 	mdelay(10000);
 	pr_err("Powering off has failed\n");
@@ -400,7 +521,6 @@ static int msm_restart_probe(struct platform_device *pdev)
 			pr_err("unable to map imem EDLOAD mode offset\n");
 	}
 
-	set_dload_mode(download_mode);
 #endif
 
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -408,11 +528,20 @@ static int msm_restart_probe(struct platform_device *pdev)
 	if (IS_ERR(msm_ps_hold))
 		return PTR_ERR(msm_ps_hold);
 
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (mem)
+		tcsr_boot_misc_detect = mem->start;
+
 	pm_power_off = do_msm_poweroff;
 	arm_pm_restart = do_msm_restart;
 
 	if (scm_is_call_available(SCM_SVC_PWR, SCM_IO_DISABLE_PMIC_ARBITER) > 0)
 		scm_pmic_arbiter_disable_supported = true;
+
+	if (scm_is_call_available(SCM_SVC_PWR, SCM_IO_DEASSERT_PS_HOLD) > 0)
+		scm_deassert_ps_hold_supported = true;
+
+	set_dload_mode(download_mode);
 
 	return 0;
 

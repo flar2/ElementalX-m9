@@ -40,11 +40,11 @@ static int msm_jpeg_open(struct inode *inode, struct file *filp)
 		struct msm_jpeg_device, cdev);
 	filp->private_data = pgmn_dev;
 
-	JPEG_DBG("%s:%d]\n", __func__, __LINE__);
+	JPEG_PR_ERR("%s:%d]\n", __func__, __LINE__);
 
 	rc = __msm_jpeg_open(pgmn_dev);
 
-	JPEG_DBG(KERN_INFO "%s:%d] %s open_count = %d\n", __func__, __LINE__,
+	JPEG_PR_ERR("%s:%d] %s open_count = %d\n", __func__, __LINE__,
 		filp->f_path.dentry->d_name.name, pgmn_dev->open_count);
 
 	return rc;
@@ -56,11 +56,11 @@ static int msm_jpeg_release(struct inode *inode, struct file *filp)
 
 	struct msm_jpeg_device *pgmn_dev = filp->private_data;
 
-	JPEG_DBG(KERN_INFO "%s:%d]\n", __func__, __LINE__);
+	JPEG_PR_ERR("%s:%d]\n", __func__, __LINE__);
 
 	rc = __msm_jpeg_release(pgmn_dev);
 
-	JPEG_DBG(KERN_INFO "%s:%d] %s open_count = %d\n", __func__, __LINE__,
+	JPEG_PR_ERR("%s:%d] %s open_count = %d\n", __func__, __LINE__,
 		filp->f_path.dentry->d_name.name, pgmn_dev->open_count);
 	return rc;
 }

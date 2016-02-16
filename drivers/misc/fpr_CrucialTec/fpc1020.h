@@ -10,6 +10,7 @@
 #ifndef LINUX_SPI_FPC1020_H
 #define LINUX_SPI_FPC1020_H
 
+//HTC log
 #define DEBUG
 #define GPIO_POWER
 

@@ -6,7 +6,7 @@
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
 
-#define MSM8994_LDO_WR (1) 
+#define MSM8994_LDO_WR (0) 
 
 #define RT5506_I2C_NAME "rt5506"
 #define MAX_REG_DATA 15

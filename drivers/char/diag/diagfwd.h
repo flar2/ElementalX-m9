@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -46,6 +46,8 @@ int chk_apps_master(void);
 int chk_polling_response(void);
 int diag_cmd_log_on_demand(unsigned char *src_buf, int src_len,
 			   unsigned char *dest_buf, int dest_len);
+int diag_cmd_get_mobile_id(unsigned char *src_buf, int src_len,
+			   unsigned char *dest_buf, int dest_len);
 int diag_check_common_cmd(struct diag_pkt_header_t *header);
 void diag_update_userspace_clients(unsigned int type);
 void diag_update_sleeping_process(int process_id, int data_type);
@@ -64,8 +66,10 @@ extern int diag_debug_buf_idx;
 extern unsigned char diag_debug_buf[1024];
 extern struct platform_driver msm_diag_dci_driver;
 
+/*++ 2014/10/17, USB Team, PCN00016 ++*/
 #define SMD_FUNC_CLOSE 0
 #define SMD_FUNC_OPEN_DIAG 1
 #define SMD_FUNC_OPEN_BT 2
 void diag_smd_enable(smd_channel_t *ch, char *src, int mode);
+/*-- 2014/10/17, USB Team, PCN00016 --*/
 #endif

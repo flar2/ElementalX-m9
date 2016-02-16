@@ -69,6 +69,12 @@ static void msm_spm_smp_set_vdd(void *data)
 	info->err = msm_spm_drv_set_vdd(&dev->reg_data, info->vlevel);
 }
 
+/**
+ * msm_spm_probe_done(): Verify and return the status of the cpu(s) and l2
+ * probe.
+ * Return: 0 if all spm devices have been probed, else return -EPROBE_DEFER.
+ * if probe failed, then return the err number for that failure.
+ */
 int msm_spm_probe_done(void)
 {
 	struct msm_spm_device *dev;
@@ -94,6 +100,13 @@ void msm_spm_dump_regs(unsigned int cpu)
 	dump_regs(&per_cpu(msm_cpu_spm_device, cpu).reg_data, cpu);
 }
 
+/**
+ * msm_spm_set_vdd(): Set core voltage
+ * @cpu: core id
+ * @vlevel: Encoded PMIC data.
+ *
+ * Return: 0 on success or -(ERRNO) on failure.
+ */
 int msm_spm_set_vdd(unsigned int cpu, unsigned int vlevel)
 {
 	struct msm_spm_vdd_info info;
@@ -119,6 +132,11 @@ int msm_spm_set_vdd(unsigned int cpu, unsigned int vlevel)
 }
 EXPORT_SYMBOL(msm_spm_set_vdd);
 
+/**
+ * msm_spm_get_vdd(): Get core voltage
+ * @cpu: core id
+ * @return: Returns encoded PMIC data.
+ */
 unsigned int msm_spm_get_vdd(unsigned int cpu)
 {
 	int ret;
@@ -228,6 +246,9 @@ static int msm_spm_dev_init(struct msm_spm_device *dev,
 
 	for (i = 0; i < dev->num_modes; i++) {
 
+		/* Default offset is 0 and gets updated as we write more
+		 * sequences into SPM
+		 */
 		dev->modes[i].start_addr = offset;
 		ret = msm_spm_drv_write_seq_data(&dev->reg_data,
 						data->modes[i].cmd, &offset);
@@ -247,15 +268,27 @@ spm_failed_malloc:
 	return ret;
 }
 
+/**
+ * msm_spm_turn_on_cpu_rail(): Power on cpu rail before turning on core
+ * @node: The SPM node that controls the voltage for the CPU
+ * @val: The value to be set on the rail
+ * @cpu: The cpu for this with rail is being powered on
+ */
 int msm_spm_turn_on_cpu_rail(struct device_node *vctl_node,
 		unsigned int val, int cpu, int vctl_offset)
 {
-	uint32_t timeout = 2000; 
+	uint32_t timeout = 2000; /* delay for voltage to settle on the core */
 	struct msm_spm_device *dev = per_cpu(cpu_vctl_device, cpu);
 	void __iomem *base;
 
 	base = of_iomap(vctl_node, 1);
 	if (base) {
+		/*
+		 * Program Q2S to disable SPM legacy mode and ignore Q2S
+		 * channel requests.
+		 * bit[1] = qchannel_ignore = 1
+		 * bit[2] = spm_legacy_mode = 0
+		 */
 		writel_relaxed(0x2, base);
 		mb();
 		iounmap(base);
@@ -268,13 +301,13 @@ int msm_spm_turn_on_cpu_rail(struct device_node *vctl_node,
 	if (dev && (dev->cpu_vdd != VDD_DEFAULT))
 		return 0;
 
-	
+	/* Set the CPU supply regulator voltage */
 	val = (val & 0xFF);
 	writel_relaxed(val, base + vctl_offset);
 	mb();
 	udelay(timeout);
 
-	
+	/* Enable the CPU supply regulator*/
 	val = 0x30080;
 	writel_relaxed(val, base + vctl_offset);
 	mb();
@@ -294,6 +327,11 @@ void msm_spm_reinit(void)
 }
 EXPORT_SYMBOL(msm_spm_reinit);
 
+/*
+ * msm_spm_is_mode_avail() - Specifies if a mode is available for the cpu
+ * It should only be used to decide a mode before lpm driver is probed.
+ * @mode: SPM LPM mode to be selected
+ */
 bool msm_spm_is_mode_avail(unsigned int mode)
 {
 	struct msm_spm_device *dev = &__get_cpu_var(msm_cpu_spm_device);
@@ -307,6 +345,11 @@ bool msm_spm_is_mode_avail(unsigned int mode)
 	return false;
 }
 
+/**
+ * msm_spm_set_low_power_mode() - Configure SPM start address for low power mode
+ * @mode: SPM LPM mode to enter
+ * @notify_rpm: Notify RPM in this mode
+ */
 int msm_spm_set_low_power_mode(unsigned int mode, bool notify_rpm)
 {
 	struct msm_spm_device *dev = &__get_cpu_var(msm_cpu_spm_device);
@@ -315,6 +358,11 @@ int msm_spm_set_low_power_mode(unsigned int mode, bool notify_rpm)
 }
 EXPORT_SYMBOL(msm_spm_set_low_power_mode);
 
+/**
+ * msm_spm_init(): Board initalization function
+ * @data: platform specific SPM register configuration data
+ * @nr_devs: Number of SPM devices being initialized
+ */
 int __init msm_spm_init(struct msm_spm_platform_data *data, int nr_devs)
 {
 	unsigned int cpu;
@@ -355,6 +403,11 @@ int msm_spm_config_low_power_mode(struct msm_spm_device *dev,
 }
 #ifdef CONFIG_MSM_L2_SPM
 
+/**
+ * msm_spm_apcs_set_phase(): Set number of SMPS phases.
+ * @cpu: cpu which is requesting the change in number of phases.
+ * @phase_cnt: Number of phases to be set active
+ */
 int msm_spm_apcs_set_phase(int cpu, unsigned int phase_cnt)
 {
 	struct msm_spm_device *dev = per_cpu(cpu_vctl_device, cpu);
@@ -367,6 +420,11 @@ int msm_spm_apcs_set_phase(int cpu, unsigned int phase_cnt)
 }
 EXPORT_SYMBOL(msm_spm_apcs_set_phase);
 
+/** msm_spm_enable_fts_lpm() : Enable FTS to switch to low power
+ *                             when the cores are in low power modes
+ * @cpu: cpu that is entering low power mode.
+ * @mode: The mode configuration for FTS
+ */
 int msm_spm_enable_fts_lpm(int cpu, uint32_t mode)
 {
 	struct msm_spm_device *dev = per_cpu(cpu_vctl_device, cpu);
@@ -536,7 +594,7 @@ static int msm_spm_dev_probe(struct platform_device *pdev)
 	if (!ret)
 		spm_data.vctl_timeout_us = val;
 
-	
+	/* SAW start address */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		ret = -EFAULT;
@@ -563,7 +621,7 @@ static int msm_spm_dev_probe(struct platform_device *pdev)
 	key = "qcom,pfm-port";
 	of_property_read_u32(node, key, &spm_data.pfm_port);
 
-	
+	/* Q2S (QChannel-2-SPM) register */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (res) {
 		dev->q2s_reg = devm_ioremap(&pdev->dev, res->start,
@@ -585,6 +643,12 @@ static int msm_spm_dev_probe(struct platform_device *pdev)
 	key = "qcom,use-qchannel-for-wfi";
 	dev->use_qchannel_for_wfi = of_property_read_bool(node, key);
 
+	/*
+	 * At system boot, cpus and or clusters can remain in reset. CCI SPM
+	 * will not be triggered unless SPM_LEGACY_MODE bit is set for the
+	 * cluster in reset. Initialize q2s registers and set the
+	 * SPM_LEGACY_MODE bit.
+	 */
 	msm_spm_config_q2s(dev, MSM_SPM_MODE_POWER_COLLAPSE);
 
 	for (i = 0; i < ARRAY_SIZE(spm_of_data); i++) {
@@ -623,6 +687,10 @@ static int msm_spm_dev_probe(struct platform_device *pdev)
 
 	cpu = get_cpu_id(pdev->dev.of_node);
 
+	/* For CPUs that are online, the SPM has to be programmed for
+	 * clockgating mode to ensure that it can use SPM for entering these
+	 * low power modes.
+	 */
 	get_online_cpus();
 	if ((cpu >= 0) && (cpu < num_possible_cpus()) && (cpu_online(cpu)))
 		msm_spm_config_low_power_mode(dev, MSM_SPM_MODE_CLOCK_GATING,
@@ -665,6 +733,9 @@ static struct platform_driver msm_spm_device_driver = {
 	},
 };
 
+/**
+ * msm_spm_device_init(): Device tree initialization function
+ */
 int __init msm_spm_device_init(void)
 {
 	static bool registered;

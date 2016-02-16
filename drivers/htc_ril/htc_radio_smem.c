@@ -9,15 +9,24 @@
 #include <linux/ctype.h>
 #include <linux/dma-mapping.h>
 #include <linux/debugfs.h>
+#include <linux/dma-contiguous.h>
 
 #include "htc_radio_smem.h"
 
 #define CONFIG_RADIO_FEEDBACK 1
+#define CONFIG_RAMDUMP_SMLOG
 
 #ifdef CONFIG_RADIO_FEEDBACK
 #include <linux/uaccess.h>
 #include <linux/mm.h>
 #include <linux/miscdevice.h>
+#endif 
+
+#ifdef CONFIG_RAMDUMP_SMLOG
+#include <soc/qcom/smem.h>
+#include <soc/qcom/ramdump.h>
+#include <linux/remote_spinlock.h>
+#include <soc/qcom/subsystem_notif.h>
 #endif 
 
 static int boot_mode = APP_IN_HLOS;
@@ -28,6 +37,7 @@ static char *rom_version;
 static bool smlog_enabled;
 phys_addr_t smem_start_addr;
 static bool cma_reserved;
+void *smlog_base_vaddr;
 
 #define HTC_ROM_VERSION_PATH "/chosen/misc"
 #define HTC_ROM_VERSION_PROPERTY "firmware_main_version"
@@ -35,7 +45,6 @@ static bool cma_reserved;
 #define UT_LONG_SKU_LEN 5
 #define UT_LONG_SKU_FIRST_NUM '9'
 #define UT_SHORT_SKU_NUM "999"
-#define SMLOG_BUFFER_SIZE 0x1400000	
 
 #ifdef CONFIG_RADIO_FEEDBACK
 #define RADIO_FEEDBACK_IOCTL_MAGIC	'p'
@@ -47,6 +56,18 @@ struct msm_radio_feedback_config {
 };
 struct mutex radio_feedback_lock;
 struct msm_radio_feedback_config radio_feedback_config;
+#endif 
+
+#ifdef CONFIG_RAMDUMP_SMLOG
+struct restart_notifier_block {
+	unsigned processor;
+	char *name;
+	struct notifier_block nb;
+};
+
+static uint32_t num_smlog_areas;
+static struct ramdump_segment *smlog_ramdump_segments;
+static void *smlog_ramdump_dev;
 #endif 
 
 int __init cmdline_boot_mode_read(char *s)
@@ -180,6 +201,7 @@ phys_addr_t get_smem_base(void){
 	return smem_start_addr;
 }
 EXPORT_SYMBOL(get_smem_base);
+
 static bool is_ut_rom(void)
 {
 	int len = 0;
@@ -252,11 +274,11 @@ static void set_smlog_magic(bool is_enabled, struct htc_smem_type *smem, dma_add
 			__func__, smem->htc_smlog_magic, smem->htc_smlog_base, smem->htc_smlog_size);
 }
 
-static int check_smlog_alloc(struct device *dev, struct htc_smem_type *smem, size_t size)
+static int check_smlog_alloc(struct device *dev, struct htc_smem_type *smem)
 {
 	dma_addr_t addr = 0;
-	void *start;
 	int ret = 0;
+	int smlog_buf_size = 0;
 
 	
 	if(!dev->cma_area){
@@ -270,9 +292,10 @@ static int check_smlog_alloc(struct device *dev, struct htc_smem_type *smem, siz
 	smlog_enabled = is_smlog_enabled();
 
 	if(smlog_enabled){
-		start = dma_alloc_writecombine(dev, size, &addr,
+		smlog_buf_size = cma_get_size(dev);
+		smlog_base_vaddr = dma_alloc_writecombine(dev, smlog_buf_size, &addr,
 						   GFP_KERNEL);
-		if (!start) {
+		if (!smlog_base_vaddr) {
 			pr_err("[smem]%s: cannot alloc memory for smlog.\n", __func__);
 			ret = -ENOMEM;
 			goto alloc_fail;
@@ -282,12 +305,12 @@ static int check_smlog_alloc(struct device *dev, struct htc_smem_type *smem, siz
 	}else
 		pr_info("[smem]%s: smlog is disabled.\n", __func__);
 
-	set_smlog_magic(smlog_enabled, smem, addr, size);
+	set_smlog_magic(smlog_enabled, smem, addr, smlog_buf_size);
 	return ret;
 
 alloc_fail:
 	smlog_enabled = false;
-	set_smlog_magic(smlog_enabled, smem, addr, size);
+	set_smlog_magic(smlog_enabled, smem, addr, smlog_buf_size);
 
 	return ret;
 }
@@ -351,6 +374,43 @@ static void smem_init(struct htc_smem_type *smem){
 		   smem->reserved[i] = 0;
 }
 
+#ifdef CONFIG_RAMDUMP_SMLOG
+static int restart_notifier_cb(struct notifier_block *this,
+				unsigned long code,
+				void *data)
+{
+#if defined(CONFIG_HTC_DEBUG_SSR)
+	if (code == SUBSYS_AFTER_SHUTDOWN) {
+		struct restart_notifier_block *notifier;
+
+		notifier = container_of(this,
+					struct restart_notifier_block, nb);
+		pr_info("[smlog]%s: ssrestart for processor %d ('%s')\n",
+				__func__, notifier->processor,
+				notifier->name);
+
+		remote_spin_release_all(notifier->processor);
+
+		if (smlog_ramdump_dev) {
+			int ret;
+
+			pr_info("[smlog]%s: saving smlog ramdump.\n", __func__);
+			ret = do_ramdump(smlog_ramdump_dev,
+					smlog_ramdump_segments, num_smlog_areas);
+			if (ret < 0)
+				pr_err("[smlog]%s: unable to dump smlog %d\n",
+								__func__, ret);
+		}
+	}
+#endif
+	return NOTIFY_DONE;
+}
+
+static struct restart_notifier_block restart_notifiers[] = {
+	{SMEM_MODEM, "modem", .nb.notifier_call = restart_notifier_cb},
+};
+#endif 
+
 static int htc_radio_smem_probe(struct platform_device *pdev)
 {
 	int ret = -1;
@@ -359,6 +419,13 @@ static int htc_radio_smem_probe(struct platform_device *pdev)
 	struct htc_smem_type *htc_radio_smem;
 	struct device_node *dnp;
 	int property_size = 0;
+#ifdef CONFIG_RAMDUMP_SMLOG
+       int i;
+       void *handle;
+       struct restart_notifier_block *nb;
+       int smlog_idx = 0;
+       struct ramdump_segment *ramdump_segments_tmp = NULL;
+#endif 
 
 	pr_info("[smem]%s: start.\n", __func__);
 
@@ -391,7 +458,7 @@ static int htc_radio_smem_probe(struct platform_device *pdev)
 	
 	smem_init(htc_radio_smem);
 
-	ret = check_smlog_alloc(&pdev->dev, htc_radio_smem, SMLOG_BUFFER_SIZE);
+	ret = check_smlog_alloc(&pdev->dev, htc_radio_smem);
 	if(ret < 0)
 		pr_err("[smem]%s smlog region alloc fail.\n", __func__);
 
@@ -403,6 +470,50 @@ static int htc_radio_smem_probe(struct platform_device *pdev)
 	radio_feedback_config.max_size = htc_radio_smem->htc_smlog_size;
 #endif 
 
+#ifdef CONFIG_RAMDUMP_SMLOG
+	
+	if(smlog_enabled) {
+
+		num_smlog_areas = 1;
+		ramdump_segments_tmp = kmalloc_array(num_smlog_areas,
+                                             sizeof(struct ramdump_segment), GFP_KERNEL);
+		if (!ramdump_segments_tmp) {
+			pr_err("[smlog] ramdump segment kmalloc failed.\n");
+			ret = -ENOMEM;
+			goto free_smlog_areas;
+		}
+
+		smlog_ramdump_dev = create_ramdump_device("smlog", NULL);
+		if (IS_ERR_OR_NULL(smlog_ramdump_dev)) {
+			pr_err("[smlog]%s: Unable to create smlog ramdump device.\n", __func__);
+			smlog_ramdump_dev = NULL;
+		}
+
+		for (i = 0; i < ARRAY_SIZE(restart_notifiers); i++) {
+			nb = &restart_notifiers[i];
+			handle = subsys_notif_register_notifier(nb->name, &nb->nb);
+			pr_info("[smlog] registering notif for '%s', handle=0x%p\n", nb->name, handle);
+		}
+
+		ramdump_segments_tmp[smlog_idx].address = (unsigned long)cma_get_base(&pdev->dev);
+		ramdump_segments_tmp[smlog_idx].size = cma_get_size(&pdev->dev);
+		ramdump_segments_tmp[smlog_idx].v_address = smlog_base_vaddr;
+
+		smlog_ramdump_segments = ramdump_segments_tmp;
+		pr_info("[smlog] smlog address= 0x%lx, size= 0x%lx, v_address= 0x%p\n",
+				smlog_ramdump_segments[smlog_idx].address,
+				smlog_ramdump_segments[smlog_idx].size,
+				smlog_ramdump_segments[smlog_idx].v_address);
+
+		goto finish_probe;
+
+free_smlog_areas:
+		num_smlog_areas = 0;
+		kfree(ramdump_segments_tmp);
+	}
+
+finish_probe:
+#endif 
 	iounmap(htc_radio_smem);
 
 	pr_info("[smem]%s: end.\n", __func__);

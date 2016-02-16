@@ -966,4 +966,4 @@ static inline int rdev_key_mgmt_set_pmk(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
-#endif /* __CFG80211_RDEV_OPS */
+#endif 

@@ -102,4 +102,4 @@ void si_mhl_tx_drv_set_pp_16bpp_override(struct mhl_dev_context *dev_context,
 	int override);
 int si_mhl_tx_drv_get_hpd_status(struct mhl_dev_context *dev_context);
 uint32_t si_mhl_tx_drv_get_hdcp2_status(struct mhl_dev_context *dev_context);
-#endif 
+#endif /* if !defined(SI_8620_DRV_H) */

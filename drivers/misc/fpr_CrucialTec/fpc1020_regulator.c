@@ -23,6 +23,7 @@
 #endif
 
 
+/* -------------------------------------------------------------------- */
 int fpc1020_regulator_configure(fpc1020_data_t *fpc1020)
 {
 	int error = 0;
@@ -91,6 +92,7 @@ supply_err:
 }
 
 
+/* -------------------------------------------------------------------- */
 int fpc1020_regulator_release(fpc1020_data_t *fpc1020)
 {
 	if (fpc1020->vcc_spi != NULL) {
@@ -114,6 +116,7 @@ int fpc1020_regulator_release(fpc1020_data_t *fpc1020)
 }
 
 
+/* -------------------------------------------------------------------- */
 int fpc1020_regulator_set(fpc1020_data_t *fpc1020, bool enable)
 {
 	int error = 0;

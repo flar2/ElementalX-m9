@@ -18,6 +18,29 @@
 
 #include "msm-dolby-dap-config.h"
 
+#define DS1_MODULE_ID                   0x00010775
+
+#define DOLBY_SOFT_VOLUME_PERIOD	40
+#define DOLBY_SOFT_VOLUME_STEP		100
+#define DOLBY_ADDITIONAL_RAMP_WAIT	20
+#define SOFT_VOLUME_PARAM_SIZE		3
+#define PARAM_PAYLOAD_SIZE		3
+
+enum {
+	DOLBY_SOFT_VOLUME_CURVE_LINEAR = 0,
+	DOLBY_SOFT_VOLUME_CURVE_EXP,
+	DOLBY_SOFT_VOLUME_CURVE_LOG,
+};
+
+#define VOLUME_ZERO_GAIN     0x0
+#define VOLUME_UNITY_GAIN    0x2000
+#define DOLBY_MODULE_ENABLE_PERIOD     50
+
+enum {
+	MODULE_DISABLE = 0,
+	MODULE_ENABLE,
+};
+
 struct dolby_dap_endp_params_s {
 	int device;
 	int device_ch_caps;
@@ -297,9 +320,13 @@ struct dolby_dap_params_states_s {
 	bool use_cache;
 	bool auto_endp;
 	bool enddep_params;
+	int  dap_bypass; 
 	int  port_id[AFE_MAX_PORTS];
 	int  copp_idx[AFE_MAX_PORTS];
-	int  port_open_count[AFE_MAX_PORTS]; 
+	
+	int  port_open_count[AFE_MAX_PORTS];
+	int  port_bypass_state[AFE_MAX_PORTS]; 
+	
 	int  port_ids_dolby_can_be_enabled;
 	int  device;
 };
@@ -308,11 +335,177 @@ static struct dolby_dap_params_get_s dolby_dap_params_get = {-1, DEVICE_OUT_ALL,
 							     0, 0, 0};
 static struct dolby_dap_params_states_s dolby_dap_params_states = { true, true,
 						
-						true, {DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID},
+						true, 1, {DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID, DOLBY_INVALID_PORT_ID},
 						{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 						{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+						{-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 						DEVICE_OUT_ALL, 0 };
 						
+
+static void msm_dolby_dap_check_and_update_ramp_wait(int port_id, int copp_idx,
+						   int *ramp_wait)
+{
+	int32_t *update_params_value = NULL;
+	uint32_t params_length = SOFT_VOLUME_PARAM_SIZE * sizeof(uint32_t);
+	uint32_t param_payload_len = PARAM_PAYLOAD_SIZE * sizeof(uint32_t);
+	int rc = 0;
+
+	update_params_value = kzalloc(params_length, GFP_KERNEL);
+	if (!update_params_value) {
+		pr_err("%s: params memory alloc failed\n", __func__);
+		goto end;
+	}
+	rc = adm_get_params(port_id, copp_idx,
+			    AUDPROC_MODULE_ID_VOL_CTRL,
+			    AUDPROC_PARAM_ID_SOFT_VOL_STEPPING_PARAMETERS,
+			    params_length + param_payload_len,
+			    (char *) update_params_value);
+	if (rc == 0) {
+		pr_debug("%s: params_value [0x%x, 0x%x, 0x%x]\n",
+			__func__, update_params_value[0],
+			update_params_value[1],
+			update_params_value[2]);
+		*ramp_wait = update_params_value[0];
+	}
+end:
+	kfree(update_params_value);
+	return;
+}
+
+static int msm_dolby_dap_handle_bypass_wait(int port_id, int copp_idx,
+                                          int wait_time)
+{
+        int ret = 0;
+        adm_set_wait_parameters(port_id, copp_idx);
+	
+        
+        ret = adm_wait_timeout(port_id, copp_idx, wait_time);
+        
+        
+        if (ret == 0)
+                adm_reset_wait_parameters(port_id, copp_idx);
+        return ret;
+}
+
+static int msm_dolby_dap_handle_hard_bypass(const int port_id, const int copp_idx, bool ramp, bool wait)
+{
+	int rc = 0, index;
+	int ramp_wait = DOLBY_SOFT_VOLUME_PERIOD;
+	struct audproc_softvolume_params softvol = {
+		.period = DOLBY_SOFT_VOLUME_PERIOD,
+		.step = DOLBY_SOFT_VOLUME_STEP,
+		.rampingcurve = DOLBY_SOFT_VOLUME_CURVE_EXP,
+	};
+
+	if (port_id == DOLBY_INVALID_PORT_ID) {
+		pr_err("%s: invalid port\n", __func__);
+		rc = 0;
+		goto end;
+	}
+
+	if ((copp_idx < 0) || (copp_idx >= MAX_COPPS_PER_PORT)) {
+		pr_err("%s: Invalid copp_idx\n", __func__);
+		rc = 0;
+		goto end;
+	}
+
+	index = adm_validate_and_get_port_index(port_id);
+	if (index < 0) {
+		pr_err("%s: Invalid port idx %d port_id %#x\n", __func__, index,
+			port_id);
+		rc = -EINVAL;
+		goto end;
+	}
+
+	if ((dolby_dap_params_states.port_bypass_state[index] != -1) &&
+		dolby_dap_params_states.port_bypass_state[index] == dolby_dap_params_states.dap_bypass) {
+		pr_debug("%s: no need to update bypass mode for port idx %d\n", __func__, index);
+		rc = 0;
+		goto end;
+	}
+
+	dolby_dap_params_states.port_bypass_state[index] = dolby_dap_params_states.dap_bypass;
+
+	if (ramp) {
+		rc = adm_set_softvolume(port_id, copp_idx,
+					 &softvol);
+		if (rc < 0) {
+			pr_err("%s: Soft volume ret error %d\n",
+				__func__, rc);
+			goto end;
+		}
+		if (wait) {
+			msm_dolby_dap_check_and_update_ramp_wait(port_id,
+						       copp_idx,
+						       &ramp_wait);
+		}
+
+		
+		rc = adm_set_volume(port_id, copp_idx,
+				    VOLUME_ZERO_GAIN);
+		if (rc < 0) {
+			pr_info("%s :Set volume port_id %d",
+				__func__, port_id);
+			pr_info("copp_idx %d, error %d\n",
+				copp_idx, rc);
+			goto end;
+		}
+
+		rc = msm_dolby_dap_handle_bypass_wait(port_id, copp_idx,
+				    (ramp_wait +
+				     DOLBY_ADDITIONAL_RAMP_WAIT));
+		if (rc == -EINTR) {
+			pr_info("%s:bypass interupted-ignore,port %d",
+				__func__, port_id);
+			pr_info("copp_idx %d\n", copp_idx);
+			rc = 0;
+			goto end;
+		}
+	}
+	pr_info("%s: port idx %d, set ds1 bypass = %d\n", __func__, index, dolby_dap_params_states.port_bypass_state[index]);
+	adm_param_enable(port_id, copp_idx,
+		DS1_MODULE_ID, dolby_dap_params_states.port_bypass_state[index] ? MODULE_DISABLE : MODULE_ENABLE);
+
+	if (wait) {
+		rc = msm_dolby_dap_handle_bypass_wait(port_id, copp_idx,
+			DOLBY_MODULE_ENABLE_PERIOD);
+		if (rc == -EINTR) {
+			pr_info("%s:bypass interupted port_id %d copp_idx %d\n",
+				__func__, port_id, copp_idx);
+			
+			rc = 0;
+			goto end;
+		}
+	}
+
+	if (ramp) {
+		
+		rc = adm_set_volume(port_id, copp_idx,
+				    VOLUME_UNITY_GAIN);
+		if (rc < 0) {
+			pr_info("%s: Set vol port %d copp %d, rc %d\n",
+				__func__, port_id, copp_idx, rc);
+			rc = 0;
+		}
+	}
+end:
+	pr_debug("%s:return rc=%d\n", __func__, rc);
+	return rc;
+}
+
+
+
+void msm_dolby_ssr_reset(void)
+{
+	int i;
+
+	pr_err("%s: reset dolby dap params states", __func__);
+
+	
+	for (i = 0; i < AFE_MAX_PORTS; i++) {
+		dolby_dap_params_states.port_open_count[i] = 0;
+	}
+}
 
 static int msm_dolby_dap_map_device_to_dolby_endpoint(int device)
 {
@@ -474,6 +667,7 @@ static int msm_dolby_dap_send_cached_params(int port_id, int copp_idx,
 		}
 	}
 	kfree(params_value);
+
 	return 0;
 }
 
@@ -490,10 +684,17 @@ int msm_dolby_dap_init(int port_id, int copp_idx, int channels,
 	if ((port_id != DOLBY_INVALID_PORT_ID)) {
 		dolby_dap_params_states.port_id[index] = port_id;
 		dolby_dap_params_states.copp_idx[index] = copp_idx;
-		dolby_dap_params_states.port_open_count[index]++; 
-		if (dolby_dap_params_states.port_open_count[index] != 1) { 
+		
+		dolby_dap_params_states.port_open_count[index]++;
+		pr_debug("%s: port idx %d port_id %#x, open_count %d\n", __func__,
+			index, port_id, dolby_dap_params_states.port_open_count[index]);
+		if (dolby_dap_params_states.port_open_count[index] != 1) {
 			return ret;
 		}
+		dolby_dap_params_states.port_bypass_state[index] = -1;
+		msm_dolby_dap_handle_hard_bypass(port_id, copp_idx, false, false);
+		
+
 		if (dolby_dap_params_states.auto_endp) {
 			ret = msm_dolby_dap_send_end_point(port_id, copp_idx);
 			if (ret) {
@@ -534,12 +735,17 @@ void msm_dolby_dap_deinit(int port_id)
 			port_id);
 		return;
 	}
-	dolby_dap_params_states.port_open_count[index]--; 
+
+	if (dolby_dap_params_states.port_open_count[index] > 0)
+		dolby_dap_params_states.port_open_count[index]--;
 	if ((dolby_dap_params_states.port_id[index] == port_id &&
-		dolby_dap_params_states.port_open_count[index] == 0)) {  
+		dolby_dap_params_states.port_open_count[index] == 0)) {
 		dolby_dap_params_states.port_id[index] = DOLBY_INVALID_PORT_ID;
 		dolby_dap_params_states.copp_idx[index] = -1;
+		dolby_dap_params_states.port_bypass_state[index] = -1;  
 	}
+	pr_debug("%s: port idx %d port_id %#x, open_count %d\n", __func__,
+		index, port_id, dolby_dap_params_states.port_open_count[index]);
 }
 
 static int msm_dolby_dap_set_vspe_vdhe(int port_id, int copp_idx,
@@ -952,6 +1158,36 @@ int msm_dolby_dap_param_visualizer_control_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+int msm_dolby_dap_set_bypass_control_get(struct snd_kcontrol *kcontrol,
+				       struct snd_ctl_elem_value *ucontrol)
+{
+	pr_debug("%s bypass %d\n", __func__, dolby_dap_params_states.dap_bypass);
+	return dolby_dap_params_states.dap_bypass;
+}
+
+int msm_dolby_dap_set_bypass_control_put(struct snd_kcontrol *kcontrol,
+					   struct snd_ctl_elem_value *ucontrol)
+{
+	int bypass = ucontrol->value.integer.value[0];
+	int i = 0;
+
+	if (dolby_dap_params_states.dap_bypass == bypass)
+		return 0;
+
+	dolby_dap_params_states.dap_bypass = bypass;
+
+	for (i = 0 ; i < AFE_MAX_PORTS ; i++) {
+		if ((dolby_dap_params_states.port_open_count[i] > 0)) {
+			msm_dolby_dap_handle_hard_bypass(
+				dolby_dap_params_states.port_id[i],
+				dolby_dap_params_states.copp_idx[i],
+				true, true);
+		}
+	}
+	pr_debug("%s bypass %d\n", __func__, bypass);
+	return 0;
+}
+
 int msm_dolby_dap_endpoint_control_get(struct snd_kcontrol *kcontrol,
 				       struct snd_ctl_elem_value *ucontrol)
 {
@@ -1027,6 +1263,12 @@ static const struct snd_kcontrol_new dolby_dap_param_visualizer_controls[] = {
 	msm_dolby_dap_param_visualizer_control_put),
 };
 
+static const struct snd_kcontrol_new dolby_dap_set_bypass_controls[] = {
+	SOC_SINGLE_MULTI_EXT("DS1 Set Bypass", SND_SOC_NOPM, 0,
+	0xFFFFFFFF, 0, 1, msm_dolby_dap_set_bypass_control_get,
+	msm_dolby_dap_set_bypass_control_put),
+};
+
 static const struct snd_kcontrol_new dolby_dap_param_end_point_controls[] = {
 	SOC_SINGLE_MULTI_EXT("DS1 DAP Endpoint", SND_SOC_NOPM, 0,
 	0xFFFFFFFF, 0, 1, msm_dolby_dap_endpoint_control_get,
@@ -1054,6 +1296,10 @@ void msm_dolby_dap_add_controls(struct snd_soc_platform *platform)
 	snd_soc_add_platform_controls(platform,
 				dolby_dap_param_visualizer_controls,
 			ARRAY_SIZE(dolby_dap_param_visualizer_controls));
+
+	snd_soc_add_platform_controls(platform,
+				dolby_dap_set_bypass_controls,
+			ARRAY_SIZE(dolby_dap_set_bypass_controls));
 
 	snd_soc_add_platform_controls(platform,
 				dolby_dap_param_end_point_controls,

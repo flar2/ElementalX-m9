@@ -88,7 +88,7 @@ struct msm_hsl_port {
 	struct msm_bus_scale_pdata *bus_scale_table;
 };
 
-static int msm_serial_hsl_enable;
+static int msm_serial_hsl_enable = 0;
 
 #define UARTDM_VERSION_11_13	0
 #define UARTDM_VERSION_14	1
@@ -1839,7 +1839,7 @@ static int __init msm_serial_hsl_init(void)
 		msm_serial_hsl_enable = 1;
 
 	if (!msm_serial_hsl_enable)
-		msm_hsl_uart_driver.cons = NULL;
+		return 0;
 
 	ret = uart_register_driver(&msm_hsl_uart_driver);
 	if (unlikely(ret))
@@ -1860,10 +1860,12 @@ static int __init msm_serial_hsl_init(void)
 
 static void __exit msm_serial_hsl_exit(void)
 {
+	if (!msm_serial_hsl_enable)
+		return;
+
 	debugfs_remove_recursive(debug_base);
 #ifdef CONFIG_SERIAL_MSM_HSL_CONSOLE
-	if (msm_serial_hsl_enable)
-		unregister_console(&msm_hsl_console);
+	unregister_console(&msm_hsl_console);
 #endif
 	platform_driver_unregister(&msm_hsl_platform_driver);
 	uart_unregister_driver(&msm_hsl_uart_driver);

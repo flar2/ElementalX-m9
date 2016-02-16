@@ -48,9 +48,14 @@
 #endif
 
 
-#define RETRIES 2		
-#define BUS_HEADER_LEN	(24+DHD_SDALIGN)	
-#define ROUND_UP_MARGIN	2048	
+#define RETRIES 2		/* # of retries to retrieve matching ioctl response */
+#define BUS_HEADER_LEN	(24+DHD_SDALIGN)	/* Must be at least SDPCM_RESERVE
+				 * defined in dhd_sdio.c (amount of header tha might be added)
+				 * plus any space that might be needed for alignment padding.
+				 */
+#define ROUND_UP_MARGIN	2048	/* Biggest SDIO block size possible for
+				 * round off at the end of buffer
+				 */
 
 typedef struct dhd_prot {
 	uint16 reqid;
@@ -73,10 +78,14 @@ dhdcdc_msg(dhd_pub_t *dhd)
 
 	DHD_OS_WAKE_LOCK(dhd);
 
+	/* NOTE : cdc->msg.len holds the desired length of the buffer to be
+	 *        returned. Only up to CDC_MAX_MSG_SIZE of this buffer area
+	 *	  is actually sent to the dongle
+	 */
 	if (len > CDC_MAX_MSG_SIZE)
 		len = CDC_MAX_MSG_SIZE;
 
-	
+	/* Send request */
 	err = dhd_bus_txctl(dhd->bus, (uchar*)&prot->msg, len);
 
 	DHD_OS_WAKE_UNLOCK(dhd);
@@ -115,7 +124,7 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 	DHD_CTL(("%s: cmd %d len %d\n", __FUNCTION__, cmd, len));
 
 
-	
+	/* Respond "bcmerror" and "bcmerrorstr" with local cache */
 	if (cmd == WLC_GET_VAR && buf)
 	{
 		if (!strcmp((char *)buf, "bcmerrorstr"))
@@ -136,7 +145,7 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 	msg->len = htol32(len);
 	msg->flags = (++prot->reqid << CDCF_IOC_ID_SHIFT);
 	CDC_SET_IF_IDX(msg, ifidx);
-	
+	/* add additional action bits */
 	action &= WL_IOCTL_ACTION_MASK;
 	msg->flags |= (action << CDCF_IOC_ACTION_SHIFT);
 	msg->flags = htol32(msg->flags);
@@ -151,7 +160,7 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 	}
 
 retry:
-	
+	/* wait for interrupt and get first fragment */
 	if ((ret = dhdcdc_cmplt(dhd, prot->reqid, len)) < 0)
 		goto done;
 
@@ -167,7 +176,7 @@ retry:
 		goto done;
 	}
 
-	
+	/* Copy info buffer */
 	if (buf)
 	{
 		if (ret < (int)len)
@@ -175,11 +184,11 @@ retry:
 		memcpy(buf, (void*) prot->buf, len);
 	}
 
-	
+	/* Check the ERROR flag */
 	if (flags & CDCF_IOC_ERROR)
 	{
 		ret = ltoh32(msg->status);
-		
+		/* Cache error from dongle */
 		dhd->dongle_error = ret;
 	}
 
@@ -204,7 +213,7 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 		return -EIO;
 	}
 
-	
+	/* don't talk to the dongle if fw is about to be reloaded */
 	if (dhd->hang_was_sent) {
 		DHD_ERROR(("%s: HANG was sent up earlier. Not talking to the chip\n",
 			__FUNCTION__));
@@ -217,7 +226,7 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 	msg->len = htol32(len);
 	msg->flags = (++prot->reqid << CDCF_IOC_ID_SHIFT);
 	CDC_SET_IF_IDX(msg, ifidx);
-	
+	/* add additional action bits */
 	action &= WL_IOCTL_ACTION_MASK;
 	msg->flags |= (action << CDCF_IOC_ACTION_SHIFT) | CDCF_IOC_SET;
 	msg->flags = htol32(msg->flags);
@@ -243,11 +252,11 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 		goto done;
 	}
 
-	
+	/* Check the ERROR flag */
 	if (flags & CDCF_IOC_ERROR)
 	{
 		ret = ltoh32(msg->status);
-		
+		/* Cache error from dongle */
 		dhd->dongle_error = ret;
 	}
 
@@ -296,15 +305,15 @@ dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int len)
 			ioc->used = ret - sizeof(cdc_ioctl_t);
 	}
 
-	
+	/* Too many programs assume ioctl() returns 0 on success */
 	if (ret >= 0)
 		ret = 0;
 	else {
 		cdc_ioctl_t *msg = &prot->msg;
-		ioc->needed = ltoh32(msg->len); 
+		ioc->needed = ltoh32(msg->len); /* len == needed when set/query fails from dongle */
 	}
 
-	
+	/* Intercept the wme_dp ioctl here */
 	if ((!ret) && (ioc->cmd == WLC_SET_VAR) && (!strcmp(buf, "wme_dp"))) {
 		int slen, val = 0;
 
@@ -337,18 +346,21 @@ dhd_prot_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 #endif
 }
 
+/*	The FreeBSD PKTPUSH could change the packet buf pinter
+	so we need to make it changable
+*/
 #define PKTBUF pktbuf
 void
 dhd_prot_hdrpush(dhd_pub_t *dhd, int ifidx, void *PKTBUF)
 {
 #ifdef BDC
 	struct bdc_header *h;
-#endif 
+#endif /* BDC */
 
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
 #ifdef BDC
-	
+	/* Push BDC header used to convey priority for buses that don't */
 
 	PKTPUSH(dhd->osh, PKTBUF, BDC_HEADER_LEN);
 
@@ -362,17 +374,17 @@ dhd_prot_hdrpush(dhd_pub_t *dhd, int ifidx, void *PKTBUF)
 	h->priority = (PKTPRIO(PKTBUF) & BDC_PRIORITY_MASK);
 	h->flags2 = 0;
 	h->dataOffset = 0;
-#endif 
+#endif /* BDC */
 	BDC_SET_IF_IDX(h, ifidx);
 }
-#undef PKTBUF	
+#undef PKTBUF	/* Only defined in the above routine */
 
 uint
 dhd_prot_hdrlen(dhd_pub_t *dhd, void *PKTBUF)
 {
 	uint hdrlen = 0;
 #ifdef BDC
-	
+	/* Length of BDC(+WLFC) headers pushed */
 	hdrlen = BDC_HEADER_LEN + (((struct bdc_header *)PKTBUF)->dataOffset * 4);
 #endif
 	return hdrlen;
@@ -392,7 +404,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 #ifdef BDC
 	if (reorder_info_len)
 		*reorder_info_len = 0;
-	
+	/* Pop BDC header used to convey priority for buses that don't */
 
 	if (PKTLEN(dhd->osh, pktbuf) < BDC_HEADER_LEN) {
 		DHD_ERROR(("%s: rx data too short (%d < %d)\n", __FUNCTION__,
@@ -403,7 +415,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 	h = (struct bdc_header *)PKTDATA(dhd->osh, pktbuf);
 
 	if (!ifidx) {
-		
+		/* for tx packet, skip the analysis */
 		data_offset = h->dataOffset;
 		PKTPULL(dhd->osh, pktbuf, BDC_HEADER_LEN);
 		goto exit;
@@ -433,7 +445,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 	PKTSETPRIO(pktbuf, (h->priority & BDC_PRIORITY_MASK));
 	data_offset = h->dataOffset;
 	PKTPULL(dhd->osh, pktbuf, BDC_HEADER_LEN);
-#endif 
+#endif /* BDC */
 
 #if defined(NDISVER)
 #if (NDISVER < 0x0630)
@@ -442,16 +454,19 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 		           PKTLEN(dhd->osh, pktbuf), (data_offset * 4)));
 		return BCME_ERROR;
 	}
-#endif 
-#endif 
+#endif /* #if defined(NDISVER) */
+#endif /* (NDISVER < 0x0630) */
 
 #ifdef PROP_TXSTATUS
 	if (!DHD_PKTTAG_PKTDIR(PKTTAG(pktbuf))) {
+		/*
+		- parse txstatus only for packets that came from the firmware
+		*/
 		dhd_wlfc_parse_header_info(dhd, pktbuf, (data_offset << 2),
 			reorder_buf_info, reorder_info_len);
 
 	}
-#endif 
+#endif /* PROP_TXSTATUS */
 
 exit:
 	PKTPULL(dhd->osh, pktbuf, (data_offset << 2));
@@ -470,7 +485,7 @@ dhd_prot_attach(dhd_pub_t *dhd)
 	}
 	memset(cdc, 0, sizeof(dhd_prot_t));
 
-	
+	/* ensure that the msg buf directly follows the cdc msg struct */
 	if ((uintptr)(&cdc->msg + 1) != (uintptr)cdc->buf) {
 		DHD_ERROR(("dhd_prot_t is not correctly defined\n"));
 		goto fail;
@@ -489,6 +504,7 @@ fail:
 	return BCME_NOMEM;
 }
 
+/* ~NOTE~ What if another thread is waiting on the semaphore?  Holding it? */
 void
 dhd_prot_detach(dhd_pub_t *dhd)
 {
@@ -502,7 +518,7 @@ dhd_prot_detach(dhd_pub_t *dhd)
 void
 dhd_prot_dstats(dhd_pub_t *dhd)
 {
-	
+	/*  copy bus stats */
 
 	dhd->dstats.tx_packets = dhd->tx_packets;
 	dhd->dstats.tx_errors = dhd->tx_errors;
@@ -521,7 +537,7 @@ dhd_sync_with_dongle(dhd_pub_t *dhd)
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
 
-	
+	/* Get the device rev info */
 	memset(&revinfo, 0, sizeof(revinfo));
 	ret = dhd_wl_ioctl_cmd(dhd, WLC_GET_REVINFO, &revinfo, sizeof(revinfo), FALSE, 0);
 	if (ret < 0)
@@ -535,7 +551,7 @@ dhd_sync_with_dongle(dhd_pub_t *dhd)
 	if (!ret)
 		dhd_process_cid_mac(dhd, FALSE);
 
-	
+	/* Always assumes wl for now */
 	dhd->iswl = TRUE;
 
 done:
@@ -550,6 +566,7 @@ int dhd_prot_init(dhd_pub_t *dhd)
 void
 dhd_prot_stop(dhd_pub_t *dhd)
 {
+/* Nothing to do for CDC */
 }
 
 
@@ -613,7 +630,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 		reorder_info_buf[WLHOST_REORDERDATA_EXPIDX_OFFSET],
 		reorder_info_buf[WLHOST_REORDERDATA_MAXIDX_OFFSET]));
 
-	
+	/* validate flags and flow id */
 	if (flags == 0xFF) {
 		DHD_ERROR(("%s: invalid flags...so ignore this packet\n", __FUNCTION__));
 		*pkt_count = 1;
@@ -640,7 +657,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 
 		dhd_get_hostreorder_pkts(dhd->osh, ptr, pkt, &cnt, &plast,
 			ptr->exp_idx, ptr->exp_idx);
-		
+		/* set it to the last packet */
 		if (plast) {
 			PKTSETNEXT(dhd->osh, plast, cur_pkt);
 			cnt++;
@@ -659,13 +676,13 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 		*pkt_count = cnt;
 		return 0;
 	}
-	
+	/* all the other cases depend on the existance of the reorder struct for that flow id */
 	if (ptr == NULL) {
 		uint32 buf_size_alloc = sizeof(reorder_info_t);
 		max_idx = reorder_info_buf[WLHOST_REORDERDATA_MAXIDX_OFFSET];
 
 		buf_size_alloc += ((max_idx + 1) * sizeof(void*));
-		
+		/* allocate space to hold the buffers, index etc */
 
 		DHD_REORDER(("%s: alloc buffer of size %d size, reorder info id %d, maxidx %d\n",
 			__FUNCTION__, buf_size_alloc, flow_id, max_idx));
@@ -700,8 +717,8 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 
 
 		if ((exp_idx == ptr->exp_idx) && (cur_idx != ptr->exp_idx)) {
-			
-			
+			/* still in the current hole */
+			/* enqueue the current on the buffer chain */
 			if (ptr->p[cur_idx] != NULL) {
 				DHD_REORDER(("%s: HOLE: ERROR buffer pending..free it\n",
 					__FUNCTION__));
@@ -717,7 +734,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 			*pkt = NULL;
 		}
 		else if (ptr->exp_idx == cur_idx) {
-			
+			/* got the right one ..flush from cur to exp and update exp */
 			DHD_REORDER(("%s: got the right one now, cur_idx is %d\n",
 				__FUNCTION__, cur_idx));
 			if (ptr->p[cur_idx] != NULL) {
@@ -741,7 +758,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 		else {
 			uint8 end_idx;
 			bool flush_current = FALSE;
-			
+			/* both cur and exp are moved now .. */
 			DHD_REORDER(("%s:, flow %d, both moved, cur %d(%d), exp %d(%d)\n",
 				__FUNCTION__, flow_id, ptr->cur_idx, cur_idx,
 				ptr->exp_idx, exp_idx));
@@ -750,7 +767,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 			else
 				end_idx = exp_idx;
 
-			
+			/* flush pkts first */
 			dhd_get_hostreorder_pkts(dhd->osh, ptr, pkt, &cnt, &plast,
 				ptr->exp_idx, end_idx);
 
@@ -779,7 +796,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 	}
 	else {
 		uint8 end_idx;
-		
+		/* no real packet but update to exp_seq...that means explicit window move */
 		exp_idx = reorder_info_buf[WLHOST_REORDERDATA_EXPIDX_OFFSET];
 
 		DHD_REORDER(("%s: move the window, cur_idx is %d, exp is %d, new exp is %d\n",
@@ -796,7 +813,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 			*pkt = cur_pkt;
 		cnt++;
 		*pkt_count = cnt;
-		
+		/* set the new expected idx */
 		ptr->exp_idx = exp_idx;
 	}
 	return 0;

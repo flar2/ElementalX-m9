@@ -37,4 +37,4 @@ struct mhl_dev_context;
 int generate_rbp_input_event(struct mhl_dev_context *dev_context,
 	uint8_t rbp_buttoncode);
 
-#endif	
+#endif	/* #ifndef _MHL_RBP_INPUTDEV_H_ */

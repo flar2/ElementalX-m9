@@ -312,6 +312,19 @@ config FIPS_ENABLE
           which will perform this task. Please select Y here
           to enable.
 
+config FIPS_RECOMPILE
+	bool "Recompile FIPS140-2 certified binaries"
+	default n
+	depends on FIPS_ENABLE
+	help
+	  This flag is to make current build recompile FIPS140-2
+          certified crypto binary from source. Please select Y here to
+          enable. In default value n, the compiler will use
+          pre-compiled binaries. Note that select Y may invalidate
+          existing FIPS140-2 certification but the recompiled crypto
+          library remains FIPS certifable. The flag is only
+          effective when flag FIPS_ENABLE is enabled.
+
 config CRYPTO_DEV_QCRYPTO
 	tristate "Qualcomm Crypto accelerator"
 	select CRYPTO_DES
@@ -326,7 +339,7 @@ config CRYPTO_DEV_QCRYPTO
 
 config CRYPTO_DEV_QCE
 	tristate "Qualcomm Crypto Engine (QCE) module"
-	select CRYPTO_DEV_QCE50 if ARCH_MSM8974 || ARCH_MSM8226 || ARCH_MSM8610 || ARCH_FSM9900 || ARCH_APQ8084 || ARCH_MSM8916 || ARCH_MSM8994 || ARCH_MSM8909 || ARCH_FSM9010
+	select CRYPTO_DEV_QCE50 if ARCH_MSM8974 || ARCH_MSM8226 || ARCH_MSM8610 || ARCH_FSM9900 || ARCH_APQ8084 || ARCH_MSM8916 || ARCH_MSM8994 || ARCH_MSM8909 || ARCH_MSM8992 || ARCH_FSM9010 || ARCH_MDM9640
 	default n
 	help
           This driver supports Qualcomm Crypto Engine in MSM7x30, MSM8660
@@ -334,7 +347,7 @@ config CRYPTO_DEV_QCE
 	  To compile this driver as a module, choose M here: the
 	  For MSM7x30 MSM8660 and MSM8x55 the module is called qce
 	  For MSM8960, APQ8064 and MSM9615 the module is called qce40
-	  For MSM8974, MSM8916, MSM8994, MSM8909 and APQ8084 the module
+	  For MSM8974, MSM8916, MSM8994, MSM8909, MSM8992 and APQ8084 the module
 	  is called qce50.
 
 config CRYPTO_DEV_QCEDEV

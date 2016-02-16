@@ -48,8 +48,12 @@ struct __compat_mtp_event {
 						struct __compat_mtp_event)
 #define COMPAT_MTP_SEND_FILE_WITH_HEADER  _IOW('M', 4, \
 						struct __compat_mtp_file_range)
+/*++ 2014/10/29, USB Team, PCN00031 ++*/
 #define COMPAT_MTP_SET_CPU_PERF	          _IOW('M', 5, int)
+/*-- 2014/10/29, USB Team, PCN00031 --*/
+/*++ 2014/11/20, USB Team, PCN00042 ++*/
 #define COMPAT_MTP_THREAD_SUPPORTED	      _IOW('M', 64, int)
+/*-- 2014/11/20, USB Team, PCN00042 --*/
 #endif
 #endif
-#endif 
+#endif /* __LINUX_USB_F_MTP_H */

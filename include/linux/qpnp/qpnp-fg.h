@@ -42,6 +42,7 @@ int pmi8994_fg_get_batt_current(int *result);
 int pmi8994_fg_get_batt_soc(int *result);
 int pmi8994_fg_get_batt_temperature(int *result);
 int pmi8994_fg_get_batt_id(int *result);
+int pmi8994_fg_get_batt_capacity(int *result);
 int pmi8994_fg_get_batt_id_ohm(int *result);
 int pmi8994_charger_get_attr_text(char *buf, int size);
 int pmi8994_fg_store_battery_gauge_data_emmc(void);
@@ -67,6 +68,10 @@ static inline int pmi8994_fg_get_batt_temperature(int *result)
 	return -ENXIO;
 }
 static inline int pmi8994_fg_get_batt_id(int *result)
+{
+        return -ENXIO;
+}
+static inline int pmi8994_fg_get_batt_capacity(int *result)
 {
         return -ENXIO;
 }

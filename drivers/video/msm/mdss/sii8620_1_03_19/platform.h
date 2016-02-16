@@ -191,10 +191,10 @@ int get_config(void *dev_context, int config_idx);
 
 #define GPIO_LED_ON	0
 #define GPIO_LED_OFF	1
-void set_pin_impl( int pin_idx, int value,
+void set_pin_impl(/*void *dev_context,*/ int pin_idx, int value,
 		  const char *function_name, int line_num);
-#define set_pin( pin_idx, value) \
-	set_pin_impl( pin_idx, value, __func__, __LINE__)
+#define set_pin(/*dev_context,*/ pin_idx, value) \
+	set_pin_impl(/*dev_context,*/ pin_idx, value, __func__, __LINE__)
 
 void enable_hdmi(int enable);
 void set_hev_vic(uint8_t write_burst_vic);
@@ -216,6 +216,7 @@ extern bool input_dev_rbp;
 extern bool input_dev_rcp;
 extern bool input_dev_ucp;
 
+/* Starter kit board signal control index definitions */
 #define TX_HW_RESET			0
 #define TX_FW_WAKE			1
 #define CHG_DET				2
@@ -261,4 +262,4 @@ extern bool input_dev_ucp;
 #define ANSI_ESC_MAGENTA_TEXT ""
 #define ANSI_ESC_CYAN_TEXT ""
 #endif
-#endif 
+#endif /* if !defined(PLATFORM_H) */

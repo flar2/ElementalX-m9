@@ -46,12 +46,20 @@ Optional Properties:
 					go in to unintentional reverse boost in such a situation and
 					the float voltage compensation needs to be disabled to avoid
 					that reverse boost.
+- qcom,soft-current-comp-disabled	Set this property to disable charging current compensation
+					if battery temperature exceeds soft JEITA thresholds.
+- qcom,gamma-setting			Array of gamma values for JEITA. The sequence is
+					<"Cold Hard" "Hot Hard" "Cold Soft" "Hot Soft">. Gamma value
+					indicates the ratio of the pull up resistors and NTC
+					resistor in battery pack. There are 4 options refering to
+					the graphic user interface.
 - qcom,thermal-mitigation:		Array of input current limit values for different
 					system thermal mitigation level.
 - regulator-name			A string used as a descriptive name for OTG regulator.
 - therm-bias-supply			The supply that provides bias voltage to the battery
 					thermistor. This is useful in designs that do not use the SYSON
 					pin to bias the thermistor.
+- usb-pullup-supply			The supply regulator that act as pull-up for USB data lines.
 - qcom,parallel-charger:		A flag to indicate if the charger merely assists for USB
 					charging. In this case the input current from USB is split
 					between a main charger and smb135x for reducing thermal impact
@@ -66,6 +74,7 @@ Optional Properties:
 - qcom,fastchg-ma:		Specifies the maximum fastcharge current.
 				The possible range for fastcharge current is
 				from 300mA to 3000mA.
+- qcom,id-line-not-connected:	Specifies if smb135x charger is not monitoring the USB_ID line.
 
 Example:
 	i2c@f9967000 {
@@ -82,6 +91,7 @@ Example:
 			qcom,recharge-thresh-mv = <100>;
 			regulator-name = "smb1357-otg";
 			qcom,thermal-mitigation = <1500 700 600 325>;
+			qcom,gamma-setting = <3 2 0 2>;
 			qcom,fastchg-ma = <3000>;
 		};
 	};

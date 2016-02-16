@@ -47,6 +47,7 @@
 #include <linux/mm.h>
 #include <linux/debugfs.h>
 #include <linux/hrtimer.h>
+#include <linux/wait.h>
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
@@ -54,7 +55,7 @@
 #include "dwc3_otg.h"
 
 /* Global constants */
-#define DWC3_EP0_BOUNCE_SIZE	512
+#define DWC3_EP0_BOUNCE_SIZE	2048
 #define DWC3_ENDPOINTS_NUM	32
 #define DWC3_XHCI_RESOURCES_NUM	2
 
@@ -196,6 +197,10 @@
 
 /* Global User Control Register */
 #define DWC3_GUCTL_REFCLKPER (0x3FF << 22)
+
+/* Host waits for DTCT value before timeout. Recommended to be POR value */
+#define DWC3_GUCTL_DTCT(n) ((n) << 9)
+#define DWC3_GUCTL_DTCT_MASK (2 << 9)
 
 /* Global Debug LTSSM Register */
 #define DWC3_GDBGLTSSM_LINKSTATE_MASK	(0xF << 22)
@@ -795,6 +800,7 @@ struct dwc3_scratchpad_array {
  * @bh_completion_time: time taken for taklet completion
  * @bh_handled_evt_cnt: no. of events handled by tasklet per interrupt
  * @bh_dbg_index: index for capturing bh_completion_time and bh_handled_evt_cnt
+ * @wait_linkstate: waitqueue for waiting LINK to move into required state
  */
 struct dwc3 {
 	struct usb_ctrlrequest	*ctrl_req;
@@ -922,6 +928,7 @@ struct dwc3 {
 	unsigned                irq_completion_time[MAX_INTR_STATS];
 	unsigned                irq_event_count[MAX_INTR_STATS];
 	unsigned                irq_dbg_index;
+	wait_queue_head_t	wait_linkstate;
 };
 
 /* -------------------------------------------------------------------------- */

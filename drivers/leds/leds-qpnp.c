@@ -4450,7 +4450,7 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 			LED_ERR("failed to create workqueue\n");
 			goto err_create_work_queue;
 		}
-		g_led_on_work_queue = create_workqueue("pm8xxx-led-on");
+		g_led_on_work_queue = create_singlethread_workqueue("pm8xxx-led-on");
 		if (g_led_on_work_queue == NULL) {
 			LED_ERR("failed to create workqueue\n");
 			goto err_create_work_queue;

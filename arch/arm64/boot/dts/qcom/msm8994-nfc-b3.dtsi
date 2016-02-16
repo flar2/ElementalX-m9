@@ -1,0 +1,26 @@
+&soc {
+	i2c@f9927000 {
+		sony_cxd224x_nfc@2b {
+			compatible = "sony,nfccxd224x";
+			reg = <0x2b>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <29 0x2>;
+			sony,wake_gpio = <&msm_gpio 76 0x00>;
+			sony,irq_gpio = <&msm_gpio 29 0x00>;
+                       sony,en_gpio = <&pm8994_mpps 8 0>;
+			sony,rst_gpio = <&msm_gpio 30 0x00>;
+			sony,rfs_gpio = <&msm_gpio 75 0x00>;
+		};
+	};
+};
+
+&pm8994_mpps {
+	mpp@a700 { /* MPP 8 */
+		qcom,mode = <1>;		/* Digital output */
+		qcom,output-type = <0>;		/* CMOS logic */
+		qcom,vin-sel = <1>;		/* L19 2.8V */
+		qcom,src-sel = <0>;		/* Consant */
+		qcom,master-en = <1>;		/* Enable GPIO */
+		status = "okay";
+	};
+};

@@ -54,4 +54,4 @@ unsigned int get_radio_ex2_flag(void);
 unsigned int get_cpumask_flag(void);
 char *htc_get_bootmode(void);
 
-#endif 
+#endif /* _LINUX_HTC_FLAGS_H */

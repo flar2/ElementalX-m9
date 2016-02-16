@@ -22,7 +22,8 @@
 #define CPU_FOOT_PRINT_MAGIC_SPC_FROM_IDLE		0xACBDAF00
 #define CPU_FOOT_PRINT_MAGIC_HOTPLUG			0xACBDBB00
 #define RESET_VECTOR_CLEAN_MAGIC			0xDCBAABCD
-#define MAGIC_NUM_FOR_BATT_SAVE		0xFEDCBA00 
+/* This constant is used to store battery parameters when restart the device. */
+#define MAGIC_NUM_FOR_BATT_SAVE		0xFEDCBA00 /*magic number*/
 #define HTC_BATT_SAVE_CC			(1)
 #define HTC_BATT_SAVE_OCV_UV		(1<<1)
 #define BATT_SAVE_MASK		(HTC_BATT_SAVE_CC|HTC_BATT_SAVE_OCV_UV)
@@ -32,8 +33,9 @@
 
 #ifdef CONFIG_HTC_DEBUG_FOOTPRINT
 
+/* FIXME: ENTER & LEAVE should be fixed numbers, says 0x1 and 0xff. */
 enum ACPU_STATE_FOOTPRINT {
-	ACPU_ENTER = 0x1,		
+	ACPU_ENTER = 0x1,		/* always the first one */
 	ACPU_BEFORE_SAFE_PARENT_INIT,
 	ACPU_BEFORE_SET_SAFE_RATE,
 	ACPU_BEFORE_SET_PARENT_RATE,
@@ -45,8 +47,8 @@ enum ACPU_STATE_FOOTPRINT {
 	ACPU_BEFORE_CLK_UNPREPARE,
 	ACPU_BEFORE_RETURN,
 	ACPU_BEFORE_ERR_RETURN,
-	ACPU_BEFORE_UPDATE_L2_BW,	
-	ACPU_LEAVE = 0xff,		
+	ACPU_BEFORE_UPDATE_L2_BW,	/* for "cpu as clock" */
+	ACPU_LEAVE = 0xff,		/* always the last one */
 };
 
 enum FREQ_TYPE {

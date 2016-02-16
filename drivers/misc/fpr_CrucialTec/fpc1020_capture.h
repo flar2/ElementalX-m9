@@ -44,5 +44,5 @@ extern int fpc1020_capture_deferred_task(fpc1020_data_t *fpc1020);
 
 extern int fpc1020_capture_finger_detect_settings(fpc1020_data_t *fpc1020);
 
-#endif 
+#endif /* LINUX_SPI_FPC1020_CAPTURE_H */
 

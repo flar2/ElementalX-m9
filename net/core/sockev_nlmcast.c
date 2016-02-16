@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -75,6 +75,9 @@ static int sockev_client_cb(struct notifier_block *nb,
 	if ((socknlmsgsk == NULL) || (sock == NULL) || (sock->sk == NULL))
 		goto done;
 
+	if (sock->sk->sk_family != AF_INET && sock->sk->sk_family != AF_INET6)
+		goto done;
+
 	skb = nlmsg_new(sizeof(struct sknlsockevmsg), GFP_KERNEL);
 	if (skb == NULL)
 		goto done;
@@ -107,7 +110,6 @@ static struct notifier_block sockev_notifier_client = {
 	.priority = 0
 };
 
-/* ***************** Startup/Shutdown *************************************** */
 
 static int __init sockev_client_init(void)
 {

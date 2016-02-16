@@ -36,7 +36,7 @@
 #define IPV4_HDR_NAME "rndis_eth_ipv4"
 #define IPV6_HDR_NAME "rndis_eth_ipv6"
 #define IPA_TO_USB_CLIENT IPA_CLIENT_USB_CONS
-#define INACTIVITY_MSEC_DELAY 1000
+#define INACTIVITY_MSEC_DELAY 100
 #define DEFAULT_OUTSTANDING_HIGH 64
 #define DEFAULT_OUTSTANDING_LOW 32
 #define DEBUGFS_TEMP_BUF_SIZE 4
@@ -1119,9 +1119,9 @@ static void rndis_ipa_packet_receive_notify(void *private,
 		return;
 	}
 
-	result = netif_rx(skb);
+	result = netif_rx_ni(skb);
 	if (result)
-		RNDIS_IPA_ERROR("fail on netif_rx\n");
+		RNDIS_IPA_ERROR("fail on netif_rx_ni\n");
 	rndis_ipa_ctx->net->stats.rx_packets++;
 	rndis_ipa_ctx->net->stats.rx_bytes += skb->len;
 

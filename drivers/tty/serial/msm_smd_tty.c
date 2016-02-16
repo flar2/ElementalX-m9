@@ -69,6 +69,34 @@ static bool smd_tty_in_suspend;
 static bool smd_tty_read_in_suspend;
 static struct wakeup_source read_in_suspend_ws;
 
+/**
+ * struct smd_tty_info - context for an individual SMD TTY device
+ *
+ * @ch:  SMD channel handle
+ * @port:  TTY port context structure
+ * @device_ptr:  TTY device pointer
+ * @pending_ws:  pending-data wakeup source
+ * @tty_tsklt:  read tasklet
+ * @buf_req_timer:  RX buffer retry timer
+ * @ch_allocated:  completion set when SMD channel is allocated
+ * @pil:  Peripheral Image Loader handle
+ * @edge:  SMD edge associated with port
+ * @ch_name:  SMD channel name associated with port
+ * @dev_name:  SMD platform device name associated with port
+ *
+ * @open_lock_lha1: open/close lock - used to serialize open/close operations
+ * @open_wait:  Timeout in seconds to wait for SMD port to be created / opened
+ *
+ * @reset_lock_lha2: lock for reset and open state
+ * @in_reset:  True if SMD channel is closed / in SSR
+ * @in_reset_updated:  reset state changed
+ * @is_open:  True if SMD port is open
+ * @ch_opened_wait_queue:  SMD port open/close wait queue
+ *
+ * @ra_lock_lha3:  Read-available lock - used to synchronize reads from SMD
+ * @ra_wakeup_source_name: Name of the read-available wakeup source
+ * @ra_wakeup_source:  Read-available wakeup source
+ */
 struct smd_tty_info {
 	smd_channel_t *ch;
 	struct tty_port port;
@@ -96,12 +124,27 @@ struct smd_tty_info {
 	struct wakeup_source ra_wakeup_source;
 };
 
+/**
+ * struct smd_tty_pfdriver - SMD tty channel platform driver structure
+ *
+ * @list:  Adds this structure into smd_tty_platform_driver_list::list.
+ * @ref_cnt:  reference count for this structure.
+ * @driver:  SMD channel platform driver context structure
+ */
 struct smd_tty_pfdriver {
 	struct list_head list;
 	int ref_cnt;
 	struct platform_driver driver;
 };
 
+/**
+ * SMD port configuration.
+ *
+ * @tty_dev_index   Index into smd_tty[]
+ * @port_name       Name of the SMD port
+ * @dev_name        Name of the TTY Device (if NULL, @port_name is used)
+ * @edge            SMD edge
+ */
 struct smd_config {
 	uint32_t tty_dev_index;
 	const char *port_name;
@@ -109,6 +152,12 @@ struct smd_config {
 	uint32_t edge;
 };
 
+/**
+ * struct smd_config smd_configs[]: Legacy configuration
+ *
+ * An array of all SMD tty channel supported in legacy targets.
+ * Future targets use either platform device or device tree configuration.
+ */
 static struct smd_config smd_configs[] = {
 	{0, "DS", NULL, SMD_APPS_MODEM},
 	{1, "APPS_FM", NULL, SMD_APPS_WCNSS},
@@ -225,7 +274,7 @@ static void smd_tty_read(unsigned long param)
 
 	for (;;) {
 		if (is_in_reset(info)) {
-			
+			/* signal TTY clients using TTY_BREAK */
 			tty_insert_flip_char(tty->port, 0x00, TTY_BREAK);
 			tty_flip_buffer_push(tty->port);
 			break;
@@ -254,11 +303,20 @@ static void smd_tty_read(unsigned long param)
 		}
 
 		if (smd_read(info->ch, ptr, avail) != avail) {
+			/* shouldn't be possible since we're in interrupt
+			** context here and nobody else could 'steal' our
+			** characters.
+			*/
 			SMD_TTY_ERR(
 				"%s - Possible smd_tty_buffer mismatch for %s",
 				__func__, info->ch_name);
 		}
 
+		/*
+		 * Keep system awake long enough to allow the TTY
+		 * framework to pass the flip buffer to any waiting
+		 * userspace clients.
+		 */
 		__pm_wakeup_event(&info->pending_ws, TTY_PUSH_WS_DELAY);
 
 		if (smd_tty_in_suspend)
@@ -267,7 +325,7 @@ static void smd_tty_read(unsigned long param)
 		tty_flip_buffer_push(tty->port);
 	}
 
-	
+	/* XXX only when writable and necessary */
 	tty_wakeup(tty);
 	tty_kref_put(tty);
 }
@@ -286,6 +344,11 @@ static void smd_tty_notify(void *priv, unsigned event)
 			break;
 		}
 		spin_unlock_irqrestore(&info->reset_lock_lha2, flags);
+		/* There may be clients (tty framework) that are blocked
+		 * waiting for space to write data, so if a possible read
+		 * interrupt came in wake anyone waiting and disable the
+		 * interrupts
+		 */
 		if (smd_write_avail(info->ch)) {
 			smd_disable_read_intr(info->ch);
 			tty = tty_port_tty_get(&info->port);
@@ -324,7 +387,7 @@ static void smd_tty_notify(void *priv, unsigned event)
 
 		tty = tty_port_tty_get(&info->port);
 		if (tty) {
-			
+			/* send TTY_BREAK through read tasklet */
 			set_bit(TTY_OTHER_CLOSED, &tty->flags);
 			tasklet_hi_schedule(&info->tty_tsklt);
 
@@ -365,6 +428,17 @@ static int smd_tty_dummy_probe(struct platform_device *pdev)
 	return -ENODEV;
 }
 
+/**
+ * smd_tty_add_driver() - Add platform drivers for smd tty device
+ *
+ * @info: context for an individual SMD TTY device
+ *
+ * @returns: 0 for success, standard Linux error code otherwise
+ *
+ * This function is used to register platform driver once for all
+ * smd tty devices which have same names and increment the reference
+ * count for 2nd to nth devices.
+ */
 static int smd_tty_add_driver(struct smd_tty_info *info)
 {
 	int r = 0;
@@ -416,6 +490,15 @@ exit:
 	return r;
 }
 
+/**
+ * smd_tty_remove_driver() - Remove the platform drivers for smd tty device
+ *
+ * @info: context for an individual SMD TTY device
+ *
+ * This function is used to decrement the reference count on
+ * platform drivers for smd pkt devices and removes the drivers
+ * when the reference count becomes zero.
+ */
 static void smd_tty_remove_driver(struct smd_tty_info *info)
 {
 	struct smd_tty_pfdriver *smd_tty_pfdriverp;
@@ -489,12 +572,22 @@ static int smd_tty_port_activate(struct tty_port *tport,
 				__func__, info->ch_name,
 				peripheral);
 
+			/*
+			 * Sleep, inorder to reduce the frequency of
+			 * retry by user-space modules and to avoid
+			 * possible watchdog bite.
+			 */
 			msleep((smd_tty[n].open_wait * 1000));
 			res = PTR_ERR(info->pil);
 			goto platform_unregister;
 		}
 	}
 
+	/* Wait for the modem SMSM to be inited for the SMD
+	 * Loopback channel to be allocated at the modem. Since
+	 * the wait need to be done atmost once, using msleep
+	 * doesn't degrade the performance.
+	 */
 	if (n == LOOPBACK_IDX) {
 		if (!is_modem_smsm_inited())
 			msleep(5000);
@@ -503,6 +596,10 @@ static int smd_tty_port_activate(struct tty_port *tport,
 		msleep(100);
 	}
 
+	/*
+	 * Wait for a channel to be allocated so we know
+	 * the modem is ready enough.
+	 */
 	if (smd_tty[n].open_wait) {
 		res = wait_for_completion_interruptible_timeout(
 				&info->ch_allocated,
@@ -632,10 +729,17 @@ static int smd_tty_write(struct tty_struct *tty, const unsigned char *buf,
 	struct smd_tty_info *info = tty->driver_data;
 	int avail;
 
+	/* if we're writing to a packet channel we will
+	** never be able to write more data than there
+	** is currently space for
+	*/
 	if (is_in_reset(info))
 		return -ENETRESET;
 
 	avail = smd_write_avail(info->ch);
+	/* if no space, we'll have to setup a notification later to wake up the
+	 * tty framework when space becomes avaliable
+	 */
 	if (!avail) {
 		smd_enable_read_intr(info->ch);
 		return 0;
@@ -674,6 +778,12 @@ static void smd_tty_unthrottle(struct tty_struct *tty)
 	spin_unlock_irqrestore(&info->reset_lock_lha2, flags);
 }
 
+/*
+ * Returns the current TIOCM status bits including:
+ *      SMD Signals (DTR/DSR, CTS/RTS, CD, RI)
+ *      TIOCM_OUT1 - reset state (1=in reset)
+ *      TIOCM_OUT2 - reset state updated (1=updated)
+ */
 static int smd_tty_tiocmget(struct tty_struct *tty)
 {
 	struct smd_tty_info *info = tty->driver_data;
@@ -710,7 +820,7 @@ static int smd_tty_tiocmset(struct tty_struct *tty,
 
 static void loopback_probe_worker(struct work_struct *work)
 {
-	
+	/* wait for modem to restart before requesting loopback server */
 	if (!is_modem_smsm_inited())
 		schedule_delayed_work(&loopback_work, msecs_to_jiffies(1000));
 	else
@@ -760,6 +870,12 @@ static struct notifier_block smd_tty_pm_nb = {
 	.priority = 0,
 };
 
+/**
+ * smd_tty_log_init()- Init function for IPC logging
+ *
+ * Initialize the buffer that is used to provide the log information
+ * pertaining to the smd_tty module.
+ */
 static void smd_tty_log_init(void)
 {
 	smd_tty_log_ctx = ipc_log_context_create(SMD_TTY_LOG_PAGES,
@@ -931,7 +1047,7 @@ static int smd_tty_devicetree_init(struct platform_device *pdev)
 
 error:
 	SMD_TTY_ERR("%s:Initialization error, key[%s]\n", __func__, key);
-	
+	/* Unregister tty platform devices */
 	for_each_child_of_node(pdev->dev.of_node, node) {
 
 		ret = of_alias_get_id(node, "smd");

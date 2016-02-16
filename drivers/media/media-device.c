@@ -48,10 +48,12 @@ static int media_device_get_info(struct media_device *dev,
 
 	memset(&info, 0, sizeof(info));
 
+	
 	if (!dev || !dev->dev || !dev->dev->driver) {
 		pr_err("%s: failed\n", __func__);
 		return -EFAULT;
 	}
+	
 
 	strlcpy(info.driver, dev->dev->driver->name, sizeof(info.driver));
 	strlcpy(info.model, dev->model, sizeof(info.model));
@@ -108,8 +110,6 @@ static long media_device_enum_entities(struct media_device *mdev,
 	if (ent->name) {
 		strncpy(u_ent.name, ent->name, sizeof(u_ent.name));
 		u_ent.name[sizeof(u_ent.name) - 1] = '\0';
-	} else {
-		memset(u_ent.name, 0, sizeof(u_ent.name));
 	}
 	u_ent.type = ent->type;
 	u_ent.revision = ent->revision;

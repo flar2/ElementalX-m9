@@ -14,11 +14,13 @@
 #include <linux/async.h>
 #define VD6869_SENSOR_NAME "vd6869"
 DEFINE_MSM_MUTEX(vd6869_mut);
+//HTC_START, read OTP
 #define OTP_WAIT_TIMEOUT 200
 #define OTP_BUFFER_OFFSET 0x33FA
 #define OTP_STATUS_REG 0x3302
 static int vd6869_shut_down_otp(struct msm_sensor_ctrl_t *s_ctrl,uint16_t addr, uint16_t data);
 static int vd6869_init_otp(struct msm_sensor_ctrl_t *s_ctrl);
+//HTC_END
 
 static struct msm_sensor_ctrl_t vd6869_s_ctrl;
 
@@ -115,11 +117,11 @@ struct vd6869_ver_map {
 	char *str;
 };
 
-static struct vd6869_ver_map vd6869_ver_tab[] = {  
-	{ 0x09, "(0.9)"},	
-	{ 0x0A, "(0.9e)"},	
-	{ 0x10, "(1.0)"},	
-	{ VD6869_VER_UNKNOWN, "(unknown)"}  
+static struct vd6869_ver_map vd6869_ver_tab[] = {  /* vd6869_ver_map.str max length: 32 - strlen(vd6869NAME) -1 */
+	{ 0x09, "(0.9)"},	/* ver 0.9 */
+	{ 0x0A, "(0.9e)"},	/* ver 0.9 enhancement */
+	{ 0x10, "(1.0)"},	/* ver 1.0 */
+	{ VD6869_VER_UNKNOWN, "(unknown)"}  /* VD6869_VER_UNKNOWN item must be the last one of this table */
 };
 
 static uint8_t vd6869_ver = VD6869_VER_UNKNOWN;
@@ -147,10 +149,10 @@ static ssize_t sensor_vendor_show(struct device *dev,
 		if (vd6869_ver == vd6869_ver_tab[i].val)
 			break;
 	}
-	if (i < len)  
+	if (i < len)  /* mapped, show its string */
 		snprintf(vd6869NAME_ver, sizeof(vd6869NAME_ver), "%s%s",
 			vd6869NAME, vd6869_ver_tab[i].str);
-	else  
+	else  /* unmapped, show unknown and its value */
 		snprintf(vd6869NAME_ver, sizeof(vd6869NAME_ver), "%s%s-%02X",
 			vd6869NAME, vd6869_ver_tab[len - 1].str, vd6869_ver);
 	pr_info("%s: version(%d) : %s\n", __func__, vd6869_ver, vd6869NAME_ver);
@@ -159,13 +161,13 @@ static ssize_t sensor_vendor_show(struct device *dev,
 	month = (vd6869_year_mon & 0x0f);
 	date  = ((vd6869_date & 0xf8) >> 3);
 
-	if((year == 0)&&(month == 0)&&(date == 0))
+	if((year == 0)&&(month == 0)&&(date == 0))/* not support OTP date */
 		pr_err("%s: Invalid OTP date\n", __func__);
 	else
-		year += 2000; 
+		year += 2000; /* year:13, align format to 2013 */
 
 	snprintf(buf, PAGE_SIZE, "%s %s %s %04d-%02d-%02d \n", vd6869Vendor, vd6869NAME_ver, vd6869Size, year, month, date);
-	  
+	/*snprintf(buf, PAGE_SIZE, "%s %s %s\n", vd6869Vendor, vd6869NAME, vd6869Size);*/  /* without version */
 	ret = strlen(buf) + 1;
 
 	return ret;
@@ -198,6 +200,7 @@ static int vd6869_sysfs_init(void)
 	return 0 ;
 }
 
+//HTC_START, read OTP
 static int vd6869_read_fuseid(struct sensorb_cfg_data *cdata,
 	struct msm_sensor_ctrl_t *s_ctrl)
 {
@@ -211,9 +214,9 @@ static int vd6869_read_fuseid(struct sensorb_cfg_data *cdata,
     int valid_layer = -1;
 
     const short addr[3][VD6869_OTP_SIZE] = {
-        {0x3C8,0x3C9,0x3CA,0x3A0,0x3A1,0x3A2}, 
-        {0x3D8,0x3D9,0x3DA,0x380,0x381,0x382}, 
-        {0x3B8,0x3B9,0x3BA,0x388,0x389,0x38A}, 
+        {0x3C8,0x3C9,0x3CA,0x3A0,0x3A1,0x3A2}, // layer 1
+        {0x3D8,0x3D9,0x3DA,0x380,0x381,0x382}, // layer 2
+        {0x3B8,0x3B9,0x3BA,0x388,0x389,0x38A}, // layer 3
     };
 
     if (first)
@@ -254,8 +257,10 @@ static int vd6869_read_fuseid(struct sensorb_cfg_data *cdata,
 		}
     }
 
+//HTC_START , move read OTP to sensor probe
     if(cdata != NULL)
     {
+//HTC_END
     cdata->cfg.fuse.fuse_id_word1 = 0;
     cdata->cfg.fuse.fuse_id_word2 = otp[3];
     cdata->cfg.fuse.fuse_id_word3 = otp[4];
@@ -269,6 +274,7 @@ static int vd6869_read_fuseid(struct sensorb_cfg_data *cdata,
     pr_info("%s: OTP fuse 1 = 0x%x\n", __func__,  cdata->cfg.fuse.fuse_id_word2);
     pr_info("%s: OTP fuse 2 = 0x%x\n", __func__,  cdata->cfg.fuse.fuse_id_word3);
     pr_info("%s: OTP fuse 3 = 0x%x\n", __func__,  cdata->cfg.fuse.fuse_id_word4);
+//HTC_START , move read OTP to sensor probe
 	}
 	else
 	{
@@ -276,6 +282,7 @@ static int vd6869_read_fuseid(struct sensorb_cfg_data *cdata,
 	    pr_info("%s: OTP LENS = 0x%x\n",                        __func__,  otp[1]);
 	    pr_info("%s: OTP Sensor Version = 0x%x\n",              __func__,  otp[2]);
 	}
+//HTC_END
     return rc;
 
 }
@@ -293,9 +300,9 @@ static int vd6869_read_fuseid32(struct sensorb_cfg_data32 *cdata,
     int valid_layer = -1;
 
     const short addr[3][VD6869_OTP_SIZE] = {
-        {0x3C8,0x3C9,0x3CA,0x3A0,0x3A1,0x3A2}, 
-        {0x3D8,0x3D9,0x3DA,0x380,0x381,0x382}, 
-        {0x3B8,0x3B9,0x3BA,0x388,0x389,0x38A}, 
+        {0x3C8,0x3C9,0x3CA,0x3A0,0x3A1,0x3A2}, // layer 1
+        {0x3D8,0x3D9,0x3DA,0x380,0x381,0x382}, // layer 2
+        {0x3B8,0x3B9,0x3BA,0x388,0x389,0x38A}, // layer 3
     };
 
     if (first)
@@ -336,8 +343,10 @@ static int vd6869_read_fuseid32(struct sensorb_cfg_data32 *cdata,
 		}
     }
 
+//HTC_START , move read OTP to sensor probe
     if(cdata != NULL)
     {
+//HTC_END
     cdata->cfg.fuse.fuse_id_word1 = 0;
     cdata->cfg.fuse.fuse_id_word2 = otp[3];
     cdata->cfg.fuse.fuse_id_word3 = otp[4];
@@ -351,6 +360,7 @@ static int vd6869_read_fuseid32(struct sensorb_cfg_data32 *cdata,
     pr_info("%s: OTP fuse 1 = 0x%x\n", __func__,  cdata->cfg.fuse.fuse_id_word2);
     pr_info("%s: OTP fuse 2 = 0x%x\n", __func__,  cdata->cfg.fuse.fuse_id_word3);
     pr_info("%s: OTP fuse 3 = 0x%x\n", __func__,  cdata->cfg.fuse.fuse_id_word4);
+//HTC_START , move read OTP to sensor probe
 	}
 	else
 	{
@@ -358,16 +368,17 @@ static int vd6869_read_fuseid32(struct sensorb_cfg_data32 *cdata,
 	    pr_info("%s: OTP LENS = 0x%x\n",                        __func__,  otp[1]);
 	    pr_info("%s: OTP Sensor Version = 0x%x\n",              __func__,  otp[2]);
 	}
+//HTC_END
     return rc;
 }
 
 static struct msm_camera_i2c_reg_array otp_reg_settings[] = {
-    {0x44c0, 0x01},
+    {0x44c0, 0x01},//Set nvm0_pdn and nvm1_pdn to high
     {0x4500, 0x01},
-    {0x44e4, 0x00},
-    {0x4524, 0x00},
-    {0x4584, 0x01},
-    {0x44ec, 0x01},
+    {0x44e4, 0x00},//ECC disable:0x1 enable:0x0
+    {0x4524, 0x00},//ECC disable:0x1 enable:0x0
+    {0x4584, 0x01},//enable OTP power
+    {0x44ec, 0x01},// Data write timing settings for memory locatin #0-#127
     {0x44ed, 0x80},
     {0x44f0, 0x04},
     {0x44f1, 0xb0},
@@ -375,8 +386,8 @@ static struct msm_camera_i2c_reg_array otp_reg_settings[] = {
     {0x452d, 0x80},
     {0x4530, 0x04},
     {0x4531, 0xb0},
-	{0x3305, 0x00},
-    {0x3303, 0x01},
+	{0x3305, 0x00},//read 1k for all OTP
+    {0x3303, 0x01},//specify the number of 32bits data involved in operation.
 	{0x3304, 0x00},
     {0x3301, 0x02},
 };
@@ -393,7 +404,7 @@ static int vd6869_init_otp(struct msm_sensor_ctrl_t *s_ctrl){
 	int i,rc = 0;
 	uint16_t read_data = 0;
 
-	
+	/*cut 1.0 manual read OTP*/
 	for(i = 0 ;i < OTP_WAIT_TIMEOUT; i++) {
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write_table(
 				s_ctrl->sensor_i2c_client,
@@ -408,9 +419,9 @@ static int vd6869_init_otp(struct msm_sensor_ctrl_t *s_ctrl){
 		mdelay(1);
 	}
 
-	
+	/*wait OTP ready*/
 	for(i = 0 ;i < OTP_WAIT_TIMEOUT; i++){
-		
+		/*0x3302 is read OTP status 0x00 READY 0x01 PROGRAM 0x02 READ*/
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_read(
 				s_ctrl->sensor_i2c_client,
 				OTP_STATUS_REG,
@@ -439,7 +450,7 @@ static int vd6869_init_otp(struct msm_sensor_ctrl_t *s_ctrl){
 static int vd6869_shut_down_otp(struct msm_sensor_ctrl_t *s_ctrl,uint16_t addr, uint16_t data){
 	int rc=0,i;
 	for(i = 0; i < OTP_WAIT_TIMEOUT;i++){
-		
+		/*shut down power*/
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write(
 				s_ctrl->sensor_i2c_client,
 				addr,
@@ -457,6 +468,7 @@ static int vd6869_shut_down_otp(struct msm_sensor_ctrl_t *s_ctrl,uint16_t addr, 
 	pr_err("%s shut down time out 0x%x",__func__,addr);
 	return rc;
 }
+/*HTC_END*/
 
 static int32_t vd6869_platform_probe(struct platform_device *pdev)
 {
@@ -504,6 +516,7 @@ static void __exit vd6869_exit_module(void)
 	return;
 }
 
+//HTC_START , move read OTP to sensor probe
 int32_t vd6869_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int32_t rc = -22;
@@ -525,15 +538,18 @@ int32_t vd6869_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	}
 	return rc;
 }
+//HTC_END
 
 static struct msm_sensor_fn_t vd6869_sensor_func_tbl = {
 	.sensor_config = msm_sensor_config,
 	.sensor_config32 = msm_sensor_config32,
 	.sensor_power_up = msm_sensor_power_up,
 	.sensor_power_down = msm_sensor_power_down,
+//HTC_START , move read OTP to sensor probe
 	.sensor_match_id = vd6869_sensor_match_id,
 	.sensor_i2c_read_fuseid = vd6869_read_fuseid,
 	.sensor_i2c_read_fuseid32 = vd6869_read_fuseid32,
+//HTC_END
 };
 
 static struct msm_sensor_ctrl_t vd6869_s_ctrl = {
@@ -543,7 +559,7 @@ static struct msm_sensor_ctrl_t vd6869_s_ctrl = {
 	.msm_sensor_mutex = &vd6869_mut,
 	.sensor_v4l2_subdev_info = vd6869_subdev_info,
 	.sensor_v4l2_subdev_info_size = ARRAY_SIZE(vd6869_subdev_info),
-	.func_tbl = &vd6869_sensor_func_tbl, 
+	.func_tbl = &vd6869_sensor_func_tbl, /*HTC Harvey 20130628 - Porting read OTP*/
 };
 
 module_init(vd6869_init_module);

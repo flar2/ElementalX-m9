@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -108,28 +108,31 @@ static void rcg_update_config(struct rcg_clk *rcg)
 }
 
 /* RCG set rate function for clocks with Half Integer Dividers. */
-void set_rate_hid(struct rcg_clk *rcg, struct clk_freq_tbl *nf)
+static void __set_rate_hid(struct rcg_clk *rcg, struct clk_freq_tbl *nf)
 {
 	u32 cfg_regval;
-	unsigned long flags;
 
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
 	cfg_regval = readl_relaxed(CFG_RCGR_REG(rcg));
 	cfg_regval &= ~(CFG_RCGR_DIV_MASK | CFG_RCGR_SRC_SEL_MASK);
 	cfg_regval |= nf->div_src_val;
 	writel_relaxed(cfg_regval, CFG_RCGR_REG(rcg));
 
 	rcg_update_config(rcg);
+}
+
+void set_rate_hid(struct rcg_clk *rcg, struct clk_freq_tbl *nf)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&local_clock_reg_lock, flags);
+	__set_rate_hid(rcg, nf);
 	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 }
 
 /* RCG set rate function for clocks with MND & Half Integer Dividers. */
-void set_rate_mnd(struct rcg_clk *rcg, struct clk_freq_tbl *nf)
+static void __set_rate_mnd(struct rcg_clk *rcg, struct clk_freq_tbl *nf)
 {
 	u32 cfg_regval;
-	unsigned long flags;
 
-	spin_lock_irqsave(&local_clock_reg_lock, flags);
 	cfg_regval = readl_relaxed(CFG_RCGR_REG(rcg));
 	writel_relaxed(nf->m_val, M_REG(rcg));
 	writel_relaxed(nf->n_val, N_REG(rcg));
@@ -146,6 +149,13 @@ void set_rate_mnd(struct rcg_clk *rcg, struct clk_freq_tbl *nf)
 	writel_relaxed(cfg_regval, CFG_RCGR_REG(rcg));
 
 	rcg_update_config(rcg);
+}
+
+void set_rate_mnd(struct rcg_clk *rcg, struct clk_freq_tbl *nf)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&local_clock_reg_lock, flags);
+	__set_rate_mnd(rcg, nf);
 	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 }
 
@@ -851,6 +861,34 @@ static struct frac_entry frac_table_810m[] = { /* Link rate of 162M */
 	{0, 0},
 };
 
+static bool is_same_rcg_config(struct rcg_clk *rcg, struct clk_freq_tbl *freq,
+			       bool has_mnd)
+{
+	u32 cfg;
+
+	/* RCG update pending */
+	if (readl_relaxed(CMD_RCGR_REG(rcg)) & CMD_RCGR_CONFIG_DIRTY_MASK)
+		return false;
+	if (has_mnd)
+		if (readl_relaxed(M_REG(rcg)) != freq->m_val ||
+		    readl_relaxed(N_REG(rcg)) != freq->n_val ||
+		    readl_relaxed(D_REG(rcg)) != freq->d_val)
+			return false;
+	/*
+	 * Both 0 and 1 represent same divider value in HW.
+	 * Always use 0 to simplify comparison.
+	 */
+	if ((freq->div_src_val & CFG_RCGR_DIV_MASK) == 1)
+		freq->div_src_val &= ~CFG_RCGR_DIV_MASK;
+	cfg = readl_relaxed(CFG_RCGR_REG(rcg));
+	if ((cfg & CFG_RCGR_DIV_MASK) == 1)
+		cfg &= ~CFG_RCGR_DIV_MASK;
+	if (cfg != freq->div_src_val)
+		return false;
+
+	return true;
+}
+
 static int set_rate_edp_pixel(struct clk *clk, unsigned long rate)
 {
 	struct rcg_clk *rcg = to_rcg_clk(clk);
@@ -859,6 +897,7 @@ static int set_rate_edp_pixel(struct clk *clk, unsigned long rate)
 	int delta = 100000;
 	s64 request;
 	s64 src_rate;
+	unsigned long flags;
 
 	src_rate = clk_get_rate(clk->parent);
 
@@ -886,7 +925,10 @@ static int set_rate_edp_pixel(struct clk *clk, unsigned long rate)
 			pixel_freq->n_val = ~(frac->den - frac->num);
 			pixel_freq->d_val = ~frac->den;
 		}
-		set_rate_mnd(rcg, pixel_freq);
+		spin_lock_irqsave(&local_clock_reg_lock, flags);
+		if (!is_same_rcg_config(rcg, pixel_freq, true))
+			__set_rate_mnd(rcg, pixel_freq);
+		spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 		return 0;
 	}
 	return -EINVAL;
@@ -917,7 +959,7 @@ static int set_rate_byte(struct clk *clk, unsigned long rate)
 {
 	struct rcg_clk *rcg = to_rcg_clk(clk);
 	struct clk *pll = clk->parent;
-	unsigned long source_rate, div;
+	unsigned long source_rate, div, flags;
 	struct clk_freq_tbl *byte_freq = rcg->current_freq;
 	int rc;
 
@@ -936,9 +978,19 @@ static int set_rate_byte(struct clk *clk, unsigned long rate)
 	if (div > CFG_RCGR_DIV_MASK)
 		return -EINVAL;
 
+	/*
+	 * Both 0 and 1 represent same divider value in HW.
+	 * Always use 0 to simplify comparison.
+	 */
+	div = (div == 1) ? 0 : div;
+
 	byte_freq->div_src_val &= ~CFG_RCGR_DIV_MASK;
 	byte_freq->div_src_val |= BVAL(4, 0, div);
-	set_rate_hid(rcg, byte_freq);
+
+	spin_lock_irqsave(&local_clock_reg_lock, flags);
+	if (!is_same_rcg_config(rcg, byte_freq, false))
+		__set_rate_hid(rcg, byte_freq);
+	spin_unlock_irqrestore(&local_clock_reg_lock, flags);
 
 	return 0;
 }
@@ -1048,6 +1100,90 @@ static int set_rate_pixel(struct clk *clk, unsigned long rate)
 		return 0;
 	}
 	return -EINVAL;
+}
+
+static int rcg_clk_set_parent(struct clk *clk, struct clk *parent_clk)
+{
+	struct rcg_clk *rcg = to_rcg_clk(clk);
+	struct clk *old_parent = clk->parent;
+	struct clk_freq_tbl *nf;
+	unsigned long flags;
+	int rc = 0;
+	unsigned int parent_rate, rate;
+	u32 m_val, n_val, d_val, div_val;
+	u32 cfg_regval;
+
+	/* Find the source clock freq tbl for the requested parent */
+	if (!rcg->freq_tbl)
+		return -ENXIO;
+
+	for (nf = rcg->freq_tbl; parent_clk != nf->src_clk; nf++) {
+		if (nf->freq_hz == FREQ_END)
+			return -ENXIO;
+	}
+
+	/* This implementation recommends that the RCG be unprepared
+	 * when switching RCG source since the divider configuration
+	 * remains unchanged.
+	 */
+	WARN(clk->prepare_count,
+		"Trying to switch RCG source while it is prepared!\n");
+
+	parent_rate = clk_get_rate(parent_clk);
+
+	div_val = (rcg->current_freq->div_src_val & CFG_RCGR_DIV_MASK);
+	if (div_val)
+		parent_rate /= ((div_val + 1) >> 1);
+
+	/* Update divisor. Source select bits should already be as expected */
+	nf->div_src_val &= ~CFG_RCGR_DIV_MASK;
+	nf->div_src_val |= div_val;
+
+	cfg_regval = readl_relaxed(CFG_RCGR_REG(rcg));
+
+	if ((cfg_regval & MND_MODE_MASK) == MND_DUAL_EDGE_MODE_BVAL) {
+		nf->m_val = m_val = readl_relaxed(M_REG(rcg));
+		n_val = readl_relaxed(N_REG(rcg));
+		d_val = readl_relaxed(D_REG(rcg));
+
+		/* Sign extend the n and d values as those in registers are not
+		 * sign extended.
+		 */
+		n_val |= (n_val >> 8) ? BM(31, 16) : BM(31, 8);
+		d_val |= (d_val >> 8) ? BM(31, 16) : BM(31, 8);
+
+		nf->n_val = n_val;
+		nf->d_val = d_val;
+
+		n_val = ~(n_val) + m_val;
+		rate = parent_rate * m_val;
+		if (n_val)
+			rate /= n_val;
+		else
+			WARN(1, "n_val was 0!!");
+	} else
+		rate = parent_rate;
+
+	/* Warn if switching to the new parent with the current m, n ,d values
+	 * violates the voltage constraints for the RCG.
+	 */
+	WARN(!is_rate_valid(clk, rate) && clk->prepare_count,
+		"Switch to new RCG parent violates voltage requirement!\n");
+
+	rc = __clk_pre_reparent(clk, nf->src_clk, &flags);
+	if (rc)
+		return rc;
+
+	/* Switch RCG source */
+	rcg->set_rate(rcg, nf);
+
+	rcg->current_freq = nf;
+	clk->parent = parent_clk;
+	clk->rate = rate;
+
+	__clk_post_reparent(clk, old_parent, &flags);
+
+	return 0;
 }
 
 /*
@@ -1445,6 +1581,7 @@ struct clk_ops clk_ops_rcg = {
 	.round_rate = rcg_clk_round_rate,
 	.handoff = rcg_clk_handoff,
 	.get_parent = rcg_clk_get_parent,
+	.set_parent = rcg_clk_set_parent,
 	.list_registers = rcg_hid_clk_list_registers,
 };
 
@@ -1455,6 +1592,7 @@ struct clk_ops clk_ops_rcg_mnd = {
 	.round_rate = rcg_clk_round_rate,
 	.handoff = rcg_mnd_clk_handoff,
 	.get_parent = rcg_mnd_clk_get_parent,
+	.set_parent = rcg_clk_set_parent,
 	.list_registers = rcg_mnd_clk_list_registers,
 };
 
@@ -1465,6 +1603,7 @@ struct clk_ops clk_ops_pixel = {
 	.round_rate = round_rate_pixel,
 	.handoff = pixel_rcg_handoff,
 	.list_registers = rcg_mnd_clk_list_registers,
+	.set_parent = rcg_clk_set_parent,
 };
 
 struct clk_ops clk_ops_edppixel = {
@@ -1483,6 +1622,7 @@ struct clk_ops clk_ops_byte = {
 	.round_rate = rcg_clk_round_rate,
 	.handoff = byte_rcg_handoff,
 	.list_registers = rcg_hid_clk_list_registers,
+	.set_parent = rcg_clk_set_parent,
 };
 
 struct clk_ops clk_ops_rcg_hdmi = {

@@ -74,9 +74,11 @@ obj-$(CONFIG_SENSORS_MPU6050)		+= mpu6050.o
 obj-$(CONFIG_SENSORS_AKM8963)		+= akm8963.o
 obj-$(CONFIG_SENSORS_AKM09911)		+= akm09911.o
 obj-$(CONFIG_SENSORS_LIS3DH)		+= lis3dh_acc.o
+obj-$(CONFIG_SENSORS_AP3426)		+= ap3426.o
 obj-$(CONFIG_SENSORS_BMA2X2)	+= bstclass.o
 
 obj-$(CONFIG_SENSORS_BMA2X2)	+= bma2x2.o
+obj-$(CONFIG_SENSORS_LTR553)	+= ltr553.o
 
 obj-$(CONFIG_AK8789_HALLSENSOR)		+= hall_sensor.o hall_sensor_notify.o
 
@@ -89,3 +91,4 @@ ifeq ($(CONFIG_BOSCH_BMA2X2_ENABLE_INT2),y)
 endif
 
 obj-$(CONFIG_SENSORS_MC3430)	+= mc3xxx.o
+obj-$(CONFIG_SENSORS_ISL29044A)	+= isl29044a.o

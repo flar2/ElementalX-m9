@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_bus.h 528111 2015-01-21 07:18:42Z $
+ * $Id: dhd_bus.h 560445 2015-06-01 06:38:52Z $
  */
 
 #ifndef _dhd_bus_h_
@@ -170,5 +170,11 @@ extern int dhd_bus_reg_pcie_notify(void* semaphore);
 extern void dhd_bus_unreg_pcie_notify(void);
 
 
+#ifdef DHD_USE_IDLECOUNT
+extern bool bus_wake(struct dhd_bus *bus);
+extern bool bus_wakeup(struct dhd_bus *bus);
+extern bool dhd_bus_wake(dhd_pub_t *dhdp);
+extern bool dhd_bus_wakeup(dhd_pub_t *dhdp);
+#endif 
 #endif 
 #endif 

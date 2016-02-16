@@ -153,7 +153,8 @@ int wifi_platform_get_irq_number(wifi_adapter_info_t *adapter, unsigned long *ir
 	if (plat_data->get_irq_number) {
 		oob_irq_num = plat_data->get_irq_number(irq_flags_ptr);
 		if (oob_irq_num) {
-			DHD_ERROR(("%s: got irq %d flags %lx\n", __FUNCTION__, oob_irq_num, *irq_flags_ptr));
+			DHD_ERROR(("%s: got irq %d flags %lx\n",
+				__FUNCTION__, oob_irq_num, *irq_flags_ptr));
 			return oob_irq_num;
 		}
 	}
@@ -191,10 +192,10 @@ int wifi_platform_set_power(wifi_adapter_info_t *adapter, bool on, unsigned long
 	if (plat_data->set_power) {
 #ifdef ENABLE_4335BT_WAR
 		if (on) {
-			printk("WiFi: trying to acquire BT lock\n");
+			DHD_ERROR(("WiFi: trying to acquire BT lock\n"));
 			if (bcm_bt_lock(lock_cookie_wifi) != 0)
-				printk("** WiFi: timeout in acquiring bt lock**\n");
-			printk("%s: btlock acquired\n", __FUNCTION__);
+				DHD_ERROR(("** WiFi: timeout in acquiring bt lock**\n"));
+			DHD_ERROR(("%s: btlock acquired\n", __FUNCTION__));
 		}
 		else {
 			

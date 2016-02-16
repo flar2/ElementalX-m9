@@ -16,6 +16,7 @@
 #include <linux/miscdevice.h>
 #include <linux/wakelock.h>
 #include <linux/sched.h>
+#include <linux/qdsp6v2/apr.h>
 
 #ifndef _ARCH_ARM_MACH_MSM_HTC_ACOUSTIC_QCT_ALSA_H_
 #define _ARCH_ARM_MACH_MSM_HTC_ACOUSTIC_QCT_ALSA_H_
@@ -158,5 +159,6 @@ struct amp_power_ops {
 
 void htc_amp_power_register_ops(struct amp_power_ops *ops);
 void htc_amp_power_enable(bool enable);
+int acoustic_adspcrash(void);
 #endif
 

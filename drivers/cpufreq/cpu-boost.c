@@ -73,7 +73,6 @@ static const unsigned long little_cluster_mask = CONFIG_POWER_CLUSTER_CPU_MASK;
 struct mutex input_boost_lock;
 static struct delayed_work input_boost_rem;
 static u64 last_input_time;
-#define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
 
 static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
 {
@@ -405,13 +404,25 @@ static void cpuboost_input_event(struct input_handle *handle,
 		unsigned int type, unsigned int code, int value)
 {
 	u64 now;
-	int i;
+	int i, need_boost = 0;
 
 	if (!input_boost_enabled)
 		return;
 
+	
+	if (type == EV_ABS && code == ABS_MT_TRACKING_ID && value != -1)
+		need_boost = 1;
+
+	
+	if (type == EV_KEY && value == 1 &&
+		(code == KEY_POWER || code == KEY_VOLUMEUP || code == KEY_VOLUMEDOWN))
+		need_boost = 1;
+
+	if (!need_boost)
+		return;
+
 	now = ktime_to_us(ktime_get());
-	if (now - last_input_time < MIN_INPUT_INTERVAL)
+	if (now - last_input_time < input_boost_ms)
 		return;
 
 	cancel_delayed_work(&input_boost_rem);

@@ -2406,14 +2406,12 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 			goto fail_id_check;
 		}
 		led->base = led_resource->start;
-		LED_INFO("led driver probe");
 		rc = of_property_read_string(temp, "label", &led_label);
 		if (rc < 0) {
 			dev_err(&led->spmi_dev->dev,
 				"Failure reading label, rc = %d\n", rc);
 			goto fail_id_check;
 		}
-		LED_INFO("led driver probe");
 		rc = of_property_read_string(temp, "linux,name",
 			&led->cdev.name);
 		if (rc < 0) {
@@ -2421,7 +2419,6 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				"Failure reading led name, rc = %d\n", rc);
 			goto fail_id_check;
 		}
-		LED_INFO("led driver probe");
 		if(strcmp(led->cdev.name, "indicator") == 0){
 			indicator_used = true;
 			led->id = QPNP_ID_MAX;
@@ -2475,14 +2472,12 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				goto fail_id_check;
 			}
 		}
-		LED_INFO("led driver probe");
 		if (led->id != QPNP_ID_FLASH1_LED0 &&
 					led->id != QPNP_ID_FLASH1_LED1)
 			mutex_init(&led->lock);
 		INIT_WORK(&led->work, qpnp_led_work);
 		INIT_WORK(&led->led_blink_work, led_blink_work_func);
 		INIT_WORK(&led->led_multicolor_work, led_multicolor_work_func);
-		LED_INFO("led driver probe");
 		g_led_work_queue = create_workqueue("qpnp-led");
 		if (g_led_work_queue == NULL) {
 			LED_ERR("failed to create workqueue\n");
@@ -2512,7 +2507,6 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 		}
 
 		INIT_WORK(&led->work, qpnp_led_work);
-		LED_INFO("led driver probe");
 		if(strcmp(led->cdev.name, "indicator") != 0){
 			rc =  qpnp_led_initialize(led);
 			if (rc < 0)
@@ -2522,14 +2516,12 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 			if (rc < 0)
 				goto fail_id_check;
 		}
-		LED_INFO("led driver probe");
 		rc = led_classdev_register(&spmi->dev, &led->cdev);
 		if (rc) {
 			dev_err(&spmi->dev, "unable to register led %d,rc=%d\n",
 						 led->id, rc);
 			goto fail_id_check;
 		}
-		LED_INFO("led driver probe");
 		if (led->id == QPNP_ID_FLASH1_LED0 ||
 			led->id == QPNP_ID_FLASH1_LED1) {
 			rc = sysfs_create_group(&led->cdev.dev->kobj,
@@ -2538,7 +2530,6 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				goto fail_id_check;
 
 		}
-		LED_INFO("led driver probe");
 		if (led->id == QPNP_ID_LED_MPP) {
 			if (!led->mpp_cfg->pwm_cfg)
 				break;
@@ -2591,7 +2582,6 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 					goto fail_id_check;
 			}
 		}
-		LED_INFO("led driver probe");
 
 		if(led->id == QPNP_ID_MAX){
 			rc = device_create_file(led->cdev.dev, &dev_attr_ModeRGB);
@@ -2640,7 +2630,6 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 				INIT_DELAYED_WORK(&led->blink_delayed_work, led_blink_do_work);
 			}
 		}
-		LED_INFO("led driver probe");
 
 		switch(led->id){
 			case QPNP_ID_RGB_RED:

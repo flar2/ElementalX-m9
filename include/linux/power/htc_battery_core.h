@@ -12,7 +12,7 @@
  */
 #ifndef HTC_BATTERY_CORE_H
 #define HTC_BATTERY_CORE_H
-#if 0
+#if 0//FIXME
 #include <mach/board.h>
 #endif
 #include <linux/notifier.h>

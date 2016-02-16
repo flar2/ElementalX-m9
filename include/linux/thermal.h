@@ -33,18 +33,23 @@
 #define THERMAL_MAX_TRIPS	12
 #define THERMAL_NAME_LENGTH	20
 
+/* invalid cooling state */
 #define THERMAL_CSTATE_INVALID -1UL
 
+/* No upper/lower limit requirement */
 #define THERMAL_NO_LIMIT	THERMAL_CSTATE_INVALID
 
+/* Unit conversion macros */
 #define KELVIN_TO_CELSIUS(t)	(long)(((long)t-2732 >= 0) ?	\
 				((long)t-2732+5)/10 : ((long)t-2732-5)/10)
 #define CELSIUS_TO_KELVIN(t)	((t)*10+2732)
 
+/* Adding event notification support elements */
 #define THERMAL_GENL_FAMILY_NAME                "thermal_event"
 #define THERMAL_GENL_VERSION                    0x01
 #define THERMAL_GENL_MCAST_GROUP_NAME           "thermal_mc_grp"
 
+/* Default Thermal Governor */
 #if defined(CONFIG_THERMAL_DEFAULT_GOV_STEP_WISE)
 #define DEFAULT_THERMAL_GOVERNOR       "step_wise"
 #elif defined(CONFIG_THERMAL_DEFAULT_GOV_FAIR_SHARE)
@@ -77,13 +82,14 @@ enum thermal_trip_type {
 };
 
 enum thermal_trend {
-	THERMAL_TREND_STABLE, 
-	THERMAL_TREND_RAISING, 
-	THERMAL_TREND_DROPPING, 
-	THERMAL_TREND_RAISE_FULL, 
-	THERMAL_TREND_DROP_FULL, 
+	THERMAL_TREND_STABLE, /* temperature is stable */
+	THERMAL_TREND_RAISING, /* temperature is raising */
+	THERMAL_TREND_DROPPING, /* temperature is dropping */
+	THERMAL_TREND_RAISE_FULL, /* apply highest cooling action */
+	THERMAL_TREND_DROP_FULL, /* apply lowest cooling action */
 };
 
+/* Events supported by Thermal Netlink */
 enum events {
 	THERMAL_AUX0,
 	THERMAL_AUX1,
@@ -91,6 +97,7 @@ enum events {
 	THERMAL_DEV_FAULT,
 };
 
+/* attributes of thermal_genl_family */
 enum {
 	THERMAL_GENL_ATTR_UNSPEC,
 	THERMAL_GENL_ATTR_EVENT,
@@ -98,6 +105,7 @@ enum {
 };
 #define THERMAL_GENL_ATTR_MAX (__THERMAL_GENL_ATTR_MAX - 1)
 
+/* commands supported by the thermal_genl_family */
 enum {
 	THERMAL_GENL_CMD_UNSPEC,
 	THERMAL_GENL_CMD_EVENT,
@@ -147,8 +155,8 @@ struct thermal_cooling_device {
 	struct device device;
 	void *devdata;
 	const struct thermal_cooling_device_ops *ops;
-	bool updated; 
-	struct mutex lock; 
+	bool updated; /* true if the cooling device does not need update */
+	struct mutex lock; /* protect thermal_instances list */
 	struct list_head thermal_instances;
 	struct list_head node;
 };
@@ -203,32 +211,46 @@ struct thermal_zone_device {
 	struct thermal_governor *governor;
 	struct list_head thermal_instances;
 	struct idr idr;
-	struct mutex lock; 
+	struct mutex lock; /* protect thermal_instances list */
 	struct list_head node;
 	struct delayed_work poll_queue;
 	struct sensor_threshold tz_threshold[2];
 	struct sensor_info sensor;
 };
 
+/* Structure that holds thermal governor information */
 struct thermal_governor {
 	char name[THERMAL_NAME_LENGTH];
 	int (*throttle)(struct thermal_zone_device *tz, int trip);
 	struct list_head	governor_list;
 };
 
+/* Structure that holds binding parameters for a zone */
 struct thermal_bind_params {
 	struct thermal_cooling_device *cdev;
 
+	/*
+	 * This is a measure of 'how effectively these devices can
+	 * cool 'this' thermal zone. The shall be determined by platform
+	 * characterization. This is on a 'percentage' scale.
+	 * See Documentation/thermal/sysfs-api.txt for more information.
+	 */
 	int weight;
 
+	/*
+	 * This is a bit mask that gives the binding relation between this
+	 * thermal zone and cdev, for a particular trip point.
+	 * See Documentation/thermal/sysfs-api.txt for more information.
+	 */
 	int trip_mask;
 	int (*match) (struct thermal_zone_device *tz,
 			struct thermal_cooling_device *cdev);
 };
 
+/* Structure to define Thermal Zone parameters */
 struct thermal_zone_params {
 	char governor_name[THERMAL_NAME_LENGTH];
-	int num_tbps;	
+	int num_tbps;	/* Number of tbp entries */
 	struct thermal_bind_params *tbp;
 };
 
@@ -237,6 +259,7 @@ struct thermal_genl_event {
 	enum events event;
 };
 
+/* Function declarations */
 struct thermal_zone_device *thermal_zone_device_register(const char *, int, int,
 		void *, const struct thermal_zone_device_ops *,
 		const struct thermal_zone_params *, int, int);
@@ -281,4 +304,4 @@ static inline int thermal_generate_netlink_event(struct thermal_zone_device *tz,
 }
 #endif
 
-#endif 
+#endif /* __THERMAL_H__ */

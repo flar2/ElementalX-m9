@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -55,12 +55,15 @@ static int mdss_dsi_labibb_vreg_init(struct platform_device *pdev)
 	ctrl->lab = regulator_get(&pdev->dev, "lab_reg");
 	rc = PTR_RET(ctrl->lab);
 	if (rc) {
+		ctrl->lab = NULL;
 		pr_err("%s: lab_regi get failed.\n", __func__);
 		return rc;
 	}
 	ctrl->ibb = regulator_get(&pdev->dev, "ibb_reg");
 	rc = PTR_RET(ctrl->ibb);
 	if (rc) {
+		ctrl->lab = NULL;
+		ctrl->ibb = NULL;
 		pr_err("%s: ibb_regi get failed.\n", __func__);
 		regulator_put(ctrl->lab);
 		return rc;
@@ -77,7 +80,7 @@ static int mdss_dsi_labibb_vreg_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 {
 	int rc;
 
-	if (!ctrl->panel_bias_vreg)
+	if (!ctrl->panel_bias_vreg || !ctrl->lab || !ctrl->ibb)
 		return -EINVAL;
 
 	pr_debug("%s: ndx=%d enable=%d\n", __func__, ctrl->ndx, enable);
@@ -85,23 +88,32 @@ static int mdss_dsi_labibb_vreg_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 	if (enable) {
 		rc = regulator_enable(ctrl->lab);
 		if (rc) {
-			pr_err("%s: falied at lab\n", __func__);
+			pr_err("%s: enable failed for lab regulator\n",
+							__func__);
 			return rc;
 		}
 		rc = regulator_enable(ctrl->ibb);
 		if (rc) {
-			pr_err("%s: falied at ibb\n", __func__);
+			pr_err("%s: enable failed for ibb regulator\n",
+							__func__);
 			regulator_disable(ctrl->lab);
 			return rc;
 		}
 
 	} else {
 		rc = regulator_disable(ctrl->lab);
-		if (rc)
-			pr_err("%s: falied at lab\n", __func__);
+		if (rc) {
+			pr_err("%s: disable failed for lab regulator\n",
+							__func__);
+			return rc;
+		}
+
 		rc = regulator_disable(ctrl->ibb);
-		if (rc)
-			pr_err("%s: falied at ibb\n", __func__);
+		if (rc) {
+			pr_err("%s: disable failed for ibb regulator\n",
+							__func__);
+			return rc;
+		}
 	}
 
 	return 0;
@@ -160,6 +172,12 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+	
+	if (ctrl_pdata->ndx) {
+		pr_debug("%s: Skip DSI1 power control\n", __func__);
+		return 0;
+	}
+
 	ret = mdss_dsi_panel_reset(pdata, 0);
 	if (ret) {
 		pr_warn("%s: Panel reset failed. rc=%d\n", __func__, ret);
@@ -213,6 +231,12 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
+
+	
+	if (ctrl_pdata->ndx) {
+		pr_debug("%s: Skip DSI1 power control\n", __func__);
+		return 0;
+	}
 
 	for (i = 0; i < DSI_MAX_PM; i++) {
 		if (DSI_CORE_PM == i)
@@ -596,6 +620,74 @@ end:
 	return ret;
 }
 
+int mdss_dsi_switch_mode(struct mdss_panel_data *pdata, int mode)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mipi_panel_info *pinfo;
+
+	if (!pdata) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+	pr_debug("%s, start\n", __func__);
+
+	pinfo = &pdata->panel_info.mipi;
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+		panel_data);
+
+	if ((pinfo->dms_mode != DYNAMIC_MODE_RESOLUTION_SWITCH_IMMEDIATE) &&
+			(pinfo->dms_mode != DYNAMIC_MODE_SWITCH_IMMEDIATE)) {
+		pr_err("%s: Dynamic mode switch not enabled.\n", __func__);
+		return -EPERM;
+	}
+
+	if (mode == MIPI_VIDEO_PANEL) {
+		mode = SWITCH_TO_VIDEO_MODE;
+	} else if (mode == MIPI_CMD_PANEL) {
+		mode = SWITCH_TO_CMD_MODE;
+	} else if (mode == SWITCH_RESOLUTION) {
+		pr_debug("Resolution switch mode selected\n");
+	} else {
+		pr_err("Invalid mode selected, mode=%d\n", mode);
+		return -EINVAL;
+	}
+
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
+	mdss_dsi_ctrl_setup(ctrl_pdata);
+	ctrl_pdata->switch_mode(pdata, mode);
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
+
+	pr_debug("%s, end\n", __func__);
+	return 0;
+}
+
+static int mdss_dsi_reconfig(struct mdss_panel_data *pdata, int mode)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mipi_panel_info *pinfo;
+
+	if (!pdata) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+	pr_debug("%s, start\n", __func__);
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+		panel_data);
+	pinfo = &pdata->panel_info.mipi;
+
+	if (pinfo->dms_mode == DYNAMIC_MODE_SWITCH_IMMEDIATE) {
+		
+		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
+		mdss_dsi_sw_reset(ctrl_pdata, true);
+		mdss_dsi_ctrl_setup(ctrl_pdata);
+		mdss_dsi_controller_cfg(true, pdata);
+		mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
+	}
+
+	pr_debug("%s, end\n", __func__);
+	return 0;
+}
 static int mdss_dsi_update_panel_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 				int mode)
 {
@@ -607,11 +699,13 @@ static int mdss_dsi_update_panel_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 		pinfo->type = MIPI_CMD_PANEL;
 		pinfo->mipi.vsync_enable = 1;
 		pinfo->mipi.hw_vsync_mode = 1;
+		pinfo->partial_update_enabled = pinfo->partial_update_supported;
 	} else {	
 		pinfo->mipi.mode = DSI_VIDEO_MODE;
 		pinfo->type = MIPI_VIDEO_PANEL;
 		pinfo->mipi.vsync_enable = 0;
 		pinfo->mipi.hw_vsync_mode = 0;
+		pinfo->partial_update_enabled = 0;
 	}
 
 	ctrl_pdata->panel_mode = pinfo->mipi.mode;
@@ -663,10 +757,12 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	}
 
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_BUS_CLKS, 1);
-	if (!pdata->panel_info.ulps_suspend_enabled) {
+
+	if (!pdata->panel_info.ulps_suspend_enabled || !ctrl_pdata->ulps) {
 		mdss_dsi_phy_sw_reset(ctrl_pdata);
 		mdss_dsi_phy_init(ctrl_pdata);
 		mdss_dsi_ctrl_setup(ctrl_pdata);
+		pr_debug("%s: reset Phy and call ctrl_setup\n", __func__);
 	}
 
 	
@@ -767,8 +863,9 @@ static int mdss_dsi_unblank(struct mdss_panel_data *pdata)
 				panel_data);
 	mipi  = &pdata->panel_info.mipi;
 
-	pr_debug("%s+: ctrl=%p ndx=%d cur_blank_state=%d\n", __func__,
-		ctrl_pdata, ctrl_pdata->ndx, pdata->panel_info.blank_state);
+	pr_debug("%s+: ctrl=%p ndx=%d cur_blank_state=%d ctrl_state=%x\n",
+			__func__, ctrl_pdata, ctrl_pdata->ndx,
+			pdata->panel_info.blank_state, ctrl_pdata->ctrl_state);
 
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
 
@@ -844,9 +941,9 @@ static int mdss_dsi_blank(struct mdss_panel_data *pdata, int power_state)
 		pr_info("%s: switching to %s mode\n", __func__,
 			(pdata->panel_info.mipi.mode ? "video" : "command"));
 		if (pdata->panel_info.type == MIPI_CMD_PANEL) {
-			ctrl_pdata->switch_mode(pdata, DSI_VIDEO_MODE);
+			ctrl_pdata->switch_mode(pdata, SWITCH_TO_VIDEO_MODE);
 		} else if (pdata->panel_info.type == MIPI_VIDEO_PANEL) {
-			ctrl_pdata->switch_mode(pdata, DSI_CMD_MODE);
+			ctrl_pdata->switch_mode(pdata, SWITCH_TO_CMD_MODE);
 			mdss_dsi_set_tear_off(ctrl_pdata);
 		}
 	}
@@ -996,8 +1093,9 @@ static void __mdss_dsi_calc_dfps_delay(struct mdss_panel_data *pdata)
 	pipe_delay = (hsync_period + 1) / pclk_to_esc_ratio;
 	if (pinfo->mipi.eof_bllp_power_stop == 0)
 		pipe_delay += (17 / pclk_to_esc_ratio) +
-			((21 + pinfo->mipi.t_clk_pre +
-			pinfo->mipi.t_clk_post) / byte_to_esc_ratio) +
+			((21 + (pinfo->mipi.t_clk_pre + 1) +
+				(pinfo->mipi.t_clk_post + 1)) /
+				byte_to_esc_ratio) +
 			((((pd->timing[8] >> 1) + 1) +
 			((pd->timing[6] >> 1) + 1) +
 			((pd->timing[3] * 4) + (pd->timing[5] >> 1) + 1) +
@@ -1010,7 +1108,8 @@ static void __mdss_dsi_calc_dfps_delay(struct mdss_panel_data *pdata)
 			((((pd->timing[1] >> 1) + 1) +
 			((pd->timing[4] >> 1) + 1)) / hr_bit_to_esc_ratio);
 
-	pll_delay = ((1000 * esc_clk_rate) / 1000000) * 2;
+	
+	pll_delay = ((130 * esc_clk_rate) / 1000000) * 2;
 
 	MIPI_OUTP((ctrl_pdata->ctrl_base) + DSI_DYNAMIC_REFRESH_PIPE_DELAY,
 						pipe_delay);
@@ -1061,6 +1160,8 @@ static int __mdss_dsi_dfps_update_clks(struct mdss_panel_data *pdata,
 
 		if (mdss_dsi_is_ctrl_clk_slave(ctrl_pdata)) {
 			pr_debug("%s DFPS already updated.\n", __func__);
+			ctrl_pdata->panel_data.panel_info.mipi.frame_rate =
+				new_fps;
 			return rc;
 		}
 
@@ -1089,7 +1190,7 @@ static int __mdss_dsi_dfps_update_clks(struct mdss_panel_data *pdata,
 			return rc;
 		}
 
-		mdss_dsi_en_wait4dynamic_done(ctrl_pdata);
+		rc = mdss_dsi_en_wait4dynamic_done(ctrl_pdata);
 		MIPI_OUTP((ctrl_pdata->ctrl_base) + DSI_DYNAMIC_REFRESH_CTRL,
 							0x00);
 
@@ -1102,7 +1203,10 @@ static int __mdss_dsi_dfps_update_clks(struct mdss_panel_data *pdata,
 				ctrl_pdata->pll_pixel_clk);
 		clk_disable_unprepare(ctrl_pdata->pll_byte_clk);
 		clk_disable_unprepare(ctrl_pdata->pll_pixel_clk);
-		ctrl_pdata->panel_data.panel_info.mipi.frame_rate = new_fps;
+
+		if (!rc)
+			ctrl_pdata->panel_data.panel_info.mipi.frame_rate =
+				new_fps;
 	} else {
 		ctrl_pdata->pclk_rate =
 			pdata->panel_info.mipi.dsi_pclk_rate;
@@ -1145,6 +1249,10 @@ static int mdss_dsi_dfps_config(struct mdss_panel_data *pdata, int new_fps)
 		
 		sctrl_pdata = mdss_dsi_get_other_ctrl(ctrl_pdata);
 	}
+
+	ctrl_pdata->dfps_status = true;
+	if (sctrl_pdata)
+		sctrl_pdata->dfps_status = true;
 
 	if (new_fps !=
 		ctrl_pdata->panel_data.panel_info.mipi.frame_rate) {
@@ -1189,11 +1297,14 @@ static int mdss_dsi_ctl_partial_roi(struct mdss_panel_data *pdata)
 		return -EINVAL;
 	}
 
+	if (!pdata->panel_info.partial_update_enabled)
+		return 0;
+
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
 	if (ctrl_pdata->set_col_page_addr)
-		rc = ctrl_pdata->set_col_page_addr(pdata);
+		rc = ctrl_pdata->set_col_page_addr(pdata, false);
 
 	return rc;
 }
@@ -1217,7 +1328,7 @@ static int mdss_dsi_set_stream_size(struct mdss_panel_data *pdata)
 
 	pinfo = &pdata->panel_info;
 
-	if (!pinfo->partial_update_enabled)
+	if (!pinfo->partial_update_supported)
 		return -EINVAL;
 
 	roi = &pinfo->roi;
@@ -1255,6 +1366,52 @@ static int mdss_dsi_set_stream_size(struct mdss_panel_data *pdata)
 	return 0;
 }
 
+static int mdss_dsi_reset_write_ptr(struct mdss_panel_data *pdata)
+{
+
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct mdss_panel_info *pinfo;
+	int rc = 0;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+			panel_data);
+
+	pinfo = &ctrl_pdata->panel_data.panel_info;
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 1);
+	
+	mdss_dsi_sw_reset(ctrl_pdata, true);
+
+	if (pinfo->dcs_cmd_by_left && (ctrl_pdata->ndx == 1))
+		goto skip_cmd_send;
+
+	pinfo->roi.x = 0;
+	pinfo->roi.y = 0;
+	pinfo->roi.w = pinfo->xres;
+	if (pinfo->dcs_cmd_by_left)
+		pinfo->roi.w = pinfo->xres;
+	if (pdata->next)
+		pinfo->roi.w += pdata->next->panel_info.xres;
+	pinfo->roi.h = pinfo->yres;
+
+	mdss_dsi_set_stream_size(pdata);
+
+	if (ctrl_pdata->set_col_page_addr)
+		rc = ctrl_pdata->set_col_page_addr(pdata, true);
+
+skip_cmd_send:
+	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_ALL_CLKS, 0);
+
+	pr_debug("%s: DSI%d write ptr reset finished\n", __func__,
+			ctrl_pdata->ndx);
+
+	return rc;
+}
+
 int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
 	struct mdss_intf_recovery *recovery)
 {
@@ -1264,34 +1421,13 @@ int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
 	return 0;
 }
 
-static int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata)
-{
-	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
-	int rc = 0;
-
-	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
-							panel_data);
-	rc = mdss_dsi_clk_div_config(&pdata->panel_info,
-			pdata->panel_info.mipi.frame_rate);
-	if (rc) {
-		pr_err("%s: unable to initialize the clk dividers\n",
-								__func__);
-		return rc;
-	}
-	ctrl_pdata->refresh_clk_rate = false;
-	ctrl_pdata->pclk_rate = pdata->panel_info.mipi.dsi_pclk_rate;
-	ctrl_pdata->byte_clk_rate = pdata->panel_info.clk_rate / 8;
-	pr_debug("%s ctrl_pdata->byte_clk_rate=%d ctrl_pdata->pclk_rate=%d\n",
-		__func__, ctrl_pdata->byte_clk_rate, ctrl_pdata->pclk_rate);
-	return rc;
-}
-
 static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				  int event, void *arg)
 {
 	int rc = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	int power_state;
+	u32 mode;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -1309,14 +1445,15 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		ctrl_pdata->refresh_clk_rate = true;
 		break;
 	case MDSS_EVENT_LINK_READY:
+		if (ctrl_pdata->refresh_clk_rate)
+			rc = mdss_dsi_clk_refresh(pdata);
+
 		rc = mdss_dsi_on(pdata);
 		mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode,
 							pdata);
 		break;
 	case MDSS_EVENT_UNBLANK:
 		mdss_dsi_get_hw_revision(ctrl_pdata);
-		if (ctrl_pdata->refresh_clk_rate)
-			rc = mdss_dsi_clk_refresh(pdata);
 
 		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_unblank(pdata);
@@ -1325,6 +1462,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		ctrl_pdata->ctrl_state |= CTRL_STATE_MDP_ACTIVE;
 		if (ctrl_pdata->on_cmds.link_state == DSI_HS_MODE)
 			rc = mdss_dsi_unblank(pdata);
+		pdata->panel_info.esd_rdy = true;
 		break;
 	case MDSS_EVENT_BLANK:
 		power_state = (int) (unsigned long) arg;
@@ -1333,6 +1471,7 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		break;
 	case MDSS_EVENT_PANEL_OFF:
 		power_state = (int) (unsigned long) arg;
+		pdata->panel_info.esd_rdy = false;
 		ctrl_pdata->ctrl_state &= ~CTRL_STATE_MDP_ACTIVE;
 		if (ctrl_pdata->off_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_blank(pdata, power_state);
@@ -1367,10 +1506,13 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	case MDSS_EVENT_ENABLE_PARTIAL_ROI:
 		rc = mdss_dsi_ctl_partial_roi(pdata);
 		break;
+	case MDSS_EVENT_DSI_RESET_WRITE_PTR:
+		rc = mdss_dsi_reset_write_ptr(pdata);
+		break;
 	case MDSS_EVENT_DSI_STREAM_SIZE:
 		rc = mdss_dsi_set_stream_size(pdata);
 		break;
-	case MDSS_EVENT_DSI_DYNAMIC_SWITCH:
+	case MDSS_EVENT_DSI_UPDATE_PANEL_DATA:
 		rc = mdss_dsi_update_panel_config(ctrl_pdata,
 					(int)(unsigned long) arg);
 		break;
@@ -1378,12 +1520,54 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		rc = mdss_dsi_register_recovery_handler(ctrl_pdata,
 			(struct mdss_intf_recovery *)arg);
 		break;
+	case MDSS_EVENT_DSI_DYNAMIC_SWITCH:
+		mode = (u32)(unsigned long) arg;
+		mdss_dsi_switch_mode(pdata, mode);
+		break;
+	case MDSS_EVENT_DSI_RECONFIG_CMD:
+		mode = (u32)(unsigned long) arg;
+		rc = mdss_dsi_reconfig(pdata, mode);
+		break;
+	case MDSS_EVENT_DSI_PANEL_STATUS:
+		if (ctrl_pdata->check_status)
+			rc = ctrl_pdata->check_status(ctrl_pdata);
+		break;
+	case MDSS_EVENT_PANEL_TIMING_SWITCH:
+		rc = mdss_dsi_panel_timing_switch(ctrl_pdata, arg);
+		break;
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
 		break;
 	}
 	pr_debug("%s-:event=%d, rc=%d\n", __func__, event, rc);
 	return rc;
+}
+
+static int mdss_dsi_set_override_cfg(char *override_cfg,
+		struct mdss_dsi_ctrl_pdata *ctrl_pdata, char *panel_cfg)
+{
+	struct mdss_panel_info *pinfo = &ctrl_pdata->panel_data.panel_info;
+	char *token = NULL;
+
+	pr_debug("%s: override config:%s\n", __func__, override_cfg);
+	while ((token = strsep(&override_cfg, ":"))) {
+		if (!strcmp(token, OVERRIDE_CFG)) {
+			continue;
+		} else if (!strcmp(token, SIM_HW_TE_PANEL)) {
+			pinfo->sim_panel_mode = SIM_HW_TE_MODE;
+		} else if (!strcmp(token, SIM_SW_TE_PANEL)) {
+			pinfo->sim_panel_mode = SIM_SW_TE_MODE;
+		} else if (!strcmp(token, SIM_PANEL)) {
+			pinfo->sim_panel_mode = SIM_MODE;
+		} else {
+			pr_err("%s: invalid override_cfg token: %s\n",
+					__func__, token);
+			return -EINVAL;
+		}
+	}
+	pr_debug("%s:sim_panel_mode:%d\n", __func__, pinfo->sim_panel_mode);
+
+	return 0;
 }
 
 static struct device_node *mdss_dsi_pref_prim_panel(
@@ -1406,10 +1590,12 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 {
 	int len, i;
 	int ctrl_id = pdev->id - 1;
-	char panel_name[MDSS_MAX_PANEL_LEN];
+	char panel_name[MDSS_MAX_PANEL_LEN] = "";
 	char ctrl_id_stream[3] =  "0:";
-	char *stream = NULL, *pan = NULL;
+	char *stream = NULL, *pan = NULL, *override_cfg = NULL;
 	struct device_node *dsi_pan_node = NULL, *mdss_node = NULL;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = platform_get_drvdata(pdev);
+	struct mdss_panel_info *pinfo = &ctrl_pdata->panel_data.panel_info;
 
 	len = strlen(panel_cfg);
 	if (!len) {
@@ -1418,6 +1604,17 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 			 __func__, __LINE__);
 		goto end;
 	} else {
+		
+		pinfo->sim_panel_mode = 0;
+		override_cfg = strnstr(panel_cfg, "#" OVERRIDE_CFG, len);
+		if (override_cfg) {
+			*override_cfg = '\0';
+			if (mdss_dsi_set_override_cfg(override_cfg + 1,
+					ctrl_pdata, panel_cfg))
+				return NULL;
+			len = strlen(panel_cfg);
+		}
+
 		if (ctrl_id == 1)
 			strlcpy(ctrl_id_stream, "1:", 3);
 
@@ -1592,6 +1789,10 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		pr_err("%s: dsi panel dev reg failed\n", __func__);
 		goto error_pan_node;
 	}
+
+	ctrl_pdata->cmd_clk_ln_recovery_en =
+		of_property_read_bool(pdev->dev.of_node,
+			"qcom,dsi-clk-ln-recovery");
 
 	if (mdss_dsi_is_te_based_esd(ctrl_pdata)) {
 		rc = devm_request_irq(&pdev->dev,
@@ -1917,13 +2118,9 @@ int dsi_panel_device_register(struct device_node *pan_node,
 	if (rc)
 		pr_err("PLL 1 Clock's did not register\n");
 
-	if (pinfo->dynamic_fps &&
-			pinfo->dfps_update == DFPS_IMMEDIATE_CLK_UPDATE_MODE) {
-		if (mdss_dsi_shadow_clk_init(ctrl_pdev, ctrl_pdata)) {
+	if (pinfo->dynamic_fps)
+		if (mdss_dsi_shadow_clk_init(ctrl_pdev, ctrl_pdata))
 			pr_err("unable to initialize shadow ctrl clks\n");
-			return -EPERM;
-		}
-	}
 
 	if (mdss_dsi_retrieve_ctrl_resources(ctrl_pdev,
 					     pinfo->pdest,
@@ -2009,18 +2206,21 @@ int dsi_panel_device_register(struct device_node *pan_node,
 	}
 
 	if (pinfo->pdest == DISPLAY_1) {
-		mdss_debug_register_io("dsi0_ctrl", &ctrl_pdata->ctrl_io);
-		mdss_debug_register_io("dsi0_phy", &ctrl_pdata->phy_io);
+		mdss_debug_register_io("dsi0_ctrl", &ctrl_pdata->ctrl_io, NULL);
+		mdss_debug_register_io("dsi0_phy", &ctrl_pdata->phy_io, NULL);
 		mdss_debug_register_io("dsi0_phy_regulator",
-			&ctrl_pdata->shared_ctrl_data->phy_regulator_io);
+			&ctrl_pdata->shared_ctrl_data->phy_regulator_io, NULL);
 		ctrl_pdata->ndx = 0;
 	} else {
-		mdss_debug_register_io("dsi1_ctrl", &ctrl_pdata->ctrl_io);
-		mdss_debug_register_io("dsi1_phy", &ctrl_pdata->phy_io);
+		mdss_debug_register_io("dsi1_ctrl", &ctrl_pdata->ctrl_io, NULL);
+		mdss_debug_register_io("dsi1_phy", &ctrl_pdata->phy_io, NULL);
 		mdss_debug_register_io("dsi1_phy_regulator",
-			&ctrl_pdata->shared_ctrl_data->phy_regulator_io);
+			&ctrl_pdata->shared_ctrl_data->phy_regulator_io, NULL);
 		ctrl_pdata->ndx = 1;
 	}
+
+	panel_debug_register_base("panel",
+		ctrl_pdata->ctrl_base, ctrl_pdata->reg_size);
 
 	pr_debug("%s: Panel data initialized\n", __func__);
 	return 0;
@@ -2042,24 +2242,6 @@ static struct platform_driver mdss_dsi_ctrl_driver = {
 	},
 };
 
-static int mdss_dsi_pwrctrl_probe(struct platform_device *pdev)
-{
-	int rc = 0;
-
-	if (pdev->dev.platform_data)
-		memcpy(&pwrctrl_pdata, pdev->dev.platform_data, sizeof(pwrctrl_pdata));
-	PR_DISP_INFO("== %s: %p ( Done ) ==\n", __func__, pdev->dev.platform_data);
-
-	return rc;
-}
-
-static struct platform_driver mdss_dsi_pwrctrl_driver = {
-	.probe = mdss_dsi_pwrctrl_probe,
-	.driver = {
-		.name = "mdss_dsi_pwrctrl",
-	},
-};
-
 static int mdss_dsi_register_driver(void)
 {
 	return platform_driver_register(&mdss_dsi_ctrl_driver);
@@ -2069,11 +2251,6 @@ static int __init mdss_dsi_driver_init(void)
 {
 	int ret;
 
-	ret = platform_driver_register(&mdss_dsi_pwrctrl_driver);
-	if (ret) {
-		PR_DISP_ERR("register mdss_dsi_pwrctrl failed!\n");
-		return ret;
-	}
 	ret = mdss_dsi_register_driver();
 	if (ret) {
 		PR_DISP_ERR("mdss_dsi_register_driver() failed!\n");

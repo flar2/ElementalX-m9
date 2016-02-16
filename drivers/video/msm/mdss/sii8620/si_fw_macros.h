@@ -16,6 +16,10 @@
 #ifndef _SI_FW_MACROS_H_
 #define _SI_FW_MACROS_H_
 
+/*
+ * Define Linux versions of macros used to cross compile driver code for other
+ * platforms.
+ */
 
 #define PLACE_IN_CODE_SEG
 

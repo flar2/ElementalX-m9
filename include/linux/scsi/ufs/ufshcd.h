@@ -3,7 +3,7 @@
  *
  * This code is based on drivers/scsi/ufs/ufshcd.h
  * Copyright (C) 2011-2013 Samsung India Software Operations
- * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * Authors:
  *	Santosh Yaraganavi <santosh.sy@samsung.com>
@@ -55,6 +55,7 @@
 #include <linux/completion.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pm_qos.h>
+#include <linux/scsi/ufs/unipro.h>
 
 #include <asm/irq.h>
 #include <asm/byteorder.h>
@@ -184,6 +185,7 @@ struct ufs_pm_lvl_states {
  * @lun: LUN of the command
  * @intr_cmd: Interrupt command (doesn't participate in interrupt aggregation)
  * @issue_time_stamp: time stamp for debug purposes
+ * @complete_time_stamp: time stamp for statistics
  * @req_abort_skip: skip request abort task flag
  */
 struct ufshcd_lrb {
@@ -207,6 +209,7 @@ struct ufshcd_lrb {
 	u8 lun; /* UPIU LUN id field is only 8-bit wide */
 	bool intr_cmd;
 	ktime_t issue_time_stamp;
+	ktime_t complete_time_stamp;
 
 	bool req_abort_skip;
 };
@@ -251,12 +254,60 @@ struct ufs_uic_err_reg_hist {
 	ktime_t tstamp[UIC_ERR_REG_HIST_LENGTH];
 };
 
+#ifdef CONFIG_DEBUG_FS
+struct debugfs_files {
+	struct dentry *debugfs_root;
+	struct dentry *tag_stats;
+	struct dentry *err_stats;
+	struct dentry *show_hba;
+	struct dentry *host_regs;
+	struct dentry *dump_dev_desc;
+	struct dentry *power_mode;
+	struct dentry *dme_local_read;
+	struct dentry *dme_peer_read;
+	struct dentry *dbg_print_en;
+	struct dentry *req_stats;
+	u32 dme_local_attr_id;
+	u32 dme_peer_attr_id;
+#ifdef CONFIG_UFS_FAULT_INJECTION
+	struct fault_attr fail_attr;
+#endif
+};
+
+/* tag stats statistics types */
+enum ts_types {
+	TS_NOT_SUPPORTED	= -1,
+	TS_TAG			= 0,
+	TS_READ			= 1,
+	TS_WRITE		= 2,
+	TS_URGENT_READ		= 3,
+	TS_URGENT_WRITE		= 4,
+	TS_FLUSH		= 5,
+	TS_NUM_STATS		= 6,
+};
+
+/**
+ * struct ufshcd_req_stat - statistics for request handling times (in usec)
+ * @min: shortest time measured
+ * @max: longest time measured
+ * @sum: sum of all the handling times measured (used for average calculation)
+ * @count: number of measurements taken
+ */
+struct ufshcd_req_stat {
+	u64 min;
+	u64 max;
+	u64 sum;
+	u64 count;
+};
+#endif
+
 /**
  * struct ufs_stats - keeps usage/err statistics
- * @enabled: enable tagstats for debugfs
+ * @enabled: enable tag stats for debugfs
  * @tag_stats: pointer to tag statistic counters
  * @q_depth: current amount of busy slots
  * @err_stats: counters to keep track of various errors
+ * @req_stat: request handling time statistics per request type
  * @hibern8_exit_cnt: Counter to keep track of number of exits,
  *		reset this after link-startup.
  * @last_hibern8_exit_tstamp: Set time after the hibern8 exit.
@@ -273,6 +324,7 @@ struct ufs_stats {
 	u64 **tag_stats;
 	int q_depth;
 	int err_stats[UFS_ERR_MAX];
+	struct ufshcd_req_stat req_stats[TS_NUM_STATS];
 #endif
 	u32 hibern8_exit_cnt;
 	ktime_t last_hibern8_exit_tstamp;
@@ -282,36 +334,6 @@ struct ufs_stats {
 	struct ufs_uic_err_reg_hist tl_err;
 	struct ufs_uic_err_reg_hist dme_err;
 };
-
-#ifdef CONFIG_DEBUG_FS
-struct debugfs_files {
-	struct dentry *debugfs_root;
-	struct dentry *tag_stats;
-	struct dentry *err_stats;
-	struct dentry *show_hba;
-	struct dentry *host_regs;
-	struct dentry *dump_dev_desc;
-	struct dentry *power_mode;
-	struct dentry *dme_local_read;
-	struct dentry *dme_peer_read;
-	u32 dme_local_attr_id;
-	u32 dme_peer_attr_id;
-#ifdef CONFIG_UFS_FAULT_INJECTION
-	struct fault_attr fail_attr;
-#endif
-};
-
-/* tag stats statistics types */
-enum ts_types {
-	TS_NOT_SUPPORTED	= -1,
-	TS_TAG			= 0,
-	TS_READ			= 1,
-	TS_WRITE		= 2,
-	TS_URGENT		= 3,
-	TS_FLUSH		= 4,
-	TS_NUM_STATS		= 5,
-};
-#endif
 
 /**
  * struct ufs_clk_info - UFS clock related info
@@ -380,6 +402,8 @@ struct ufs_pwr_mode_info {
  * @crypto_engine_reset_err: resets the saved error status of
  *                         the cryptographic engine
  * @dbg_register_dump: used to dump controller debug information
+ * @add_debugfs: used to add debugfs entries
+ * @remove_debugfs: used to remove debugfs entries
  */
 struct ufs_hba_variant_ops {
 	const char *name;
@@ -402,6 +426,10 @@ struct ufs_hba_variant_ops {
 	int	(*crypto_engine_get_err)(struct ufs_hba *);
 	void	(*crypto_engine_reset_err)(struct ufs_hba *);
 	void	(*dbg_register_dump)(struct ufs_hba *hba);
+#ifdef CONFIG_DEBUG_FS
+	void	(*add_debugfs)(struct ufs_hba *hba, struct dentry *root);
+	void	(*remove_debugfs)(struct ufs_hba *hba);
+#endif
 };
 
 /* clock gating state  */
@@ -411,6 +439,22 @@ enum clk_gating_state {
 	REQ_CLKS_OFF,
 	REQ_CLKS_ON,
 };
+
+/* UFS Host Controller debug print bitmask */
+#define UFSHCD_DBG_PRINT_CLK_FREQ_EN		UFS_BIT(0)
+#define UFSHCD_DBG_PRINT_UIC_ERR_HIST_EN	UFS_BIT(1)
+#define UFSHCD_DBG_PRINT_HOST_REGS_EN		UFS_BIT(2)
+#define UFSHCD_DBG_PRINT_TRS_EN			UFS_BIT(3)
+#define UFSHCD_DBG_PRINT_TMRS_EN		UFS_BIT(4)
+#define UFSHCD_DBG_PRINT_PWR_EN			UFS_BIT(5)
+#define UFSHCD_DBG_PRINT_HOST_STATE_EN		UFS_BIT(6)
+
+#define UFSHCD_DBG_PRINT_ALL						   \
+		(UFSHCD_DBG_PRINT_CLK_FREQ_EN		|		   \
+		 UFSHCD_DBG_PRINT_UIC_ERR_HIST_EN	|		   \
+		 UFSHCD_DBG_PRINT_HOST_REGS_EN | UFSHCD_DBG_PRINT_TRS_EN | \
+		 UFSHCD_DBG_PRINT_TMRS_EN | UFSHCD_DBG_PRINT_PWR_EN |	   \
+		 UFSHCD_DBG_PRINT_HOST_STATE_EN)
 
 /**
  * struct ufs_clk_gating - UFS clock gating related info
@@ -577,6 +621,7 @@ struct ufshcd_pm_qos {
  * @hibern8_on_idle: UFS Hibern8 on idle related data
  * @ufs_stats: ufshcd statistics to be used via debugfs
  * @debugfs_files: debugfs files associated with the ufs stats
+ * @ufshcd_dbg_print: Bitmask for enabling debug prints
  */
 struct ufs_hba {
 	void __iomem *mmio_base;
@@ -750,6 +795,9 @@ struct ufs_hba {
 
 	/* Number of requests aborts */
 	int req_abort_count;
+
+	/* Bitmask for enabling debug prints */
+	u32 ufshcd_dbg_print;
 };
 
 /* Returns true if clocks can be gated. Otherwise false */
@@ -867,6 +915,19 @@ static inline int ufshcd_dme_peer_get(struct ufs_hba *hba,
 }
 
 int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+
+static inline bool ufshcd_is_hs_mode(struct ufs_pa_layer_attr *pwr_info)
+{
+	return (pwr_info->pwr_rx == FAST_MODE ||
+		pwr_info->pwr_rx == FASTAUTO_MODE) &&
+		(pwr_info->pwr_tx == FAST_MODE ||
+		pwr_info->pwr_tx == FASTAUTO_MODE);
+}
+
+static inline void ufshcd_init_req_stats(struct ufs_hba *hba)
+{
+	memset(hba->ufs_stats.req_stats, 0, sizeof(hba->ufs_stats.req_stats));
+}
 
 #define ASCII_STD true
 #define UTF16_STD false

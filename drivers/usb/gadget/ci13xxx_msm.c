@@ -173,6 +173,23 @@ static void ci13xxx_msm_reset(void)
 	}
 }
 
+static void ci13xxx_msm_mark_err_event(void)
+{
+	struct ci13xxx *udc = _udc;
+	struct msm_otg *otg;
+
+	if (udc == NULL)
+		return;
+
+	if (udc->transceiver == NULL)
+		return;
+
+	otg = container_of(udc->transceiver, struct msm_otg, phy);
+
+	/* This will trigger hardware reset before next connection */
+	otg->err_event_seen = true;
+}
+
 static void ci13xxx_msm_notify_event(struct ci13xxx *udc, unsigned event)
 {
 	struct device *dev = udc->gadget.dev.parent;
@@ -199,11 +216,30 @@ static void ci13xxx_msm_notify_event(struct ci13xxx *udc, unsigned event)
 		dev_info(dev, "CI13XXX_CONTROLLER_RESUME_EVENT received\n");
 		ci13xxx_msm_resume();
 		break;
+	case CI13XXX_CONTROLLER_ERROR_EVENT:
+		dev_info(dev, "CI13XXX_CONTROLLER_ERROR_EVENT received\n");
+		ci13xxx_msm_mark_err_event();
+		break;
 
 	default:
 		dev_dbg(dev, "unknown ci13xxx_udc event\n");
 		break;
 	}
+}
+
+static bool ci13xxx_cancel_pending_suspend(struct ci13xxx *udc)
+{
+	struct msm_otg *otg;
+
+	if (udc == NULL)
+		return false;
+
+	if (udc->transceiver == NULL)
+		return false;
+
+	otg = container_of(udc->transceiver, struct msm_otg, phy);
+
+	return cancel_delayed_work_sync(&otg->suspend_work);
 }
 
 static bool ci13xxx_msm_in_lpm(struct ci13xxx *udc)
@@ -258,6 +294,7 @@ static struct ci13xxx_udc_driver ci13xxx_msm_udc_driver = {
 				  CI13XXX_IS_OTG,
 	.nz_itc			= 0,
 	.notify_event		= ci13xxx_msm_notify_event,
+	.cancel_pending_suspend = ci13xxx_cancel_pending_suspend,
 	.in_lpm                 = ci13xxx_msm_in_lpm,
 	.set_fpr_flag           = ci13xxx_msm_set_fpr_flag,
 };

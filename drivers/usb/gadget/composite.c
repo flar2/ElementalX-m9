@@ -20,55 +20,16 @@
 #include <linux/usb/composite.h>
 #include <asm/unaligned.h>
 
-static int usb_autobot_mode(void);
 #define REQUEST_RESET_DELAYED (HZ / 10) 
-static void fsg_update_mode(int _linux_fsg_mode);
-void usb_composite_force_reset(struct usb_composite_dev *cdev)
-{
-	unsigned long           flags;
-
-	spin_lock_irqsave(&cdev->lock, flags);
-	
-	if (cdev && cdev->gadget && cdev->gadget->speed != USB_SPEED_UNKNOWN) {
-		usb_gadget_disconnect(cdev->gadget);
-		spin_unlock_irqrestore(&cdev->lock, flags);
-
-		msleep(500);
-
-		spin_lock_irqsave(&cdev->lock, flags);
-		usb_gadget_connect(cdev->gadget);
-		spin_unlock_irqrestore(&cdev->lock, flags);
-	} else {
-		spin_unlock_irqrestore(&cdev->lock, flags);
-	}
-}
+void usb_android_force_reset(struct usb_composite_dev *cdev);
 
 static void composite_request_reset(struct work_struct *w)
 {
 	struct usb_composite_dev *cdev = container_of(
 			(struct delayed_work *)w,
 			struct usb_composite_dev, request_reset);
-	if (cdev) {
-		if (usb_autobot_mode())
-			return;
-		printk(KERN_WARNING "%s(%d):os_type=%d, mtp=%d\n",
-				__func__, __LINE__, os_type, is_mtp_enable);
-		if (os_type == OS_LINUX && is_mtp_enable) {
-			fsg_update_mode(1);
-			fsg_mode = 1;
-		} else if (os_type == OS_LINUX && disk_mode) {
-			fsg_update_mode(0);
-			fsg_mode = 1;
-		} else {
-			fsg_update_mode(0);
-			fsg_mode = 0;
-			if (cdev->do_serial_number_change)
-				cdev->do_serial_number_change = false;
-			else
-				return;
-		}
-		usb_composite_force_reset(cdev);
-	}
+	if (cdev)
+		usb_android_force_reset(cdev);
 }
 
 static ssize_t print_switch_name(struct switch_dev *sdev, char *buf)
@@ -292,6 +253,7 @@ int usb_interface_id(struct usb_configuration *config,
 
 	if (id < MAX_CONFIG_INTERFACES) {
 		config->interface[id] = function;
+		function->intf_id = id;
 		config->next_interface_id = id + 1;
 		return id;
 	}
@@ -299,38 +261,20 @@ int usb_interface_id(struct usb_configuration *config,
 }
 EXPORT_SYMBOL_GPL(usb_interface_id);
 
-int usb_get_func_interface_id(struct usb_function *func)
-{
-	int id;
-	struct usb_configuration *config;
-
-	if (!func)
-		return -EINVAL;
-
-	config = func->config;
-
-	for (id = 0; id < MAX_CONFIG_INTERFACES; id++) {
-		if (config->interface[id] == func)
-			return id;
-	}
-	return -ENODEV;
-}
-
-static int usb_func_wakeup_int(struct usb_function *func,
-					bool use_pending_flag)
+static int usb_func_wakeup_int(struct usb_function *func)
 {
 	int ret;
-	int interface_id;
 	unsigned long flags;
 	struct usb_gadget *gadget;
 	struct usb_composite_dev *cdev;
 
-	pr_debug("%s - %s function wakeup, use pending: %u\n",
-		__func__, func->name ? func->name : "", use_pending_flag);
 
 	if (!func || !func->config || !func->config->cdev ||
 		!func->config->cdev->gadget)
 		return -EINVAL;
+
+	pr_debug("%s - %s function wakeup\n", __func__,
+					func->name ? func->name : "");
 
 	gadget = func->config->cdev->gadget;
 	if ((gadget->speed != USB_SPEED_SUPER) || !func->func_wakeup_allowed) {
@@ -343,34 +287,9 @@ static int usb_func_wakeup_int(struct usb_function *func,
 	}
 
 	cdev = get_gadget_data(gadget);
+
 	spin_lock_irqsave(&cdev->lock, flags);
-
-	if (use_pending_flag && !func->func_wakeup_pending) {
-		pr_debug("Pending flag is cleared - Function wakeup is cancelled.\n");
-		spin_unlock_irqrestore(&cdev->lock, flags);
-		return 0;
-	}
-
-	ret = usb_get_func_interface_id(func);
-	if (ret < 0) {
-		ERROR(func->config->cdev,
-			"Function %s - Unknown interface id. Canceling USB request. ret=%d\n",
-			func->name ? func->name : "", ret);
-
-		spin_unlock_irqrestore(&cdev->lock, flags);
-		return ret;
-	}
-
-	interface_id = ret;
-	ret = usb_gadget_func_wakeup(gadget, interface_id);
-
-	if (use_pending_flag) {
-		func->func_wakeup_pending = false;
-	} else {
-		if (ret == -EAGAIN)
-			func->func_wakeup_pending = true;
-	}
-
+	ret = usb_gadget_func_wakeup(gadget, func->intf_id);
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
 	return ret;
@@ -383,7 +302,7 @@ int usb_func_wakeup(struct usb_function *func)
 	pr_debug("%s function wakeup\n",
 		func->name ? func->name : "");
 
-	ret = usb_func_wakeup_int(func, false);
+	ret = usb_func_wakeup_int(func);
 	if (ret == -EAGAIN) {
 		DBG(func->config->cdev,
 			"Function wakeup for %s could not complete due to suspend state. Delayed until after bus resume.\n",
@@ -416,6 +335,10 @@ static u8 encode_bMaxPower(enum usb_device_speed speed,
 		return DIV_ROUND_UP(val, 2);
 	};
 }
+
+static struct usb_descriptor_header *fs_mtp_descs[];
+static struct usb_descriptor_header *hs_mtp_descs[];
+static struct usb_descriptor_header *ss_mtp_descs[];
 
 static int config_buf(struct usb_configuration *config,
 		enum usb_device_speed speed, void *buf, u8 type)
@@ -455,12 +378,18 @@ static int config_buf(struct usb_configuration *config,
 		switch (speed) {
 		case USB_SPEED_SUPER:
 			descriptors = f->ss_descriptors;
+			if (!strcmp("mtp", f->name) && os_type == OS_MAC)
+				descriptors = ss_mtp_descs;
 			break;
 		case USB_SPEED_HIGH:
 			descriptors = f->hs_descriptors;
+			if (!strcmp("mtp", f->name) && os_type == OS_MAC)
+				descriptors = hs_mtp_descs;
 			break;
 		default:
 			descriptors = f->fs_descriptors;
+			if (!strcmp("mtp", f->name) && os_type == OS_MAC)
+				descriptors = fs_mtp_descs;
 		}
 
 		if (!descriptors)
@@ -575,7 +504,7 @@ static int bos_desc(struct usb_composite_dev *cdev)
 	usb_ext->bLength = USB_DT_USB_EXT_CAP_SIZE;
 	usb_ext->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
 	usb_ext->bDevCapabilityType = USB_CAP_TYPE_EXT;
-	usb_ext->bmAttributes = cpu_to_le32(USB_LPM_SUPPORT);
+	usb_ext->bmAttributes = cpu_to_le32(USB_LPM_SUPPORT | USB_BESL_SUPPORT);
 
 	if (gadget_is_superspeed(cdev->gadget)) {
 		ss_cap = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
@@ -700,6 +629,12 @@ static int set_config(struct usb_composite_dev *cdev,
 
 		switch (gadget->speed) {
 		case USB_SPEED_SUPER:
+			if (!f->ss_descriptors) {
+				pr_err("%s(): No SS desc for function:%s\n",
+							__func__, f->name);
+				usb_gadget_set_state(gadget, USB_STATE_ADDRESS);
+				return -EINVAL;
+			}
 			descriptors = f->ss_descriptors;
 			break;
 		case USB_SPEED_HIGH:
@@ -887,11 +822,6 @@ void usb_remove_config(struct usb_composite_dev *cdev,
 
 	spin_unlock_irqrestore(&cdev->lock, flags);
 
-	if (os_type != OS_LINUX){
-		os_type = OS_NOT_YET;
-		fsg_update_mode(0);
-		fsg_mode = 0;
-	}
 #ifdef CONFIG_HTC_USB_DEBUG_FLAG
 	printk("[USB]%s unbind+\n",__func__);
 #endif
@@ -1155,6 +1085,47 @@ int usb_string_ids_n(struct usb_composite_dev *c, unsigned n)
 EXPORT_SYMBOL_GPL(usb_string_ids_n);
 
 
+void check_os_type(u8 descriptor_type, u16 w_length)
+{
+	static int mac = 0, win = 0, lin = 0;
+
+	if (os_type == OS_NOT_YET)
+		mac = win = lin = 0;
+
+	switch (descriptor_type) {
+		case USB_DT_DEVICE:
+			if (w_length != 18) {
+				win++;
+				lin++;
+			} else if ((w_length == 18) && (win == 0) && (lin == 0)) {
+				mac++;
+			}
+			break;
+		case USB_DT_CONFIG:
+			if (w_length == 4) {
+				mac++;
+			} else if (w_length == 255) {
+				win++;
+			} else if ((w_length == 9) && (lin >= win)) {
+				lin++;
+			}
+			break;
+		case USB_DT_STRING:
+			if (w_length == 2)
+				mac++;
+			break;
+	}
+
+	if (mac > win && mac > lin)
+		os_type = OS_MAC;
+	else if (win > mac && win > lin)
+		os_type = OS_WINDOWS;
+	else if (lin > mac && lin > win)
+		os_type = OS_LINUX;
+	else
+		os_type = OS_LINUX;
+}
+
 static void composite_setup_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	if (req->status || req->actual != req->length)
@@ -1196,6 +1167,7 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 		switch (w_value >> 8) {
 
 		case USB_DT_DEVICE:
+			check_os_type(USB_DT_DEVICE, w_length); 
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 			cdev->desc.bMaxPacketSize0 =
@@ -1229,18 +1201,13 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				break;
 			
 		case USB_DT_CONFIG:
-			if (w_length == 4) {
+			check_os_type(USB_DT_CONFIG, w_length);
+			if (os_type == OS_MAC)
 				pr_info("%s: OS_MAC\n", __func__);
-				os_type = OS_MAC;
-			} else if (w_length == 255) {
+			else if (os_type == OS_WINDOWS)
 				pr_info("%s: OS_WINDOWS\n", __func__);
-				os_type = OS_WINDOWS;
-			} else if (w_length == 9 && os_type != OS_WINDOWS) {
+			else if (os_type == OS_LINUX)
 				pr_info("%s: OS_LINUX\n", __func__);
-				os_type = OS_LINUX;
-				if (!fsg_mode)
-					schedule_delayed_work(&cdev->request_reset, REQUEST_RESET_DELAYED);
-			}
 
 			value = config_desc(cdev, w_value);
 			if (value >= 0)
@@ -1258,6 +1225,7 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 						USB_DT_OTG);
 			break;
 		case USB_DT_STRING:
+			check_os_type(USB_DT_STRING, w_length); 
 			value = get_string(cdev, req->buf,
 					w_index, w_value & 0xff);
 			if (value >= 0)
@@ -1702,7 +1670,7 @@ composite_resume(struct usb_gadget *gadget)
 
 	if (cdev->config) {
 		list_for_each_entry(f, &cdev->config->functions, list) {
-			ret = usb_func_wakeup_int(f, true);
+			ret = usb_func_wakeup_int(f);
 			if (ret) {
 				if (ret == -EAGAIN) {
 					ERROR(f->config->cdev,

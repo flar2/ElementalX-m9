@@ -73,6 +73,7 @@ struct wlan_vreg_info vreg_info;
 struct wlan_gpio_info gpio_wl_en;
 struct wlan_gpio_info gpio_irq;
 struct wlan_gpio_info gpio_seci_in;
+struct mutex seci_lock;
 
 struct platform_device *gdev;
 
@@ -170,11 +171,13 @@ static int wlan_seci_gpio_pin_init(struct platform_device *pdev, char* type)
 int wlan_seci_gpio_init(struct wlan_gpio_info *info, int state)
 {
     int ret = 0;
+	int time = 0;
 
     pr_err(" %s: info->num = %d, state =%d \n", __func__, info->num, state);
-    pr_err(" %s: info->prop= %d \n",__func__, info->prop);
 
-    if (state == 1) {
+	mutex_lock(&seci_lock);
+
+	if (state == 1 && info->prop == false) {
 
         ret = gpio_request(info->num, info->name);
         if (ret) {
@@ -183,7 +186,9 @@ int wlan_seci_gpio_init(struct wlan_gpio_info *info, int state)
             goto out;
         }
 
-        ret = gpio_direction_output(info->num, state);
+        wlan_seci_gpio_pin_init(gdev, "seci_in_low");
+
+        ret = gpio_direction_output(info->num, 0);
         if (ret) {
             pr_err("%s: Can't set GPIO %s direction, ret = %d\n",
                 __func__, WLAN_BOOT_GPIO_NAME, ret);
@@ -191,17 +196,28 @@ int wlan_seci_gpio_init(struct wlan_gpio_info *info, int state)
             goto out;
         }
 
-        wlan_seci_gpio_pin_init(gdev, "seci_in_low");
+		while (gpio_get_value(info->num) !=  0 && (time < 40)) {
+			usleep(10000);
+			time++;
+			pr_err("%s: waiting time: %d \n", __func__, time);
+		}
+		if (time >= 40) {
+			pr_err("%s: bcm_gpio_set failed\n", __func__);
+			gpio_free(info->num);
+			mutex_unlock(&seci_lock);
+			return -1;
+		}
         info->prop = true;
 
-    } else {
-
+    } else if (state == 0) {
         wlan_seci_gpio_pin_init(gdev, "seci_in_default");
         info->prop = false;
         gpio_free(info->num);
-
     }
+	pr_err(" %s: info->prop= %d \n",__func__, info->prop);
+
 out:
+	mutex_unlock(&seci_lock);
     return ret;
 }
 
@@ -319,6 +335,8 @@ static int bcm_gpio_probe(struct platform_device *pdev)
 
 	vreg_info.wlan_reg = NULL;
 	vreg_info.state = VREG_OFF;
+
+	mutex_init(&seci_lock);
 
 	ret = bcm_wlan_get_resources(pdev, &gpio_wl_en);
 	if (ret)

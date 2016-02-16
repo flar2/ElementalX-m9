@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -181,7 +181,7 @@ static void ufsdbg_setup_fault_injection(struct ufs_hba *hba)
 }
 #endif /* CONFIG_UFS_FAULT_INJECTION */
 
-#define BUFF_LINE_CAPACITY 16
+#define BUFF_LINE_SIZE 16 /* Must be a multiplication of sizeof(u32) */
 #define TAB_CHARS 8
 
 static int ufsdbg_tag_stats_show(struct seq_file *file, void *data)
@@ -209,34 +209,39 @@ static int ufsdbg_tag_stats_show(struct seq_file *file, void *data)
 
 	spin_lock_irqsave(hba->host->host_lock, flags);
 	/* Header */
-	seq_printf(file, " Tag Stat\t\t%s Queue Fullness\n", sep);
+	seq_printf(file, " Tag Stat\t\t%s Number of pending reqs upon issue (Q fullness)\n",
+		sep);
 	for (i = 0; i < TAB_CHARS * (TS_NUM_STATS + 4); i++) {
 		seq_puts(file, "-");
 		if (i == (TAB_CHARS * 3 - 1))
 			seq_puts(file, sep);
 	}
 	seq_printf(file,
-		"\n #\tnum uses\t%s\t #\tAll\t Read\t Write\t Urgent\t Flush\n",
+		"\n #\tnum uses\t%s\t #\tAll\tRead\tWrite\tUrg.R\tUrg.W\tFlush\n",
 		sep);
 
 	/* values */
 	for (i = 0; i < max_depth; i++) {
-		if (ufs_stats->tag_stats[i][0] <= 0 &&
-				ufs_stats->tag_stats[i][1] <= 0 &&
-				ufs_stats->tag_stats[i][2] <= 0 &&
-				ufs_stats->tag_stats[i][3] <= 0 &&
-				ufs_stats->tag_stats[i][4] <= 0)
+		if (ufs_stats->tag_stats[i][TS_TAG] <= 0 &&
+				ufs_stats->tag_stats[i][TS_READ] <= 0 &&
+				ufs_stats->tag_stats[i][TS_WRITE] <= 0 &&
+				ufs_stats->tag_stats[i][TS_URGENT_READ] <= 0 &&
+				ufs_stats->tag_stats[i][TS_URGENT_WRITE] <= 0 &&
+				ufs_stats->tag_stats[i][TS_FLUSH] <= 0)
 			continue;
 
 		is_tag_empty = false;
 		seq_printf(file, " %d\t ", i);
 		for (j = 0; j < TS_NUM_STATS; j++) {
-			seq_printf(file, "%llu\t ", ufs_stats->tag_stats[i][j]);
-			if (j == 0)
-				seq_printf(file, "\t%s\t %d\t%llu\t ", sep, i,
-						ufs_stats->tag_stats[i][j+1] +
-						ufs_stats->tag_stats[i][j+2] +
-						ufs_stats->tag_stats[i][j+3]);
+			seq_printf(file, "%llu\t", ufs_stats->tag_stats[i][j]);
+			if (j != 0)
+				continue;
+			seq_printf(file, "\t%s\t %d\t%llu\t", sep, i,
+				ufs_stats->tag_stats[i][TS_READ] +
+				ufs_stats->tag_stats[i][TS_WRITE] +
+				ufs_stats->tag_stats[i][TS_URGENT_READ] +
+				ufs_stats->tag_stats[i][TS_URGENT_WRITE] +
+				ufs_stats->tag_stats[i][TS_FLUSH]);
 		}
 		seq_puts(file, "\n");
 	}
@@ -436,20 +441,28 @@ exit:
 	return ret;
 }
 
-static void
-ufsdbg_pr_buf_to_std(struct seq_file *file, void *buff, int size, char *str)
+void ufsdbg_pr_buf_to_std(struct ufs_hba *hba, int offset, int num_regs,
+				char *str, void *priv)
 {
 	int i;
 	char linebuf[38];
-	int lines = size/BUFF_LINE_CAPACITY +
-			(size % BUFF_LINE_CAPACITY ? 1 : 0);
+	int size = num_regs * sizeof(u32);
+	int lines = size / BUFF_LINE_SIZE +
+			(size % BUFF_LINE_SIZE ? 1 : 0);
+	struct seq_file *file = priv;
+
+	if (!hba || !file) {
+		pr_err("%s called with NULL pointer\n", __func__);
+		return;
+	}
 
 	for (i = 0; i < lines; i++) {
-		hex_dump_to_buffer(buff + i * BUFF_LINE_CAPACITY,
-				BUFF_LINE_CAPACITY, BUFF_LINE_CAPACITY, 4,
+		hex_dump_to_buffer(hba->mmio_base + offset + i * BUFF_LINE_SIZE,
+				min(BUFF_LINE_SIZE, size), BUFF_LINE_SIZE, 4,
 				linebuf, sizeof(linebuf), false);
-		seq_printf(file, "%s [%x]: %s\n", str, i * BUFF_LINE_CAPACITY,
+		seq_printf(file, "%s [%x]: %s\n", str, i * BUFF_LINE_SIZE,
 				linebuf);
+		size -= BUFF_LINE_SIZE/sizeof(u32);
 	}
 }
 
@@ -459,8 +472,8 @@ static int ufsdbg_host_regs_show(struct seq_file *file, void *data)
 
 	ufshcd_hold(hba, false);
 	pm_runtime_get_sync(hba->dev);
-	ufsdbg_pr_buf_to_std(file, hba->mmio_base, UFSHCI_REG_SPACE_SIZE,
-				"host regs");
+	ufsdbg_pr_buf_to_std(hba, 0, UFSHCI_REG_SPACE_SIZE / sizeof(u32),
+				"host regs", file);
 	pm_runtime_put_sync(hba->dev);
 	ufshcd_release(hba, false);
 	return 0;
@@ -778,12 +791,12 @@ static ssize_t ufsdbg_power_mode_write(struct file *file,
 	struct ufs_hba *hba = file->f_mapping->host->i_private;
 	struct ufs_pa_layer_attr pwr_mode;
 	struct ufs_pa_layer_attr final_pwr_mode;
-	char pwr_mode_str[BUFF_LINE_CAPACITY] = {0};
+	char pwr_mode_str[BUFF_LINE_SIZE] = {0};
 	loff_t buff_pos = 0;
 	int ret;
 	int idx = 0;
 
-	ret = simple_write_to_buffer(pwr_mode_str, BUFF_LINE_CAPACITY,
+	ret = simple_write_to_buffer(pwr_mode_str, BUFF_LINE_SIZE,
 		&buff_pos, ubuf, cnt);
 
 	pwr_mode.gear_rx = pwr_mode_str[idx++] - '0';
@@ -917,6 +930,100 @@ DEFINE_SIMPLE_ATTRIBUTE(ufsdbg_dme_peer_read_ops,
 			ufsdbg_dme_peer_set_attr_id,
 			"%llu\n");
 
+static int ufsdbg_dbg_print_en_read(void *data, u64 *attr_val)
+{
+	struct ufs_hba *hba = data;
+
+	if (!hba)
+		return -EINVAL;
+
+	*attr_val = (u64)hba->ufshcd_dbg_print;
+	return 0;
+}
+
+static int ufsdbg_dbg_print_en_set(void *data, u64 attr_id)
+{
+	struct ufs_hba *hba = data;
+
+	if (!hba)
+		return -EINVAL;
+
+	if (attr_id & ~UFSHCD_DBG_PRINT_ALL)
+		return -EINVAL;
+
+	hba->ufshcd_dbg_print = (u32)attr_id;
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(ufsdbg_dbg_print_en_ops,
+			ufsdbg_dbg_print_en_read,
+			ufsdbg_dbg_print_en_set,
+			"%llu\n");
+
+static ssize_t ufsdbg_req_stats_write(struct file *filp,
+		const char __user *ubuf, size_t cnt, loff_t *ppos)
+{
+	struct ufs_hba *hba = filp->f_mapping->host->i_private;
+	int val;
+	int ret;
+	unsigned long flags;
+
+	ret = kstrtoint_from_user(ubuf, cnt, 0, &val);
+	if (ret) {
+		dev_err(hba->dev, "%s: Invalid argument\n", __func__);
+		return ret;
+	}
+
+	spin_lock_irqsave(hba->host->host_lock, flags);
+	ufshcd_init_req_stats(hba);
+	spin_unlock_irqrestore(hba->host->host_lock, flags);
+	return cnt;
+}
+
+static int ufsdbg_req_stats_show(struct seq_file *file, void *data)
+{
+	struct ufs_hba *hba = (struct ufs_hba *)file->private;
+	int i;
+	unsigned long flags;
+
+	if (!hba)
+		goto exit;
+
+	/* Header */
+	seq_printf(file, "\t%-10s %-10s %-10s %-10s %-10s %-10s",
+		"All", "Write", "Read", "Read(urg)", "Write(urg)", "Flush");
+
+	spin_lock_irqsave(hba->host->host_lock, flags);
+
+	seq_printf(file, "\n%s:\t", "Min");
+	for (i = 0; i < TS_NUM_STATS; i++)
+		seq_printf(file, "%-10llu ", hba->ufs_stats.req_stats[i].min);
+	seq_printf(file, "\n%s:\t", "Max");
+	for (i = 0; i < TS_NUM_STATS; i++)
+		seq_printf(file, "%-10llu ", hba->ufs_stats.req_stats[i].max);
+	seq_printf(file, "\n%s:\t", "Avg.");
+	for (i = 0; i < TS_NUM_STATS; i++)
+		seq_printf(file, "%-10llu ",
+			div64_u64(hba->ufs_stats.req_stats[i].sum,
+				hba->ufs_stats.req_stats[i].count));
+	seq_puts(file, "\n");
+	spin_unlock_irqrestore(hba->host->host_lock, flags);
+
+exit:
+	return 0;
+}
+
+static int ufsdbg_req_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ufsdbg_req_stats_show, inode->i_private);
+}
+
+static const struct file_operations ufsdbg_req_stats_desc = {
+	.open		= ufsdbg_req_stats_open,
+	.read		= seq_read,
+	.write		= ufsdbg_req_stats_write,
+};
+
 void ufsdbg_add_debugfs(struct ufs_hba *hba)
 {
 	if (!hba) {
@@ -939,7 +1046,7 @@ void ufsdbg_add_debugfs(struct ufs_hba *hba)
 	}
 
 	hba->debugfs_files.tag_stats =
-		debugfs_create_file("tag_stats", S_IRUSR,
+		debugfs_create_file("tag_stats", S_IRUSR | S_IWUSR,
 					   hba->debugfs_files.debugfs_root, hba,
 					   &ufsdbg_tag_stats_fops);
 	if (!hba->debugfs_files.tag_stats) {
@@ -949,7 +1056,7 @@ void ufsdbg_add_debugfs(struct ufs_hba *hba)
 	}
 
 	hba->debugfs_files.err_stats =
-		debugfs_create_file("err_stats", S_IRUSR,
+		debugfs_create_file("err_stats", S_IRUSR | S_IWUSR,
 					   hba->debugfs_files.debugfs_root, hba,
 					   &ufsdbg_err_stats_fops);
 	if (!hba->debugfs_files.err_stats) {
@@ -1022,7 +1129,32 @@ void ufsdbg_add_debugfs(struct ufs_hba *hba)
 		goto err;
 	}
 
+	hba->debugfs_files.dbg_print_en =
+		debugfs_create_file("dbg_print_en", S_IRUSR | S_IWUSR,
+				    hba->debugfs_files.debugfs_root, hba,
+				    &ufsdbg_dbg_print_en_ops);
+	if (!hba->debugfs_files.dbg_print_en) {
+		dev_err(hba->dev,
+			"%s:  failed create dbg_print_en debugfs entry\n",
+			__func__);
+		goto err;
+	}
+
+	hba->debugfs_files.req_stats =
+		debugfs_create_file("req_stats", S_IRUSR | S_IWUSR,
+			hba->debugfs_files.debugfs_root, hba,
+			&ufsdbg_req_stats_desc);
+	if (!hba->debugfs_files.req_stats) {
+		dev_err(hba->dev,
+			"%s:  failed create req_stats debugfs entry\n",
+			__func__);
+		goto err;
+	}
+
 	ufsdbg_setup_fault_injection(hba);
+
+	if (hba->vops && hba->vops->add_debugfs)
+		hba->vops->add_debugfs(hba, hba->debugfs_files.debugfs_root);
 
 	return;
 
@@ -1035,6 +1167,8 @@ err_no_root:
 
 void ufsdbg_remove_debugfs(struct ufs_hba *hba)
 {
+	if (hba->vops && hba->vops->remove_debugfs)
+		hba->vops->remove_debugfs(hba);
 	debugfs_remove_recursive(hba->debugfs_files.debugfs_root);
 	kfree(hba->ufs_stats.tag_stats);
 

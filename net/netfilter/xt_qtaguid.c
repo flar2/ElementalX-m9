@@ -1759,8 +1759,19 @@ static int qtaguid_ctrl_proc_show(struct seq_file *m, void *v)
 			 uid,
 			 sock_tag_entry->pid
 			);
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		if(likely(sock_tag_entry->socket->file)) {
+			f_count = atomic_long_read(
+			&sock_tag_entry->socket->file->f_count);
+		}else{
+			pr_warn("qtaguid:%s: socket->file is null, read from sk->sk_socket.\n", __func__);
+			f_count = atomic_long_read(
+				&sock_tag_entry->sk->sk_socket->file->f_count);
+		}
+#else
 		f_count = atomic_long_read(
 			&sock_tag_entry->socket->file->f_count);
+#endif
 		seq_printf(m, "sock=%p tag=0x%llx (uid=%u) pid=%u "
 			   "f_count=%lu\n",
 			   sock_tag_entry->sk,
@@ -2079,7 +2090,20 @@ static int ctrl_cmd_tag(const char *input)
 			 "st@%p ...->f_count=%ld\n",
 			 input, el_socket->sk, sock_tag_entry,
 			 atomic_long_read(&el_socket->file->f_count));
+
+		
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		if(likely(sock_tag_entry->socket->file))
+			sockfd_put(sock_tag_entry->socket);
+		else{
+			pr_warn("qtaguid:%s: socket->file is freed, so put el_socket.\n", __func__);
+			sockfd_put(el_socket);
+		}
+#else
 		sockfd_put(sock_tag_entry->socket);
+#endif
+		
+
 		prev_tag_ref_entry = lookup_tag_ref(sock_tag_entry->tag,
 						    &uid_tag_data_entry);
 		BUG_ON(IS_ERR_OR_NULL(prev_tag_ref_entry));
@@ -2199,7 +2223,20 @@ static int ctrl_cmd_untag(const char *input)
 	spin_unlock_bh(&uid_tag_data_tree_lock);
 	tag_ref_entry->num_sock_tags--;
 	spin_unlock_bh(&sock_tag_list_lock);
+
+	
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+	if(likely(sock_tag_entry->socket->file))
+		sockfd_put(sock_tag_entry->socket);
+	else{
+		pr_warn("qtaguid:%s: socket->file is freed, so put el_socket.\n", __func__);
+		sockfd_put(el_socket);
+	}
+#else
 	sockfd_put(sock_tag_entry->socket);
+#endif
+	
+
 	CT_DEBUG("qtaguid: ctrl_untag(%s): done. st@%p ...->f_count=%ld\n",
 		 input, sock_tag_entry,
 		 atomic_long_read(&el_socket->file->f_count) - 1);

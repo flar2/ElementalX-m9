@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -768,6 +768,8 @@ static int subsys_powerup(const struct subsys_desc *subsys)
 
 	if (subsys->stop_ack_irq)
 		INIT_COMPLETION(d->stop_ack);
+
+	d->desc.fw_name = subsys->fw_name;
 	ret = pil_boot(&d->desc);
 
 	return ret;
@@ -781,6 +783,13 @@ static int subsys_ramdump(int enable, const struct subsys_desc *subsys)
 		return 0;
 
 	return pil_do_ramdump(&d->desc, d->ramdump_dev);
+}
+
+static void subsys_free_memory(const struct subsys_desc *subsys)
+{
+	struct pil_tz_data *d = subsys_to_data(subsys);
+
+	pil_free_memory(&d->desc);
 }
 
 static void subsys_crash_shutdown(const struct subsys_desc *subsys)
@@ -829,6 +838,11 @@ static irqreturn_t subsys_wdog_bite_irq_handler(int irq, void *dev_id)
 #endif
 
 	pr_err("Watchdog bite received from %s!\n", d->subsys_desc.name);
+
+	if (d->subsys_desc.system_debug &&
+			!gpio_get_value(d->subsys_desc.err_fatal_gpio))
+		panic("%s: System ramdump requested. Triggering device restart!\n",
+							__func__);
 	subsys_set_crash_status(d->subsys, true);
 	log_failure_reason(d);
 	subsystem_restart_dev(d->subsys);
@@ -913,6 +927,7 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 	d->subsys_desc.shutdown = subsys_shutdown;
 	d->subsys_desc.powerup = subsys_powerup;
 	d->subsys_desc.ramdump = subsys_ramdump;
+	d->subsys_desc.free_memory = subsys_free_memory;
 	d->subsys_desc.crash_shutdown = subsys_crash_shutdown;
 	d->subsys_desc.err_fatal_handler = subsys_err_fatal_intr_handler;
 	d->subsys_desc.wdog_bite_handler = subsys_wdog_bite_irq_handler;
@@ -932,17 +947,40 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 	}
 
 #if defined(CONFIG_HTC_FEATURES_SSR)
-	if(!strcmp(d->desc.name, "adsp")) {
+    if(!strcmp(d->desc.name, "adsp")) {
 #if defined(CONFIG_HTC_FEATURES_SSR_LPASS_ENABLE)
-		subsys_set_restart_level(d->subsys, RESET_SUBSYS_COUPLED);
-#else
-		if (get_kernel_flag() & KERNEL_FLAG_ENABLE_SSR_LPASS)
+		if (get_kernel_flag() & (KERNEL_FLAG_ENABLE_SSR_LPASS)) {
+			pr_info("%s: CONFIG_HTC_FEATURES_SSR_LPASS_ENABLE, KERNEL_FLAG_ENABLE_SSR_LPASS, RESET_SOC.\n", __func__);
+			subsys_set_restart_level(d->subsys, RESET_SOC);
+			subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		} else {
+			pr_info("%s: CONFIG_HTC_FEATURES_SSR_LPASS_ENABLE, RESET_SUBSYS_COUPLED.\n", __func__);
 			subsys_set_restart_level(d->subsys, RESET_SUBSYS_COUPLED);
+			if (get_radio_flag() & BIT(3))
+				subsys_set_enable_ramdump(d->subsys, ENABLE_RAMDUMP);
+			else
+				subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		}
+#else
+		if (get_kernel_flag() & (KERNEL_FLAG_ENABLE_SSR_LPASS)) {
+			pr_info("%s: KERNEL_FLAG_ENABLE_SSR_LPASS, RESET_SUBSYS_COUPLED.\n", __func__);
+			subsys_set_restart_level(d->subsys, RESET_SUBSYS_COUPLED);
+			if (get_radio_flag() & BIT(3))
+				subsys_set_enable_ramdump(d->subsys, ENABLE_RAMDUMP);
+			else
+				subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		} else {
+			pr_info("%s: RESET_SOC.\n", __func__);
+			subsys_set_restart_level(d->subsys, RESET_SOC);
+			subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		}
 #endif
 	}
 
-	if(!strcmp(htc_get_bootmode(),"factory2") || !strcmp(htc_get_bootmode(),"ftm"))
+	if(!strcmp(htc_get_bootmode(),"factory2") || !strcmp(htc_get_bootmode(),"ftm")) {
 		subsys_set_restart_level(d->subsys, RESET_SOC);
+		subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+	}
 #endif
 
 	return 0;

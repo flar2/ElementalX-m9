@@ -162,7 +162,7 @@ static int do_hash(uint8_t *input_buf, uint32_t type, uint32_t mask)
     sg_init_table(sg, 1);
     sg_set_buf(&sg[0], input_buf, 32);
 
-    crypto_hash_digest(&desc, sg, 32, tmp);
+    err = crypto_hash_digest(&desc, sg, 32, tmp);
     memcpy(input_buf, tmp, 32);
 	crypto_free_hash(tfm);
 

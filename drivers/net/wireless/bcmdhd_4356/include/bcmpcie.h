@@ -22,7 +22,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: bcmpcie.h 497456 2014-08-19 15:06:33Z $
+ * $Id: bcmpcie.h 546977 2015-04-07 06:34:52Z $
  */
 
 #ifndef	_bcmpcie_h_
@@ -176,6 +176,9 @@ typedef struct {
 #define H2D_HOST_D3_INFORM	0x00000001
 #define H2D_HOST_DS_ACK		0x00000002
 #define H2D_HOST_CONS_INT	0x80000000	
+
+#define H2D_HOST_D0_INFORM_IN_USE	0x00000008
+#define H2D_HOST_D0_INFORM		0x00000010
 
 #define D2H_DEV_D3_ACK		0x00000001
 #define D2H_DEV_DS_ENTER_REQ	0x00000002

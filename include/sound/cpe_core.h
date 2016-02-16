@@ -71,7 +71,7 @@ struct wcd_cpe_lsm_lab {
 };
 
 struct cpe_lsm_session {
-	
+	/* sound model related */
 	void *snd_model_data;
 	u8 *conf_levels;
 	void *cmi_reg_handle;

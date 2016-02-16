@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -78,6 +78,11 @@ struct adreno_context {
 	int ticks_index;
 };
 
+/* Flag definitions for flag field in adreno_context */
+
+/* Set when sync timer of cmdbatch belonging to the context times out */
+#define ADRENO_CONTEXT_CMDBATCH_FLAG_FENCE_LOG	BIT(0)
+
 /**
  * enum adreno_context_priv - Private flags for an adreno draw context
  * @ADRENO_CONTEXT_FAULT - set if the context has faulted (and recovered)
@@ -102,7 +107,7 @@ enum adreno_context_priv {
 struct kgsl_context *adreno_drawctxt_create(struct kgsl_device_private *,
 			uint32_t *flags);
 
-int adreno_drawctxt_detach(struct kgsl_context *context);
+void adreno_drawctxt_detach(struct kgsl_context *context);
 
 void adreno_drawctxt_destroy(struct kgsl_context *context);
 

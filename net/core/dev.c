@@ -646,7 +646,7 @@ bool dev_valid_name(const char *name)
 		return false;
 
 	while (*name) {
-		if (*name == '/' || isspace(*name))
+		if (*name == '/' || *name == ':' || isspace(*name))
 			return false;
 		name++;
 	}
@@ -4783,6 +4783,8 @@ static int dev_cpu_callback(struct notifier_block *nfb,
 		else
 			____napi_schedule(sd, napi);
 	}
+
+	oldsd->backlog.state = 0;
 
 	raise_softirq_irqoff(NET_TX_SOFTIRQ);
 	local_irq_enable();

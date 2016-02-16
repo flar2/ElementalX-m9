@@ -16,6 +16,9 @@
 #include "msm_isp_axi_util.h"
 #include <linux/time.h>
 #define SENSOR_ISP_MAX 2
+int g_subcam_SOF = 0;
+extern int g_subcam_vfe_intf;
+extern int g_subcam_no_ack;
 
 #define SRC_TO_INTF(src) \
 	((src < RDI_INTF_0 || src == VFE_AXI_SRC_MAX) ? VFE_PIX_0 : \
@@ -518,6 +521,10 @@ void msm_isp_notify(struct vfe_device *vfe_dev, uint32_t event_type,
 			}
 		}
 		
+		
+		if(vfe_dev->pdev->id == g_subcam_vfe_intf && g_subcam_SOF < 100)
+			g_subcam_SOF ++;
+		
 		vfe_dev->axi_data.src_info[frame_src].frame_id++;
 		if (vfe_dev->axi_data.src_info[frame_src].frame_id == 0)
 			vfe_dev->axi_data.src_info[frame_src].frame_id = 1;
@@ -715,9 +722,8 @@ int msm_isp_request_axi_stream(struct vfe_device *vfe_dev, void *arg)
 	}
 
 	msm_isp_calculate_framedrop(&vfe_dev->axi_data, stream_cfg_cmd);
-	stream_info->vt_enable = stream_cfg_cmd->vt_enable;
-	if (stream_info->vt_enable) {
-		vfe_dev->vt_enable = stream_info->vt_enable;
+	if (stream_cfg_cmd->vt_enable && !vfe_dev->vt_enable) {
+		vfe_dev->vt_enable = stream_cfg_cmd->vt_enable;
 		msm_isp_start_avtimer();
 	}
 	if (stream_info->num_planes > 1) {
@@ -1101,6 +1107,12 @@ static void msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 		buf_event.u.buf_done.buf_idx = buf->buf_idx;
 		buf_event.u.buf_done.output_format =
 			stream_info->runtime_output_format;
+
+		
+		if (buf_event.frame_id < 10 || !(buf_event.frame_id%30))
+			pr_info("%s: ISP_EVENT_BUF_DIVERT Session id %d, Stream id %d, Frame id %d\n",
+				__func__, buf_event.u.buf_done.session_id, buf_event.u.buf_done.stream_id, buf_event.frame_id);
+		
 		msm_isp_send_event(vfe_dev, ISP_EVENT_BUF_DIVERT + stream_idx,
 			&buf_event);
 	} else {
@@ -1111,6 +1123,13 @@ static void msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 		buf_event.u.buf_done.stream_id = stream_info->stream_id;
 		buf_event.u.buf_done.output_format =
 			stream_info->runtime_output_format;
+
+		
+		if ((buf_event.u.buf_done.stream_id != 3 && buf_event.u.buf_done.stream_id <= 6) ||
+			buf_event.frame_id < 10 || !(buf_event.frame_id%30))
+			pr_info("%s: ISP_EVENT_BUF_DONE Session id %d, Stream id %d, Frame id %d\n",
+				__func__, buf_event.u.buf_done.session_id, buf_event.u.buf_done.stream_id, buf_event.frame_id);
+		
 		msm_isp_send_event(vfe_dev, ISP_EVENT_BUF_DONE, &buf_event);
 		vfe_dev->buf_mgr->ops->buf_done(vfe_dev->buf_mgr,
 			buf->bufq_handle, buf->buf_idx, time_stamp, frame_id,
@@ -1248,6 +1267,15 @@ static int msm_isp_axi_wait_for_cfg_done(struct vfe_device *vfe_dev,
 		vfe_dev->axi_data.pipeline_update = camif_update;
 	}
 	spin_unlock_irqrestore(&vfe_dev->shared_data_lock, flags);
+	
+	if(g_subcam_no_ack == 1 && vfe_dev->pdev->id == g_subcam_vfe_intf)
+	{
+		rc = wait_for_completion_interruptible_timeout(
+			&vfe_dev->stream_config_complete,
+			msecs_to_jiffies(100));
+	}
+	else
+	
 	rc = wait_for_completion_timeout(
 		&vfe_dev->stream_config_complete,
 		msecs_to_jiffies(VFE_MAX_CFG_TIMEOUT));

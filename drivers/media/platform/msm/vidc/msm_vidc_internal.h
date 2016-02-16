@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,7 +34,6 @@
 #include <media/msm_media_info.h>
 
 #include "vidc_hfi_api.h"
-#include "vidc_hfi_api.h"
 
 #define MSM_VIDC_DRV_NAME "msm_vidc_driver"
 #define MSM_VIDC_VERSION KERNEL_VERSION(0, 0, 1);
@@ -44,6 +43,7 @@
 #define DEFAULT_WIDTH 1920
 #define MIN_SUPPORTED_WIDTH 32
 #define MIN_SUPPORTED_HEIGHT 32
+#define MAX_SUPPORTED_INSTANCES_COUNT 13
 
 /* Maintains the number of FTB's between each FBD over a window */
 #define DCVS_FTB_WINDOW 32
@@ -200,8 +200,6 @@ struct dcvs_stats {
 	bool is_clock_scaled;
 	int etb_counter;
 	bool is_power_save_mode;
-	bool is_output_buff_added;
-	bool is_input_buff_added;
 	bool is_additional_buff_added;
 };
 
@@ -225,6 +223,7 @@ enum msm_vidc_modes {
 	VIDC_TURBO = 1 << 1,
 	VIDC_THUMBNAIL = 1 << 2,
 	VIDC_NOMINAL = 1 << 3,
+	VIDC_POWER_SAVE = 1 << 4,
 };
 
 struct msm_vidc_core_capability {
@@ -262,6 +261,7 @@ struct msm_vidc_core {
 	struct msm_video_device vdev[MSM_VIDC_MAX_DEVICES];
 	struct v4l2_device v4l2_dev;
 	struct list_head instances;
+	u32 max_supported_instances;
 	struct dentry *debugfs_root;
 	enum vidc_core_state state;
 	struct completion completions[SYS_MSG_END - SYS_MSG_START + 1];
@@ -284,7 +284,7 @@ struct msm_vidc_inst {
 	struct msm_vidc_format *fmts[MAX_PORT_NUM];
 	struct buf_queue bufq[MAX_PORT_NUM];
 	struct msm_vidc_list pendingq;
-	struct msm_vidc_list internalbufs;
+	struct msm_vidc_list scratchbufs;
 	struct msm_vidc_list persistbufs;
 	struct msm_vidc_list pending_getpropq;
 	struct msm_vidc_list outputbufs;

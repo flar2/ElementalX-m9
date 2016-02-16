@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -534,12 +534,28 @@ static struct msm_sensor_ctrl_t *get_sctrl(struct v4l2_subdev *sd)
 
 static void msm_sensor_stop_stream(struct msm_sensor_ctrl_t *s_ctrl)
 {
+	int32_t rc = 0;
 	mutex_lock(s_ctrl->msm_sensor_mutex);
 	if (s_ctrl->sensor_state == MSM_SENSOR_POWER_UP) {
 		s_ctrl->sensor_i2c_client->i2c_func_tbl->i2c_write_table(
 			s_ctrl->sensor_i2c_client, &s_ctrl->stop_setting);
 		kfree(s_ctrl->stop_setting.reg_setting);
 		s_ctrl->stop_setting.reg_setting = NULL;
+		if (s_ctrl->func_tbl->sensor_power_down) {
+			if (s_ctrl->sensordata->misc_regulator)
+				msm_sensor_misc_regulator(s_ctrl, 0);
+
+			rc = s_ctrl->func_tbl->sensor_power_down(s_ctrl);
+			if (rc < 0) {
+				pr_err("%s:%d failed rc %d\n", __func__,
+					__LINE__, rc);
+			}
+			s_ctrl->sensor_state = MSM_SENSOR_POWER_DOWN;
+			CDBG("%s:%d sensor state %d\n", __func__, __LINE__,
+				s_ctrl->sensor_state);
+		} else {
+			pr_err("s_ctrl->func_tbl NULL\n");
+		}
 	}
 	mutex_unlock(s_ctrl->msm_sensor_mutex);
 	return;
@@ -937,6 +953,13 @@ int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		}
 		rc = s_ctrl->func_tbl->sensor_i2c_read_fuseid32(cdata, s_ctrl);
 	break;
+	case CFG_I2C_IOCTL_R_EMMC:
+		if (s_ctrl->func_tbl->sensor_i2c_read_emmc32 == NULL) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = s_ctrl->func_tbl->sensor_i2c_read_emmc32(cdata);
+	break;
 
 	default:
 		rc = -EFAULT;
@@ -1327,6 +1350,13 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		}
 		rc = s_ctrl->func_tbl->sensor_i2c_read_fuseid(cdata, s_ctrl);
 	break;
+	case CFG_I2C_IOCTL_R_EMMC:
+		if (s_ctrl->func_tbl->sensor_i2c_read_emmc == NULL) {
+			rc = -EFAULT;
+			break;
+		}
+		rc = s_ctrl->func_tbl->sensor_i2c_read_emmc(cdata);
+	break;
 	default:
 		rc = -EFAULT;
 		break;
@@ -1508,16 +1538,22 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 	s_ctrl->msm_sd.sd.entity.flags = mount_pos | MEDIA_ENT_FL_DEFAULT;
 
 	rc = camera_init_v4l2(&s_ctrl->pdev->dev, &session_id);
+	
 	if (rc < 0) {
 		pr_err("%s: camera_init_v4l2 failed rc = %d\n", __func__, rc);
 		kfree(s_ctrl->sensordata->power_info.clk_info);
 		kfree(cci_client);
 		return rc;
 	}
+	
 
 	CDBG("%s rc %d session_id %d\n", __func__, rc, session_id);
 	s_ctrl->sensordata->sensor_info->session_id = session_id;
 	s_ctrl->msm_sd.close_seq = MSM_SD_CLOSE_2ND_CATEGORY | 0x3;
+	
+	#if 0
+	msm_sd_register(&s_ctrl->msm_sd);
+	#else
 	rc = msm_sd_register(&s_ctrl->msm_sd);
 	if (rc < 0) {
 		pr_err("%s: msm_sd_register failed rc = %d\n", __func__, rc);
@@ -1525,6 +1561,8 @@ int32_t msm_sensor_platform_probe(struct platform_device *pdev,
 		kfree(cci_client);
 		return rc;
 	}
+	#endif
+	
 
 	msm_sensor_v4l2_subdev_fops = v4l2_subdev_fops;
 #ifdef CONFIG_COMPAT
@@ -1786,4 +1824,14 @@ struct file* msm_fopen(const char* path, int flags, int rights) {
     }
 
     return filp;
+}
+
+uint32_t msm_sensor_get_boardinfo(struct device_node *of_node)
+{
+    uint32_t boardinfo = 0;   
+    if (0 > of_property_read_u32(of_node, "qcom,b3-image", &boardinfo))
+    {
+        boardinfo = 0;
+    }
+    return boardinfo;
 }

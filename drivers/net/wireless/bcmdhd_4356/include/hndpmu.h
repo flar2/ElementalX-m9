@@ -38,4 +38,4 @@ extern void si_sdiod_drive_strength_init(si_t *sih, osl_t *osh, uint32 drivestre
 extern void si_pmu_minresmask_htavail_set(si_t *sih, osl_t *osh, bool set_clear);
 extern void si_pmu_slow_clk_reinit(si_t *sih, osl_t *osh);
 
-#endif 
+#endif /* _hndpmu_h_ */

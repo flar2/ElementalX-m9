@@ -69,7 +69,7 @@ int32_t msm_led_flash_create_v4lsubdev(struct platform_device *pdev, void *data)
 		return -EINVAL;
 	}
 
-	/* Initialize sub device */
+	
 	v4l2_subdev_init(&fctrl->msm_sd.sd, &msm_flash_subdev_ops);
 	v4l2_set_subdevdata(&fctrl->msm_sd.sd, fctrl);
 
@@ -105,7 +105,7 @@ int32_t msm_led_i2c_flash_create_v4lsubdev(void *data)
 		return -EINVAL;
 	}
 
-	/* Initialize sub device */
+	
 	v4l2_subdev_init(&fctrl->msm_sd.sd, &msm_flash_subdev_ops);
 	v4l2_set_subdevdata(&fctrl->msm_sd.sd, fctrl);
 

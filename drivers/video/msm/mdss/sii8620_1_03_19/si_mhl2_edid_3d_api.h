@@ -51,9 +51,9 @@ struct edid_parse_data_t {
 	struct _3D_mask_t *p_3d_mask;
 	union _3D_structure_and_detail_entry_u *p_three_d;
 	uint8_t *p_3d_limit;
-	
+	/* counter for initial EDID parsing, persists afterwards */
 	uint8_t num_video_data_blocks;
-	
+	/* counter for 3D write burst parsing. */
 	uint8_t video_data_block_index;
 	uint8_t burst_entry_count_3d_vic;
 	uint8_t vic_2d_index;
@@ -63,22 +63,22 @@ struct edid_parse_data_t {
 	uint8_t cea_861_dtd_index;
 	uint8_t num_vesa_timing_dtds;
 	uint8_t num_cea_861_timing_dtds;
-	
+	/* maximum number of audio descriptors */
 	struct CEA_short_audio_descriptor_t
 		audio_descriptors[MAX_A_DESCRIPTORS];
-	
+	/* maximum number of speaker configurations */
 	uint8_t speaker_alloc[MAX_SPEAKER_CONFIGURATIONS];
-	
+	/* "1" if DTV monitor underscans IT video formats by default */
 	bool underscan;
-	bool basic_audio;	
-	bool YCbCr_4_4_4;	
-	bool YCbCr_4_2_2;	
-	bool HDMI_sink;		
-	
+	bool basic_audio;	/* Sink supports Basic Audio */
+	bool YCbCr_4_4_4;	/* Sink supports YCbCr 4:4:4 */
+	bool YCbCr_4_2_2;	/* Sink supports YCbCr 4:2:2 */
+	bool HDMI_sink;		/* "1" if HDMI signature found */
+	/* CEC Physical address. See HDMI 1.3 Table 8-6 */
 	uint8_t CEC_A_B;
 	uint8_t CEC_C_D;
 	uint8_t video_capability_flags;
-	
+	/* IEC 61966-2-4 colorimetry support: 1 - xvYCC601; 2 - xvYCC709 */
 	uint8_t colorimetry_support_flags;
 	uint8_t meta_data_profile;
 	bool _3D_supported;

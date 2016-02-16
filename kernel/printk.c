@@ -47,6 +47,7 @@
 #include <linux/utsname.h>
 
 #include <asm/uaccess.h>
+#include <linux/htc_debug_tools.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/printk.h>
@@ -86,7 +87,7 @@ static struct console *exclusive_console;
 
 struct console_cmdline
 {
-	char	name[8];			
+	char	name[16];			
 	int	index;				
 	char	*options;			
 #ifdef CONFIG_A11Y_BRAILLE_CONSOLE
@@ -1284,11 +1285,30 @@ static int syslog_print_all(char __user *buf, int size, bool clear)
 	return len;
 }
 
+#if defined(CONFIG_HTC_DEBUG_BOOTLOADER_LOG)
+static inline int insert_to_buf_ln(char __user *buf, int buf_len, char* str)
+{
+	int len = 0;
+	len = strlen(str)+1;
+	if (buf_len >= len) {
+		memcpy(buf, str, len);
+		buf[len-1] = '\n';
+		return len;
+	}
+	return 0;
+}
+#endif
+
 int do_syslog(int type, char __user *buf, int len, bool from_file)
 {
 	bool clear = false;
 	static int saved_console_loglevel = -1;
 	int error;
+#if defined(CONFIG_HTC_DEBUG_BOOTLOADER_LOG)
+	ssize_t lk_len = 0, lk_len_total = 0;
+#define HB_LAST_TITLE "[HB LAST]"
+#define HB_LOG_TITLE "[HB LOG]"
+#endif
 
 	error = check_syslog_permissions(type, from_file);
 	if (error)
@@ -1338,6 +1358,44 @@ int do_syslog(int type, char __user *buf, int len, bool from_file)
 		}
 		error = syslog_print_all(buf, len, clear);
 		break;
+#if defined(CONFIG_HTC_DEBUG_BOOTLOADER_LOG)
+	
+	case SYSLOG_ACTION_READ_ALL_APPEND_LK:
+		error = -EINVAL;
+		if (!buf || len < 0)
+			goto out;
+		error = 0;
+		if (!len)
+			goto out;
+		if (!access_ok(VERIFY_WRITE, buf, len)) {
+			error = -EFAULT;
+			goto out;
+		}
+
+		lk_len = insert_to_buf_ln(buf, len, HB_LAST_TITLE);
+		len -= lk_len;
+		buf += lk_len;
+		lk_len_total += lk_len;
+
+		lk_len = bldr_last_log_read_once(buf, len);
+		len -= lk_len;
+		buf += lk_len;
+		lk_len_total += lk_len;
+
+		lk_len = insert_to_buf_ln(buf, len, HB_LOG_TITLE);
+		len -= lk_len;
+		buf += lk_len;
+		lk_len_total += lk_len;
+
+		lk_len = bldr_log_read_once(buf, len);
+		len -= lk_len;
+		buf += lk_len;
+		lk_len_total += lk_len;
+
+		error = syslog_print_all(buf, len, clear);
+		error += lk_len_total;
+		break;
+#endif
 	
 	case SYSLOG_ACTION_CLEAR:
 		syslog_print_all(NULL, 0, true);
@@ -2237,6 +2295,8 @@ void register_console(struct console *newcon)
 
 	for (i = 0; i < MAX_CMDLINECONSOLES && console_cmdline[i].name[0];
 			i++) {
+		BUILD_BUG_ON(sizeof(console_cmdline[i].name) !=
+			     sizeof(newcon->name));
 		if (strcmp(console_cmdline[i].name, newcon->name) != 0)
 			continue;
 		if (newcon->index >= 0 &&
@@ -2396,7 +2456,7 @@ void wake_up_klogd(void)
 	preempt_enable();
 }
 
-int printk_sched(const char *fmt, ...)
+int printk_deferred(const char *fmt, ...)
 {
 	unsigned long flags;
 	va_list args;

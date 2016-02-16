@@ -146,7 +146,7 @@ struct htc_charger {
 			 int chg_limit_timer_sub_mask,
 			 int limit_charge_timer_ma);
 #else
-	int (*set_limit_charge_enable)(bool enable);
+	int (*set_limit_charge_enable)(bool enable, int reason, int restrict);
 #endif
 	int (*set_limit_input_current)(bool enable, int reason);
 	int (*set_chg_iusbmax)(int val);
@@ -176,11 +176,14 @@ struct htc_charger {
 	int (*is_charger_error_handle)(void);
 	int (*is_cable_exist_check)(void);
 	int (*usbin_mode_charge)(void);
+	int (*reset_chg_en_when_chg_error)(void);
 	int (*fake_chg_src_detect)(void);
 	int (*calc_max_flash_current)(void);
 	int (*get_cable_type_by_usb_detect)(int *result);
 	int (*prepare_suspend)(void);
 	int (*complete_resume)(void);
+	int (*is_bad_cable_used)(int *result);
+	int (*set_aicl_deglitch_wa_check)(void);
 };
 
 int htc_charger_event_notify(enum htc_charger_event);

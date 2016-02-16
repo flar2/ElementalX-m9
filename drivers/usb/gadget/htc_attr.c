@@ -159,6 +159,9 @@ int htc_usb_enable_function(char *name, int ebl)
 static int usb_disable;
 
 const char * add_usb_radio_debug_function(const char *buff) {
+	USB_INFO("switch to radio debug function:%s\n", buff);
+
+	
 	if (!strcmp(buff, "mtp,adb,mass_storage")) 
 		return "mtp,adb,mass_storage,diag,modem,rmnet";
 	else if (!strcmp(buff, "mtp,adb,mass_storage,acm")) 
@@ -167,10 +170,51 @@ const char * add_usb_radio_debug_function(const char *buff) {
 		return "mtp,mass_storage,diag,modem,rmnet";
 	else if (!strcmp(buff, "mtp,mass_storage,acm")) 
 		return "mtp,mass_storage,diag,modem,rmnet";
+
+	else if (!strcmp(buff, "mtp,adb")) 
+		return "adb,diag,modem,rmnet";
+	else if (!strcmp(buff, "mass_storage,adb")) 
+		return "mass_storage,adb,diag,modem,rmnet";
+	else if (!strcmp(buff, "mass_storage,adb,acm")) 
+		return "mass_storage,adb,diag,modem,rmnet";
+	else if (!strcmp(buff, "mass_storage")) 
+		return "mass_storage,diag,modem,rmnet";
+
+	else if (!strcmp(buff, "rndis,adb")) 
+		return "rndis,adb,diag,modem";
+	else if (!strcmp(buff, "rndis")) 
+		return "rndis,diag,modem";
+
+	
 	else if (!strcmp(buff, "ffs,acm")) 
 		return "adb,diag,modem,acm";
+
 	USB_INFO("switch to radio debug function:%s\n", buff);
 	return buff;
+}
+
+const char * change_charging_to_ums(const char *buff) {
+	if (!strcmp(buff, "charging"))
+		return "mass_storage";
+	else if (!strcmp(buff, "adb"))
+		return "mass_storage,adb";
+	return buff;
+}
+
+void change_charging_pid_to_ums(struct usb_composite_dev *cdev) {
+	switch(cdev->desc.idProduct) {
+		case 0x0f0b:
+			cdev->desc.idVendor = 0x0bb4;
+			cdev->desc.idProduct = 0x0ff9;
+			break;
+		case 0x0c81:
+			cdev->desc.idVendor = 0x0bb4;
+			cdev->desc.idProduct = 0x0f86;
+			break;
+		default:
+			break;
+	}
+	return ;
 }
 
 void check_usb_vid_pid(struct usb_composite_dev *cdev) {
@@ -190,6 +234,23 @@ void check_usb_vid_pid(struct usb_composite_dev *cdev) {
 		case 0x0f15:
 			cdev->desc.idVendor = 0x0bb4;
 			cdev->desc.idProduct = 0x0f17;
+			break;
+		case 0x0f86:
+			cdev->desc.idVendor = 0x0bb4;
+			cdev->desc.idProduct = 0x0fd8;
+			break;
+		case 0x0ff9:
+			cdev->desc.idVendor = 0x0bb4;
+			cdev->desc.idProduct = 0x0fd9;
+			break;
+		case 0x0ffc:
+			cdev->desc.idVendor = 0x0bb4;
+			cdev->desc.idProduct = 0x0f83;
+			break;
+		case 0x0ffe:
+			cdev->desc.idVendor = 0x0bb4;
+			cdev->desc.idProduct = 0x0f82;
+			break;
 		default:
 			break;
 	}
@@ -260,7 +321,6 @@ static ssize_t store_dummy_usb_serial_number(struct device *dev, struct device_a
 	android_set_serialno(serial_string);
 	if (android_dev->connected)
 		schedule_delayed_work(&cdev->request_reset,REQUEST_RESET_DELAYED);
-	cdev->do_serial_number_change = true;
 	manual_serialno_flag = 1;
 	return size;
 }
@@ -284,7 +344,6 @@ static ssize_t show_os_type(struct device *dev,
 	return length;
 }
 
-static int usb_ats = 0;
 static ssize_t store_ats(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {

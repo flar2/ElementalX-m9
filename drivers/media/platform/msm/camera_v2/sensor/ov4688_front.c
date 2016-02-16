@@ -60,6 +60,52 @@ static struct msm_sensor_power_setting ov4688_power_setting[] = {
 
 };
 
+static struct msm_sensor_power_setting ov4688_power_setting_XC[] = {
+	{
+		.seq_type = SENSOR_VREG,
+		.seq_val = CAM_VIO,
+		.config_val = 1,
+		.delay = 3,
+	},
+	{
+		.seq_type = SENSOR_VREG,
+		.seq_val = CAM_VANA,
+		.config_val = 1,
+		.delay = 0,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_STANDBY,
+		.config_val = GPIO_OUT_HIGH,
+		.delay = 3,
+	},
+	{
+		.seq_type = SENSOR_VREG,
+		.seq_val = CAM_VDIG,
+		.config_val = 1,
+		.delay = 3,
+	},
+	{
+		.seq_type = SENSOR_GPIO,
+		.seq_val = SENSOR_GPIO_RESET,
+		.config_val = GPIO_OUT_HIGH,
+		.delay = 5,
+	},
+	{
+		.seq_type = SENSOR_CLK,
+		.seq_val = SENSOR_CAM_MCLK,
+		.config_val = 0,
+		.delay = 5,
+	},
+	{
+		.seq_type = SENSOR_I2C_MUX,
+		.seq_val = 0,
+		.config_val = 0,
+		.delay = 5,
+	},
+
+};
+
 static struct v4l2_subdev_info ov4688_subdev_info[] = {
 	{
 		.code   = V4L2_MBUS_FMT_SBGGR10_1X10,
@@ -154,7 +200,18 @@ static int32_t ov4688_platform_probe(struct platform_device *pdev)
 	const struct of_device_id *match;
 	match = of_match_device(ov4688_dt_match, &pdev->dev);
 	if (match)
+	
+	{
+		if(msm_sensor_get_boardinfo(pdev->dev.of_node))
+		{
+			ov4688_s_ctrl.power_setting_array.power_setting = ov4688_power_setting_XC;
+			ov4688_s_ctrl.power_setting_array.size = ARRAY_SIZE(ov4688_power_setting_XC);
+		}
+	
 		rc = msm_sensor_platform_probe(pdev, match->data);
+	
+	}
+	
 	else {
 		pr_err("%s:%d match is null\n", __func__, __LINE__);
 		rc = -EINVAL;

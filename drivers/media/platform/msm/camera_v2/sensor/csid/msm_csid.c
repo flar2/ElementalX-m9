@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -274,7 +274,7 @@ static int msm_csid_init(struct csid_device *csid_dev, uint32_t *csid_version)
 
 	pr_info("%s: CSID_VERSION = 0x%x\n", __func__,
 		csid_dev->ctrl_reg->csid_reg.csid_version);
-	/* power up */
+	
 	if (csid_dev->ctrl_reg->csid_reg.csid_version < CSID_VERSION_V22) {
 		rc = msm_camera_config_vreg(&csid_dev->pdev->dev,
 			csid_8960_vreg_info, ARRAY_SIZE(csid_8960_vreg_info),
@@ -648,15 +648,16 @@ static int32_t msm_csid_cmd32(struct csid_device *csid_dev, void __user *arg)
 				rc = -ENOMEM;
 				break;
 			}
-			/* msm_camera_csid_vc_cfg size
-			 * does not change in COMPAT MODE
-			 */
 			if (copy_from_user(&vc_cfg32,
 				(void *)compat_ptr(lut_par32.vc_cfg[i]),
 				sizeof(vc_cfg32))) {
 				pr_err("%s: %d failed\n", __func__, __LINE__);
-				for (; i >= 0; i--)
+				for (i--; i >= 0; i--) {
 					kfree(csid_params.lut_params.vc_cfg[i]);
+					csid_params.lut_params.vc_cfg[i] = NULL;
+				}
+				kfree(vc_cfg);
+				vc_cfg = NULL;
 				rc = -EFAULT;
 				break;
 			}

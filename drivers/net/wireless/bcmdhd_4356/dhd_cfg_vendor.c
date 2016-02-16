@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_cfg_vendor.c 495605 2014-08-07 18:41:34Z $
+ * $Id: dhd_cfg_vendor.c 584167 2015-09-04 07:58:54Z $
  */
 
 #include <linuxver.h>
@@ -29,13 +29,13 @@
 #include <net/netlink.h>
 
 #include <bcmutils.h>
-#include <wl_cfg80211.h>
-#include <wl_cfgvendor.h>
 #include <dngl_stats.h>
 #include <dhd.h>
 #include <dhd_dbg.h>
 #include <dhdioctl.h>
 #include <brcm_nl80211.h>
+#include <wl_cfg80211.h>
+#include <wl_cfgvendor.h>
 
 #ifdef VENDOR_EXT_SUPPORT
 static int dhd_cfgvendor_priv_string_handler(struct wiphy *wiphy,

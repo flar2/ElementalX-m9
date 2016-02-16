@@ -25,6 +25,12 @@
 #define HOTPLUG_ON_MAGIC				0xACBDBB00
 
 #define S2H(c)		cpu_sw_idx_to_hw_idx(c)
+/* Translate kernel cpu index to hw cpu index according to MPIDR.
+ * Ex: for big-Little clusters, big core 0 is kernel core 0,
+ *     but its MPIDR might be 0x101.
+ *     TZ or asm codes will simply translate its index to Aff1*MAX_CPUS_PER_CLUSTER + CPUID.
+ * To be consistent, we use hw cpu index for all scenarios.
+ */
 static inline int cpu_sw_idx_to_hw_idx(int cpu)
 {
 	uint32_t cluster_id = MPIDR_AFFINITY_LEVEL(cpu_logical_map(cpu), 1);
@@ -135,6 +141,10 @@ void set_msm_watchdog_en_footprint(int enable)
 	mb();
 }
 
+/* UTC time depends on linux timekeeping.
+ * timekeeping will be suspended during suspend flow.
+ * We need to handle this footprint separatedly.
+ */
 void set_msm_watchdog_pet_time_utc(void)
 {
 	struct timespec ts;
@@ -159,6 +169,10 @@ void set_msm_watchdog_pet_footprint(void __iomem *sleep_clk_base)
 
 	do_div(timestamp_ms, NSEC_PER_MSEC);
 
+	/* If watchdog disable is deferred to actual suspend call,
+	 * there will WARN message while calling getnstimeofday
+	 * because timekeeping is suspended during syscore suspend flow.
+	 */
 	if (likely(!timekeeping_suspended)) {
 		set_msm_watchdog_pet_time_utc();
 	}
@@ -179,11 +193,21 @@ void set_acpuclk_footprint(unsigned cpu, unsigned state)
 	mb();
 }
 
+/* for those cpu clks integrated to clk subsystem,
+ * cpu index is not passed directly and several cpus share one clk.
+ * use this function to set footprint.
+ *
+ * `clk_get_cpu_idx' must be implemented in clock-cpu-<chipset>.c
+ * to map clk to effective cpu index.
+ *
+ * clk_get_cpu_idx returns positive number as cpu index,
+ * otherwise negative number for a non-cpu clk.
+ */
 void set_acpuclk_footprint_by_clk(struct clk* c, unsigned state)
 {
 	int cpu = clk_get_cpu_idx(c);
 
-	
+	/* not a valid cpu clk */
 	if (cpu < 0)
 		return;
 
@@ -192,7 +216,7 @@ void set_acpuclk_footprint_by_clk(struct clk* c, unsigned state)
 		return;
 	}
 
-	
+	/* now we can set desired footprint. */
 	set_acpuclk_footprint(cpu, state);
 }
 
@@ -221,7 +245,7 @@ void set_acpuclk_cpu_freq_footprint_by_clk(enum FREQ_TYPE type, struct clk *c, u
 {
 	int cpu = clk_get_cpu_idx(c);
 
-	
+	/* not a valid cpu clk */
 	if (cpu < 0)
 		return;
 
@@ -253,13 +277,21 @@ void set_acpuclk_l2_freq_footprint_by_clk(enum FREQ_TYPE type, struct clk* c, un
 {
 	int l2 = clk_get_l2_idx(c);
 
-	
+	/* not a valid l2 clk */
 	if (l2 < 0)
 		return;
 
 	set_acpuclk_l2_freq_footprint(type, khz);
 }
 
+/* Status Check:
+ *          from_idle, notify_rpm, core
+ *       PC:    false,       true,    0
+ *  IDLE PC:     true,       true,  0-3
+ *      SPC:    false,      false,  0-3
+ * IDLE SPC:     true,      false,  0-3
+ *  HOTPLUG:    false,       true,  1-3
+ */
 void init_cpu_foot_print(unsigned cpu, bool from_idle, bool notify_rpm)
 {
 	unsigned state = CPU_FOOT_PRINT_MAGIC_HOTPLUG;
@@ -365,11 +397,17 @@ void set_hotplug_on_footprint(unsigned cpu, unsigned value)
 	mb();
 }
 
+/*
+ * This function will initialize cpu footprint on booting a device.
+ * Core0 is on already to execute these codes.
+ * We consider it exiting from PC, because core0 is never hot-plugged.
+ * All cores except core0 are taken from reset state, so it goes through hotplug path.
+ */
 static int __init boot_init_footprint(void)
 {
 	int i;
 
-	
+	/* we cannot guarantee order of the same level initcall. */
 	if (!mnemosyne_is_ready()) {
 		int ret = mnemosyne_early_init();
 		if (ret != 0) {
@@ -382,8 +420,8 @@ static int __init boot_init_footprint(void)
 		MNEMOSYNE_SET_I(kernel_footprint_cpu, S2H(i), CPU_FOOT_PRINT_MAGIC_HOTPLUG | 0x1);
 		MNEMOSYNE_SET_I(kernel_exit_counter_from_cpu, S2H(i), 0x0);
 	}
-	
-	
+	/* 0xb is the last footprint of power collapse path. */
+	/* others are still off now, they are considered as hotplugged cpus. */
 	MNEMOSYNE_SET_I(kernel_footprint_cpu, S2H(0), CPU_FOOT_PRINT_MAGIC | 0xb);
 	mb();
 	pr_info("%s: htc footprint init done.\n", __func__);

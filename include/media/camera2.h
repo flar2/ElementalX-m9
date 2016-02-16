@@ -146,9 +146,9 @@ struct msm_eeprom_memory_map_t {
 
 struct msm_eeprom_memory_block_t {
 	struct msm_eeprom_memory_map_t *map;
-	uint32_t num_map;	/* number of map blocks */
+	uint32_t num_map;	
 	uint8_t *mapdata;
-	uint32_t num_data;	/* size of total mapdata */
+	uint32_t num_data;	
 };
 
 struct msm_eeprom_cmm_t {

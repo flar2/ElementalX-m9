@@ -56,5 +56,6 @@ endif
 
 ifneq ($(wildcard $(KBUILD_SRC)/../mfg/.patched),)
 EXTRA_CFLAGS += -DMFG_FTM_NFC_CPLC
+EXTRA_CFLAGS += -DMFG_WITHOUT_FN_CONTROL
 endif
 #NFC --

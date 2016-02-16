@@ -129,6 +129,15 @@ SYSCALL_DEFINE1(syncfs, int, fd)
 	return ret;
 }
 
+extern int cancel_fsync;
+static int async_fsync(struct file *file)
+{
+	struct inode *inode = file->f_mapping->host;
+	struct super_block *sb = inode->i_sb;
+
+	return (sb->fsync_flags & FLAG_ASYNC_FSYNC) && cancel_fsync;
+}
+
 /**
  * vfs_fsync_range - helper to sync a range of data & metadata to disk
  * @file:		file to sync
@@ -146,6 +155,10 @@ int vfs_fsync_range(struct file *file, loff_t start, loff_t end, int datasync)
 
 	if (!file->f_op || !file->f_op->fsync)
 		return -EINVAL;
+
+	if (async_fsync(file))
+		return 0;
+
 	trace_vfs_fsync(file);
 	err = file->f_op->fsync(file, start, end, datasync);
 	trace_vfs_fsync_done(file);

@@ -18,8 +18,15 @@
 
 #include "si_app_devcap.h"
 
+/*
+ * This file contains SiI8620 driver and device configuration information
+ *
+ */
 
 
+/*
+ * Determine XDEVCAPS configurations allowed by this driver
+ */
 
 #if (INCLUDE_HID == 1)
 #define XDEVCAP_VAL_DEV_ROLES		(MHL_XDC_DEV_HOST | MHL_XDC_HID_HOST)
@@ -29,4 +36,4 @@
 
 #define XDEVCAP_VAL_LOG_DEV_MAPX	0
 
-#endif 
+#endif /* if !defined(MHL_DEVICE_CFG_H) */

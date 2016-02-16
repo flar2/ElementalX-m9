@@ -26,8 +26,10 @@
 #include "audio_utils.h"
 
 
+/* Buffer with meta*/
 #define PCM_BUF_SIZE		(4096 + sizeof(struct meta_in))
 
+/* Maximum 5 frames in buffer with meta */
 #define FRAME_SIZE		(1 + ((1536+sizeof(struct meta_out_dsp)) * 5))
 
 #define AAC_FORMAT_ADTS 65535
@@ -46,7 +48,7 @@ static long aac_in_ioctl_shared(struct file *file, unsigned int cmd, void *arg)
 
 		enc_cfg = audio->enc_cfg;
 		aac_config = audio->codec_cfg;
-		
+		/* ENCODE CFG (after new set of API's are published )bharath*/
 		pr_debug("%s:session id %d: default buf alloc[%d]\n", __func__,
 				audio->ac->session, audio->buf_alloc);
 		if (audio->enabled == 1) {
@@ -232,6 +234,11 @@ static long aac_in_ioctl_shared(struct file *file, unsigned int cmd, void *arg)
 		}
 
 		min_bitrate = ((cfg->sample_rate)*(cfg->channels))/2;
+		/* This calculation should be based on AAC mode. But we cannot
+		 * get AAC mode in this setconfig. min_bitrate's logical max
+		 * value is 24000. So if min_bitrate is higher than 24000,
+		 * choose 24000.
+		 */
 		if (min_bitrate > 24000)
 			min_bitrate = 24000;
 		max_bitrate = 6*(cfg->sample_rate)*(cfg->channels);
@@ -376,7 +383,7 @@ struct msm_audio_aac_enc_config32 {
 struct msm_audio_aac_config32 {
 	s16 format;
 	u16 audio_object;
-	u16 ep_config;       
+	u16 ep_config;       /* 0 ~ 3 useful only obj = ERLC */
 	u16 aac_section_data_resilience_flag;
 	u16 aac_scalefactor_data_resilience_flag;
 	u16 aac_spectral_data_resilience_flag;
@@ -445,6 +452,9 @@ static long aac_in_compat_ioctl(struct file *file, unsigned int cmd,
 		cfg.sample_rate = cfg_32.sample_rate;
 		cfg.bit_rate = cfg_32.bit_rate;
 		cfg.stream_format = cfg_32.stream_format;
+		/* The command should be converted from 32 bit to normal
+		 * before the shared ioctl is called as shared ioctl
+		 * can process only normal commands */
 		cmd = AUDIO_SET_AAC_ENC_CONFIG;
 		rc = aac_in_ioctl_shared(file, cmd, &cfg);
 		if (rc)
@@ -539,7 +549,7 @@ static int aac_in_open(struct inode *inode, struct file *file)
 				"driver\n", __func__);
 		return -ENOMEM;
 	}
-	
+	/* Allocate memory for encoder config param */
 	audio->enc_cfg = kzalloc(sizeof(struct msm_audio_aac_enc_config),
 				GFP_KERNEL);
 	if (audio->enc_cfg == NULL) {
@@ -568,6 +578,9 @@ static int aac_in_open(struct inode *inode, struct file *file)
 	init_waitqueue_head(&audio->read_wait);
 	init_waitqueue_head(&audio->write_wait);
 
+	/* Settings will be re-config at AUDIO_SET_CONFIG,
+	* but at least we need to have initial config
+	*/
 	audio->str_cfg.buffer_size = FRAME_SIZE;
 	audio->str_cfg.buffer_count = FRAME_NUM;
 	audio->min_frame_size = 1536;
@@ -575,7 +588,7 @@ static int aac_in_open(struct inode *inode, struct file *file)
 	enc_cfg->sample_rate = 8000;
 	enc_cfg->channels = 1;
 	enc_cfg->bit_rate = 16000;
-	enc_cfg->stream_format = 0x00;
+	enc_cfg->stream_format = 0x00;/* 0:ADTS, 3:RAW */
 	audio->buf_cfg.meta_info_enable = 0x01;
 	audio->buf_cfg.frames_per_buf   = 0x01;
 	audio->pcm_cfg.buffer_count = PCM_BUF_COUNT;
@@ -597,7 +610,7 @@ static int aac_in_open(struct inode *inode, struct file *file)
 		kfree(audio);
 		return -ENOMEM;
 	}
-	
+	/* open aac encoder in tunnel mode */
 	audio->buf_cfg.frames_per_buf = 0x01;
 
 	if ((file->f_mode & FMODE_WRITE) &&
@@ -626,7 +639,7 @@ static int aac_in_open(struct inode *inode, struct file *file)
 			rc = -ENODEV;
 			goto fail;
 		}
-		
+		/* register for tx overflow (valid for tunnel mode only) */
 		rc = q6asm_reg_tx_overflow(audio->ac, 0x01);
 		if (rc < 0) {
 			pr_err("%s:session id %d: TX Overflow registration"
