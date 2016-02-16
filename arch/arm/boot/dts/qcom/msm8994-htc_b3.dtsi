@@ -1,0 +1,679 @@
+/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+#include "msm8994-pinctrl.dtsi"
+#include "msm8994-mtp.dtsi"
+#include "msm8994-htc-common.dtsi"
+#include "msm8994-htc-ramdumpheap.dtsi"
+#include "msm8994-touch-b3.dtsi"
+#include "msm8994-camera-sensor-b3.dtsi"
+#include "msm8994-nfc-b3.dtsi"
+
+/ {
+	model = "HTC Corporation. MSM8994 B3";
+	compatible = "qcom,msm8994-mtp", "qcom,msm8994", "qcom,mtp";
+};
+
+#include "dsi-panel-b3.dtsi"
+
+&mdss_mdp {
+	qcom,mdss-pref-prim-intf = "dsi";
+};
+
+&pmx_mdss {
+	qcom,num-grp-pins = <1>;
+	qcom,pins = <&gp 78>;
+};
+
+&pmx_mdss_te_cmd {
+	qcom,num-grp-pins = <1>;
+	qcom,pins = <&gp 10>;
+};
+
+&pm8994_lvs2 {
+    status = "okay";
+    regulator-always-on;
+};
+
+&mdss_dsi0 {
+	qcom,platform-lane-config = [
+		02 a0 00 00 20 00 00 01 46
+		02 a0 00 00 40 00 00 01 46
+		02 a0 00 40 20 00 00 01 46
+		02 a0 00 40 00 00 00 01 46
+		00 a0 00 80 00 00 00 01 46];
+
+	pinctrl-names = "mdss_default", "mdss_sleep";
+	pinctrl-0 = <&mdss_dsi_active &mdss_te_cmd_active>;
+	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_cmd_suspend>;
+	qcom,dsi-panel-bias-vreg;
+	qcom,platform-reset-gpio = <&msm_gpio 78 0>;
+	vlcmio-supply = <&pm8994_l14>;
+	qcom,panel-supply-entries {
+		qcom,panel-supply-entry@0 {
+			qcom,supply-name = "vlcmio";
+			qcom,supply-post-on-sleep = <2>;	/*sleep 2 ms after turning on 1v8*/
+		};
+	};
+
+};
+
+&mdss_dsi1 {
+	qcom,platform-lane-config = [
+		02 a0 00 00 20 00 00 01 46
+		02 a0 00 00 40 00 00 01 46
+		02 a0 00 40 20 00 00 01 46
+		02 a0 00 40 00 00 00 01 46
+		00 a0 00 80 00 00 00 01 46];
+};
+
+&labibb {
+	status = "ok";
+	qpnp,qpnp-labibb-mode = "lcd";
+};
+
+&mhl_sii8620 {
+	mhl-coc-swing = <0xBE>;
+};
+
+/ {
+	memory {
+		fb_mem_1: fb_1st_region@0 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			reg = <0 0x30000000 0 0x1200000>;
+			label = "fb_mem_1";
+		};
+
+		fb_mem_2: fb_2nd_region@0 {
+			linux,reserve-contiguous-region;
+			linux,reserve-region;
+			reg = <0 0x31200000 0 0x2200000>;
+			label = "fb_mem_2";
+		};
+	};
+};
+
+&soc {
+
+	hsphy0: hsphy@f92f8800 {
+		qcom,hsphy-init = <0x00D0DDE7>;
+		qcom,hsphy-host-init = <0x00D3CCE7>;
+	};
+
+	htc,htc_nc_pins {
+		compatible = "htc,nc_pin";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&b3_nc_pins_in_pd &b3_nc_pins_out_low>;
+	};
+	i2c@f9927000{
+		htc_mcu@72 {
+			compatible = "htc_mcu";
+			reg = <0x72>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <42 0x0>;
+			mcu,intr-gpio  = <&msm_gpio 42 0>;
+			mcu,gs_chip_layout = <1>;
+			mcu,acceleration_axes = <5>;
+			mcu,magnetic_axes = <2>;
+			mcu,gyro_axes = <5>;
+			mcu,Cpu_wake_mcu-gpio = <&msm_gpio 21 0>;
+			mcu,Reset-gpio = <&msm_gpio 16 0>;
+			mcu,Chip_mode-gpio = <&msm_gpio 44 0>;
+			mcu,mcu_status-gpio = <&msm_gpio 11 0>;
+			mcu,als_levels = <4 10 17 86 174 1153 173 3130 4880 65535>;
+			mcu,als_goldl = <0xEE>;
+			mcu,als_goldh = <0x03>;
+			mcu,als_polling = <1>;
+			mcu,als_lux_ratio_n = <43>;	/* Numerator */
+			mcu,als_lux_ratio_d = <50>;	/* Denominator */
+			mcu,ps_thd_add = <0x32>;
+			mcu,ps_thd_fixed = <0x15>;
+			pinctrl-names = "mcu_gpio_init";
+			pinctrl-0 = <&mcu_init>;
+			touch_enable = <1>;
+			vibrate_ms = <25>;
+		};
+
+		htc_mcu_flash@39 {
+			compatible = "htc_mcu_flash";
+			reg = <0x39>;
+		};
+
+		htc_mcu_dload@02 {
+			compatible = "htc_mcu_dload";
+			reg = <0x02>;
+		};
+
+	};
+
+        tlmm_pinmux: pinctrl@fd510000 {
+
+                mcugpio_int {
+                        qcom,pins = <&gp 42>, <&gp 11>, <&gp 16>;
+                        qcom,num-grp-pins = <3>;
+                        qcom,pin-func = <0>;
+                        label = "mcugpio";
+                        mcu_init: mcu_init {
+                                drive-strength = <2>;
+                                bias-disable;
+                                input-enable;
+                        };
+                };
+	};
+
+
+	htc,mdss_dsi_pwrctrl {
+		compatible = "htc,mdss-dsi-pwrctrl";
+		status  = "okay";
+		htc,pwrctrl_proj = <2>;
+	};
+
+	headset_mgr {
+		compatible   = "htc_headset,mgr";
+		pinctrl-names = "headset_gpios";
+		pinctrl-0 = <&headset_gpios>;
+		//mgr,tx_gpio  = <&msm_gpio 0 0>;
+		//mgr,rx_gpio  = <&msm_gpio 96 0>;
+		//mgr,oe_gpio  = <&msm_gpio 0 0>;
+		mgr,bias_gpio  = <&pmi8994_gpios 4 0>;
+		mgr,wire_alt = <2>;
+		mgr,hs_typenum   = <2>;
+		mgr,hs_type      = <2 1>;
+		mgr,adc_max      = <1541 254>;
+		mgr,adc_min      = <255 0>;
+	};
+
+	headset_pmic {
+		compatible = "htc_headset,pmic";
+		interrupt-parent = <&msm_gpio>;
+		hs_pmic,key_gpio 	= <&msm_gpio 96 0x00>;
+		hs_pmic,driver_flag     = <4>;
+		hs_pmic,hpin_gpio       = <&msm_gpio 53 0x00>;
+		hs_pmic,hpin_irq        = <0>;
+		hs_pmic,key_irq         = <0>;
+		hs_pmic,key_enable_gpio = <0>;
+		hs_pmic,adc_mic         = <0>;
+		hs_pmic,adc_remote      = <0 56 57 146 147 339>;
+		hs_pmic,adc_channel	= <19>;		//MPP4
+		hs_pmic,adc_mpp         = <0>;
+		hs_pmic,adc_amux        = <0>;
+		hs_pmic,hs_controller   = <0>;
+		hs_pmic,hs_switch       = <0>;
+		qcom,headset-vadc	= <&pm8994_vadc>;
+	};
+
+//	headset_onewire {
+//		compatible = "htc_headset,1wire";
+//		hs_1wire,tx_level_shift_en = <&msm_gpio 0 0x00>;
+//		hs_1wire,one_wire_remote = <0x7E 0x7F 0x7D 0x7F 0x7B 0x7F>;
+//		hs_1wire,onewire_tty_dev = "ttyHSL1";
+//	};
+
+//++ DTV_PCN1000007_HTC_GPIO_DEFINE
+    fullseg_mn885521 {
+        compatible   = "fullseg_tuner,mn885521";
+        fullseg,npdreg  = <&msm_gpio 0 0>;
+        fullseg,npdxtal  = <&msm_gpio 74 0>;
+        fullseg,nrst  = <&msm_gpio 94 0>;
+        fullseg,interrupt = <&msm_gpio 1 0>;
+        fullseg,fm_fullseg_ant_sw = <&msm_gpio 2 0>;
+        fullseg,ts_clk = <&msm_gpio 89 0>;
+        fullseg,ts_en = <&msm_gpio 90 0>;
+        fullseg,ts_data= <&msm_gpio 91 0>;
+        fullseg,ts_sync = <&msm_gpio 110 0>;
+        fullseg,1v8_en  = <&pm8994_gpios 10 0>;
+        fullseg,1v1_en  = <&pm8994_gpios 1 0>;
+        ANT_SW_2p85-supply = <&pm8994_l10>;
+        pinctrl-names = "default";
+		pinctrl-0 = <&fullseg_default &fullseg94_default>;
+    };
+//-- DTV_PCN1000007_HTC_GPIO_DEFINE
+
+	hall_ak8789 {
+		compatible = "hall_sensor,ak8789";
+		hall,att_used = <2>;
+		hall,att_gpio = <&pm8994_gpios 2 0>;
+		hall,att_gpio_s = <&pm8994_gpios 11 0>;
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+		input-name = "gpio-keys";
+		pinctrl-names = "tlmm_gpio_key_active", "tlmm_gpio_key_suspend";
+		pinctrl-0 = <&key_vol_active &key_pwr_active>;
+		pinctrl-1 = <&key_vol_suspend &key_pwr_suspend>;
+
+		power_key {
+			label = "power_key";
+			gpios = <&msm_gpio 64 0x1>;
+			linux,input-type = <1>;
+			linux,code = <116>;
+			gpio-key,wakeup;
+			debounce-interval = <20>;
+		};
+
+		vol_up {
+			label = "volume_up";
+			gpios = <&msm_gpio 77 0x1>;
+			linux,input-type = <1>;
+			linux,code = <115>;
+			debounce-interval = <20>;
+		};
+
+		vol_down {
+			label = "volume_down";
+			gpios = <&msm_gpio 54 0x1>;
+			linux,input-type = <1>;
+			linux,code = <114>;
+			debounce-interval = <20>;
+		};
+	};
+
+	keycombo {
+		compatible = "keycombo";
+		pinctrl-names = "keycombo_active", "keycombo_normal";
+		pinctrl-0 = <&key_clrgpio_active>;
+		pinctrl-1 = <&key_clrgpio_normal>;
+
+		/* clear_hw_reset */
+		clr_gpio	= <&msm_gpio 12 0x1>;
+		key_down_delay	= <0>;		/* ms */
+		keys_down	= <116 0>;
+		/* cancel clear_hw_reset */
+		keys_up		= <115 0>;
+	};
+
+	keyreset {
+		compatible	= "keyreset";
+		key_down_delay = <9000>;
+		keys_down	= <116 115 0>;
+	};
+
+	tlmm_pinmux: pinctrl@fd510000 {
+		keycombo_clrgpio {
+			qcom,pins = <&gp 12>;
+			qcom,pin-func = <0>;
+			qcom,num-grp-pins = <1>;
+			label = "keycombo_clrgpio";
+			key_clrgpio_active: key_clrgpio_active {
+				drive-strength = <2>;
+				bias-disable;
+				output-low;
+			};
+			key_clrgpio_normal: key_clrgpio_normal {
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+
+		pmx_sdc1_clk {
+			qcom,pins = <&sdc 0>;
+			qcom,num-grp-pins = <1>;
+			label = "sdc1-clk";
+			sdc1_clk_on: clk_on {
+				bias-disable; /* NO pull */
+				drive-strength = <16>; /* 16 MA */
+			};
+			sdc1_clk_off: clk_off {
+				bias-disable; /* NO pull */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		pmx_sdc1_cmd {
+			qcom,pins = <&sdc 1>;
+			qcom,num-grp-pins = <1>;
+			label = "sdc1-cmd";
+			sdc1_cmd_on: cmd_on {
+				bias-pull-up; /* pull up */
+				drive-strength = <10>; /* 10 MA */
+			};
+			sdc1_cmd_off: cmd_off {
+				bias-pull-up = <0x3>; /* pull up */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		pmx_sdc1_data {
+			qcom,pins = <&sdc 2>;
+			qcom,num-grp-pins = <1>;
+			label = "sdc1-data";
+			sdc1_data_on: data_on {
+				bias-pull-up; /* pull up */
+				drive-strength = <16>; /* 16 MA */
+			};
+			sdc1_data_off: data_off {
+				bias-pull-up; /* pull up */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		pmx_sdc1_rclk {
+			qcom,pins = <&sdc 3>;
+			qcom,num-grp-pins = <1>;
+			label = "sdc1-rclk";
+			sdc1_rclk_on: rclk_on {
+				bias-pull-down; /* pull down */
+				drive-strength = <16>; /* 16 MA */
+			};
+			sdc1_rclk_off: rclk_off {
+				bias-pull-down; /* pull down */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		pmx_sdc2_clk {
+			qcom,pins = <&sdc 4>;
+			qcom,num-grp-pins = <1>;
+			label = "sdc2-clk";
+			sdc2_clk_on: clk_on {
+				bias-disable; /* NO pull */
+				drive-strength = <14>; /* 14 MA */
+			};
+			sdc2_clk_on_sdr104: clk_on_sdr104 {
+				bias-disable; /* NO pull */
+				drive-strength = <16>; /* 16 MA */
+			};
+			sdc2_clk_off: clk_off {
+				bias-disable; /* NO pull */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		pmx_sdc2_cmd {
+			qcom,pins = <&sdc 5>;
+			qcom,num-grp-pins = <1>;
+			label = "sdc2-cmd";
+			sdc2_cmd_on: cmd_on {
+				bias-pull-up; /* pull up */
+				drive-strength = <6>; /* 6 MA */
+			};
+			sdc2_cmd_off: cmd_off {
+				bias-pull-up; /* pull up */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+
+		pmx_sdc2_data {
+			qcom,pins = <&sdc 6>;
+			qcom,num-grp-pins = <1>;
+			label = "sdc2-data";
+			sdc2_data_on: data_on {
+				bias-pull-up; /* pull up */
+				drive-strength = <6>; /* 6 MA */
+			};
+			sdc2_data_off: data_off {
+				bias-pull-up; /* pull up */
+				drive-strength = <2>; /* 2 MA */
+			};
+		};
+	};
+
+        qcom,ion {
+                qcom,ion-heap@13 { // FBMEM 1st HEAP
+                        reg = <13>;
+                        linux,contiguous-region = <&fb_mem_1>;
+                        qcom,ion-heap-type = "DMA";
+                };
+                qcom,ion-heap@14 { // FBMEM 2nd HEAP
+                        reg = <14>;
+                        linux,contiguous-region = <&fb_mem_2>;
+                        qcom,ion-heap-type = "DMA";
+                };
+        };
+};
+
+&spmi_bus {
+    qcom,pmi8994@3 {
+        qcom,leds@d000 {
+            compatible = "qcom,rgb-qpnp";
+            reg = <0xd000 0x100>;
+            label = "rgb";
+            status = "okay";
+
+            qcom,rgb_indicator{
+                label = "rgb";
+                linux,name = "indicator";
+            };
+
+            qcom,rgb_0 {
+                label = "rgb";
+                qcom,id = <3>;
+                qcom,mode = "pwm";
+                pwms = <&pmi8994_pwm_3 0 0>;
+                qcom,pwm-us = <1000>;
+                qcom,max-current = <12>;
+                qcom,default-state = "off";
+                linux,name = "rgb_amber";
+                qcom,pwm_coefficient = <20>;
+            };
+
+            qcom,rgb_1 {
+                label = "rgb";
+                qcom,id = <4>;
+                qcom,mode = "pwm";
+                pwms = <&pmi8994_pwm_2 0 0>;
+                qcom,pwm-us = <1000>;
+                qcom,max-current = <12>;
+                qcom,default-state = "off";
+                linux,name = "rgb_green";
+                qcom,pwm_coefficient = <35>;
+            };
+
+            qcom,rgb_2 {
+                label = "rgb";
+                qcom,id = <5>;
+                qcom,mode = "pwm";
+                pwms = <&pmi8994_pwm_1 0 0>;
+                qcom,pwm-us = <1000>;
+                qcom,max-current = <12>;
+                qcom,default-state = "off";
+                linux,name = "rgb_blue";
+                qcom,pwm_coefficient = <35>;
+            };
+        };
+
+        qcom,leds@d800 {
+            qcom,fs-curr-ua = <20000>;    /*Fulfill hTC design 20mA*/
+            qcom,led-strings-list = [00 01];
+            qcom,en-cabc;
+        };
+    };
+};
+
+&pmi8994_charger {
+	qcom,high-fastchg-current-ma = <3000>;
+	qcom,fastchg-current-ma = <3000>;
+	qcom,qc20-iusb-max-ma = <1500>;
+	qcom,kddi-limit1-temp = <390>;
+	qcom,kddi-limit1-current = <1000>;
+	qcom,kddi-limit1-current-qc20 = <700>;
+	qcom,kddi-limit2-temp = <450>;
+	qcom,kddi-limit2-current = <1000>;
+	qcom,kddi-limit2-current-qc20 = <700>;
+};
+
+&tlmm_pinmux {
+	b3_nc_pins_in_pd {
+		qcom,num-grp-pins = <6>;
+		qcom,pins =
+//		    <&gp 11>,
+		    <&gp 31>,
+		    <&gp 49>,
+
+		    <&gp 50>,
+		    <&gp 51>,
+		    <&gp 52>,
+
+		    <&gp 101>;
+		qcom,pin-func = <0>;
+		label = "b3_nc_pins_in_pd";
+		b3_nc_pins_in_pd: b3_nc_pins_in_pd {
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-down;         /* PULL DOWN */
+			input-enable;
+		};
+	};
+
+	b3_nc_pins_out_low {
+		qcom,num-grp-pins = <6>;
+		qcom,pins =
+		    <&gp 118>,
+		    <&gp 128>,
+		    <&gp 130>,
+		    <&gp 132>,
+		    <&gp 142>,
+		    <&gp 143>;
+		qcom,pin-func = <0>;
+		label = "b3_nc_pins_out_low";
+		b3_nc_pins_out_low: b3_nc_pins_out_low {
+			drive-strength = <2>;   /* 2 mA */
+			bias-disable;           /* NO PULL */
+			output-low;
+		};
+	};
+};
+
+&uart_console_sleep {
+	/delete-property/ bias-pull-down;
+	bias-disable;
+};
+
+&blsp1_uart3 {
+	status= "ok";
+	rst = <&pm8994_gpios 12 0x00>;
+	cir_ls_en = <&msm_gpio 41 0x00>;
+	qcom,config-gpio = <2>;
+	qcom,tx-gpio = <&msm_gpio 8 0x00>;
+	qcom,rx-gpio = <&msm_gpio 9 0x00>;
+	pinctrl-names = "default", "sleep", "disable";
+	pinctrl-0 = <&uart_cir_active>;
+	pinctrl-1 = <&uart_cir_sleep>;
+	pinctrl-2 = <&uart_cir_disable>;
+	qcom,power-save;
+	vddcir-supply = <&pm8994_l23>;	/* Regulator for cir */
+	htc,cir-dynamic-disable;
+};
+
+/* ++ DTV_PCN1000007_HTC_GPIO_DEFINE */
+&pm8994_gpios {/*GPIO 1 : FULLSEG_1V1_enable*/
+	gpio@c000 {
+		qcom,mode = <1>;
+		qcom,pull = <5>;
+		qcom,vin-sel = <2>;
+		qcom,src-en = <0>;
+		qcom,master-en = <1>;
+	};
+
+	gpio@c900 {/*GPIO 10 : FULLSEG_1V8_enable*/
+		qcom,mode = <1>;
+		qcom,pull = <5>;
+		qcom,vin-sel = <2>;
+		qcom,src-en = <0>;
+		qcom,master-en = <1>;
+	};
+/* ++ DTV_PCN1000007_HTC_GPIO_DEFINE */
+
+	gpio@c100 { /* GPIO 2 */
+		/* hall pole s (COVER_INT2#) */
+		qcom,mode = <0>;                /* QPNP_PIN_MODE_DIG_IN */
+		qcom,pull = <5>;                /* QPNP_PIN_NO_PULL */
+		qcom,vin-sel = <2>;             /* QPNP_PIN_VIN2 */
+		qcom,src-sel = <0>;             /* GPIO */
+		qcom,master-en = <1>;
+		status = "okay";
+	};
+
+	gpio@c400 { /* GPIO 5 */
+		qcom,mode = <0>;
+		qcom,pull = <5>;				 /* QPNP_PIN_NO_PULL */
+		qcom,vin-sel = <2>;
+		qcom,src-sel = <0>;
+		status = "okay";
+	};
+
+	gpio@ca00 { /* GPIO 11 */
+		/* hall pole n (COVER_INT1#) */
+		qcom,mode = <0>;                /* QPNP_PIN_MODE_DIG_IN */
+		qcom,pull = <5>;                /* QPNP_PIN_NO_PULL */
+		qcom,vin-sel = <2>;             /* QPNP_PIN_VIN2 */
+		qcom,src-sel = <0>;             /* GPIO */
+		qcom,master-en = <1>;
+		status = "okay";
+	};
+
+	gpio@cb00 { /* GPIO 12 */
+		/* cir reset */
+		qcom,mode = <0>;		/* Digital in */
+		qcom,pull = <5>;		/* NO PULL */
+		qcom,output-type = <0>;		/* CMOS logic */
+		qcom,invert = <1>;		/* Output high */
+		qcom,vin-sel = <2>;		/* VPH_PWR */
+		qcom,src-sel = <0>;		/* Constant */
+		qcom,out-strength = <1>;	/* High drive strength */
+		qcom,master-en = <1>;		/* Enable GPIO */
+		status = "okay";
+	};
+};
+
+/*HTC_CAM_START*/
+&cam_sensor_mclk0_active {
+	drive-strength = <6>; /* 6 MA */
+	bias-disable; /* No PULL */
+};
+
+&cam_sensor_mclk0_suspend {
+	drive-strength = <6>; /* 6 MA */
+	bias-disable; /* No PULL */
+};
+
+&cam_sensor_mclk2_active {
+	drive-strength = <6>; /* 6 MA */
+	bias-disable; /* No PULL */
+};
+
+&cam_sensor_mclk2_suspend {
+	drive-strength = <6>; /* 6 MA */
+	bias-disable; /* No PULL */
+};
+/*HTC_CAM_END*/
+
+&rpm_bus {
+	rpm-regulator-vsa2 {
+		status = "okay";
+		pm8994_lvs2: regulator-lvs2 {
+			status = "okay";
+			regulator-boot-on;
+			regulator-always-on;
+		};
+	};
+/* ++DTV_PCN1000007_HTC_GPIO_DEFINE */
+    rpm-regulator-ldoa10 {
+        status = "okay";
+	    pm8994_l10: regulator-l10 {
+	     	regulator-min-microvolt = <2850000>;
+	     	regulator-max-microvolt = <2850000>;
+	      	qcom,init-voltage = <2850000>;
+	      	status = "okay";
+		};
+     };
+/* --DTV_PCN1000007_HTC_GPIO_DEFINE */
+
+};
+
+&sdhc_2 {
+	htc,extended-debounce = <200>;
+};
