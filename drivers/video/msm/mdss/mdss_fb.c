@@ -78,9 +78,9 @@ static int fbi_list_index;
 #define BRI_SETTING_MIN                 30
 #define BRI_SETTING_DEF                 142
 #define BRI_SETTING_MAX			255
-#define BRI_SETTING_LOW                 1
-#define BRI_SETTING_MID                 45
-#define BRI_SETTING_HIGH		175
+#define BRI_SETTING_LOW                 5
+#define BRI_SETTING_MID                 125
+#define BRI_SETTING_HIGH		240
 
 bool backlight_dimmer = false;
 module_param(backlight_dimmer, bool, 0755);
@@ -297,7 +297,7 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (backlight_dimmer) {
 
 		if (value > 0 && value < BRI_SETTING_MIN) {
-			bl_lvl = 1;
+			bl_lvl = 5;
 		} else if (value >= BRI_SETTING_MIN && value <= BRI_SETTING_DEF) {
 			bl_lvl = (value - BRI_SETTING_MIN) * ( BRI_SETTING_MID -  BRI_SETTING_LOW) /
 			                (BRI_SETTING_DEF - BRI_SETTING_MIN) +  BRI_SETTING_LOW;
