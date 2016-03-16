@@ -41,6 +41,7 @@
 
 static struct i2c_client *this_client;
 struct mutex spk_amp_lock;
+static int lock_from_userspace;
 static int last_spkamp_state;
 static int dsp_enabled;
 static int tfa9895_i2c_write(char *txdata, int length);
@@ -345,10 +346,34 @@ static long tfa9895_ioctl(struct file *file, unsigned int cmd,
 		pr_info("%s: TFA9895_KERNEL_LOCK %d\n", __func__, *(int *)buf);
 		if(*(int *)buf) {
 			mutex_lock(&spk_amp_lock);
+			lock_from_userspace ++;
+			
 		}
 		else {
+			lock_from_userspace --;
+			if (lock_from_userspace >= 0) mutex_unlock(&spk_amp_lock);
+			else {
+				pr_warn("%s: lock_from_userspace is not equal to zero, should not meet."
+						"don't unlock it again", __func__);
+				lock_from_userspace = 0;
+			}
+			
+		}
+		
+		break;
+	case _IOC_NR(TFA9895_KERNEL_INIT_NR):
+		pr_info("%s: TFA9895_KERNEL_INIT_NR ++ kernel count %d\n",
+				__func__, atomic_read(&(spk_amp_lock.count)));
+		while (lock_from_userspace > 0) {
+			pr_info("%s: TFA9895_KERNEL_INIT_NR lock count from userspace %d != 0, unlock it\n",
+				__func__, lock_from_userspace);
+			lock_from_userspace --;
 			mutex_unlock(&spk_amp_lock);
 		}
+		lock_from_userspace = 0;
+		mutex_init(&spk_amp_lock);
+		pr_info("%s: TFA9895_KERNEL_INIT_NR -- kernel count %d\n",
+				__func__, atomic_read(&(spk_amp_lock.count)));
 		break;
 	default:
 		kfree(buf);
@@ -490,6 +515,8 @@ static int __init tfa9895_init(void)
 	pr_info("%s\n", __func__);
 	mutex_init(&spk_amp_lock);
 	dsp_enabled = 0;
+	last_spkamp_state = 0;
+	lock_from_userspace = 0;
 	return i2c_add_driver(&tfa9895_driver);
 }
 

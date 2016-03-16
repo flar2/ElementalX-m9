@@ -62,10 +62,41 @@ struct msm_pm_sleep_status_data {
 	uint32_t mask;
 };
 
+/**
+ * lpm_cpu_pre_pc_cb(): API to get the L2 flag to pass to TZ
+ *
+ * @cpu: cpuid of the CPU going down.
+ *
+ * Returns the l2 flush flag enum that is passed down to TZ during power
+ * collaps
+ */
 enum msm_pm_l2_scm_flag lpm_cpu_pre_pc_cb(unsigned int cpu);
 
+/**
+ * msm_pm_sleep_mode_allow() - API to determine if sleep mode is allowed.
+ * @cpu:	CPU on which to check for the sleep mode.
+ * @mode:	Sleep Mode to check for.
+ * @idle:	Idle or Suspend Sleep Mode.
+ *
+ * Helper function to determine if a Idle or Suspend
+ * Sleep mode is allowed for a specific CPU.
+ *
+ * Return: 1 for allowed; 0 if not allowed.
+ */
 int msm_pm_sleep_mode_allow(unsigned int, unsigned int, bool);
 
+/**
+ * msm_pm_sleep_mode_supported() - API to determine if sleep mode is
+ * supported.
+ * @cpu:	CPU on which to check for the sleep mode.
+ * @mode:	Sleep Mode to check for.
+ * @idle:	Idle or Suspend Sleep Mode.
+ *
+ * Helper function to determine if a Idle or Suspend
+ * Sleep mode is allowed and enabled for a specific CPU.
+ *
+ * Return: 1 for supported; 0 if not supported.
+ */
 int msm_pm_sleep_mode_supported(unsigned int, unsigned int, bool);
 
 struct msm_pm_cpr_ops {
@@ -143,4 +174,4 @@ extern dma_addr_t msm_pc_debug_counters_phys;
 int print_gpio_buffer(struct seq_file *m);
 int free_gpio_buffer(void);
 #endif
-#endif  
+#endif  /* __ARCH_ARM_MACH_MSM_PM_H */

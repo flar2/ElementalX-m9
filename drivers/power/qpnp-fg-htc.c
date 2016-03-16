@@ -287,6 +287,7 @@ struct fg_chip {
 	struct mutex		rw_lock;
 	struct work_struct	batt_profile_init;
 	struct work_struct	dump_sram;
+	struct work_struct	status_change_work;
 	struct work_struct	update_esr_work;
 	struct power_supply	*batt_psy;
 	struct fg_wakeup_source	memif_wakeup_source;
@@ -299,6 +300,7 @@ struct fg_chip {
 	bool			battery_missing;
 	bool			power_supply_registered;
 	bool			sw_rbias_ctrl;
+	bool			vbat_low_irq_enabled;
 	struct delayed_work	update_jeita_setting;
 	struct delayed_work	update_sram_data;
 	struct delayed_work	update_temp_work;
@@ -1405,12 +1407,38 @@ static int fg_get_vbatt_status(struct fg_chip *chip, bool *vbatt_low_sts)
 		*vbatt_low_sts = !!(fg_batt_sts & VBATT_LOW_STS_BIT);
 	return rc;
 }
+
+static void status_change_work(struct work_struct *work)
+{
+	struct fg_chip *chip = container_of(work,
+				struct fg_chip,
+				status_change_work);
+
+	if (chip->chg_status == POWER_SUPPLY_STATUS_FULL ||
+			chip->chg_status == POWER_SUPPLY_STATUS_CHARGING) {
+		if (!chip->vbat_low_irq_enabled) {
+			enable_irq(chip->batt_irq[VBATT_LOW].irq);
+			enable_irq_wake(chip->batt_irq[VBATT_LOW].irq);
+			chip->vbat_low_irq_enabled = true;
+		}
+		if (get_prop_capacity(chip) == 100)
+			fg_configure_soc(chip);
+	} else if (chip->chg_status == POWER_SUPPLY_STATUS_DISCHARGING) {
+		if (chip->vbat_low_irq_enabled) {
+			disable_irq_wake(chip->batt_irq[VBATT_LOW].irq);
+			disable_irq_nosync(chip->batt_irq[VBATT_LOW].irq);
+			chip->vbat_low_irq_enabled = false;
+		}
+	}
+
+}
+
+
 static int fg_set_prop_status(struct fg_chip *chip, int status)
 {
        int rc = 0;
        chip->chg_status = status;
-       if (chip->chg_status == POWER_SUPPLY_STATUS_FULL)
-               rc = fg_configure_soc(chip);
+	schedule_work(&chip->status_change_work);
        return rc;
 }
 
@@ -1868,14 +1896,31 @@ static bool is_battery_missing(struct fg_chip *chip)
 static irqreturn_t fg_vbatt_low_handler(int irq, void *_chip)
 {
 	struct fg_chip *chip = _chip;
+	int rc;
+	bool vbatt_low_sts;
 
 	if (fg_debug_mask & FG_IRQS)
 		pr_info("vbatt-low triggered\n");
 
-	schedule_work(&chip->exe_smbchg_aicl_wa);
+	if (chip->chg_status == POWER_SUPPLY_STATUS_CHARGING) {
+		rc = fg_get_vbatt_status(chip, &vbatt_low_sts);
+		if (rc) {
+			pr_err("error in reading vbatt_status, rc:%d\n", rc);
+			goto out;
+		}
+		if (!vbatt_low_sts && chip->vbat_low_irq_enabled) {
+			if (fg_debug_mask & FG_IRQS)
+				pr_info("disabling vbatt_low irq\n");
+			disable_irq_wake(chip->batt_irq[VBATT_LOW].irq);
+			disable_irq_nosync(chip->batt_irq[VBATT_LOW].irq);
+			chip->vbat_low_irq_enabled = false;
+		}
+	}
 
 	if (chip->power_supply_registered)
 		power_supply_changed(&chip->bms_psy);
+out:
+	schedule_work(&chip->exe_smbchg_aicl_wa);
 	return IRQ_HANDLED;
 }
 
@@ -2806,7 +2851,8 @@ static int fg_init_irqs(struct fg_chip *chip)
 					chip->batt_irq[VBATT_LOW].irq, rc);
 				return rc;
 			}
-			enable_irq_wake(chip->batt_irq[VBATT_LOW].irq);
+			disable_irq_nosync(chip->batt_irq[VBATT_LOW].irq);
+			chip->vbat_low_irq_enabled = false;
 			break;
 		case FG_ADC:
 			break;
@@ -2828,6 +2874,7 @@ static int fg_remove(struct spmi_device *spmi)
 	cancel_delayed_work_sync(&chip->update_jeita_setting);
 	cancel_work_sync(&chip->batt_profile_init);
 	cancel_work_sync(&chip->dump_sram);
+	cancel_work_sync(&chip->status_change_work);
 	cancel_work_sync(&chip->update_esr_work);
 	cancel_work_sync(&chip->exe_smbchg_aicl_wa);
 	power_supply_unregister(&chip->bms_psy);
@@ -3402,6 +3449,7 @@ static int fg_probe(struct spmi_device *spmi)
 	INIT_DELAYED_WORK(&chip->update_temp_work, update_temp_data);
 	INIT_WORK(&chip->batt_profile_init, batt_profile_init);
 	INIT_WORK(&chip->dump_sram, dump_sram);
+	INIT_WORK(&chip->status_change_work, status_change_work);
 	INIT_WORK(&chip->update_esr_work, update_esr_value);
 	INIT_WORK(&chip->exe_smbchg_aicl_wa, exe_smbchg_aicl_wa);
 	init_completion(&chip->sram_access_granted);
@@ -3550,6 +3598,7 @@ cancel_work:
 	cancel_delayed_work_sync(&chip->update_temp_work);
 	cancel_work_sync(&chip->batt_profile_init);
 	cancel_work_sync(&chip->dump_sram);
+	cancel_work_sync(&chip->status_change_work);
 	cancel_work_sync(&chip->update_esr_work);
 	cancel_work_sync(&chip->exe_smbchg_aicl_wa);
 of_init_fail:

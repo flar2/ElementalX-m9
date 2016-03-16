@@ -947,17 +947,40 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 	}
 
 #if defined(CONFIG_HTC_FEATURES_SSR)
-	if(!strcmp(d->desc.name, "adsp")) {
+    if(!strcmp(d->desc.name, "adsp")) {
 #if defined(CONFIG_HTC_FEATURES_SSR_LPASS_ENABLE)
-		subsys_set_restart_level(d->subsys, RESET_SUBSYS_COUPLED);
-#else
-		if (get_kernel_flag() & KERNEL_FLAG_ENABLE_SSR_LPASS)
+		if (get_kernel_flag() & (KERNEL_FLAG_ENABLE_SSR_LPASS)) {
+			pr_info("%s: CONFIG_HTC_FEATURES_SSR_LPASS_ENABLE, KERNEL_FLAG_ENABLE_SSR_LPASS, RESET_SOC.\n", __func__);
+			subsys_set_restart_level(d->subsys, RESET_SOC);
+			subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		} else {
+			pr_info("%s: CONFIG_HTC_FEATURES_SSR_LPASS_ENABLE, RESET_SUBSYS_COUPLED.\n", __func__);
 			subsys_set_restart_level(d->subsys, RESET_SUBSYS_COUPLED);
+			if (get_radio_flag() & BIT(3))
+				subsys_set_enable_ramdump(d->subsys, ENABLE_RAMDUMP);
+			else
+				subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		}
+#else
+		if (get_kernel_flag() & (KERNEL_FLAG_ENABLE_SSR_LPASS)) {
+			pr_info("%s: KERNEL_FLAG_ENABLE_SSR_LPASS, RESET_SUBSYS_COUPLED.\n", __func__);
+			subsys_set_restart_level(d->subsys, RESET_SUBSYS_COUPLED);
+			if (get_radio_flag() & BIT(3))
+				subsys_set_enable_ramdump(d->subsys, ENABLE_RAMDUMP);
+			else
+				subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		} else {
+			pr_info("%s: RESET_SOC.\n", __func__);
+			subsys_set_restart_level(d->subsys, RESET_SOC);
+			subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+		}
 #endif
 	}
 
-	if(!strcmp(htc_get_bootmode(),"factory2") || !strcmp(htc_get_bootmode(),"ftm"))
+	if(!strcmp(htc_get_bootmode(),"factory2") || !strcmp(htc_get_bootmode(),"ftm")) {
 		subsys_set_restart_level(d->subsys, RESET_SOC);
+		subsys_set_enable_ramdump(d->subsys, DISABLE_RAMDUMP);
+	}
 #endif
 
 	return 0;

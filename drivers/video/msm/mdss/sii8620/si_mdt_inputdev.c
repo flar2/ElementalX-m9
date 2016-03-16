@@ -33,6 +33,7 @@
 #ifdef DEBUG
 #include <linux/kernel.h>
 #endif
+/* keycode map from usbkbd.c */
 uint8_t usb_kbd_keycode[256] = {
 	0, 0, 0, 0, 30, 48, 46, 32, 18, 33, 34, 35, 23, 36, 37, 38,
 	50, 49, 24, 25, 16, 19, 31, 20, 22, 47, 17, 45, 21, 44, 2, 3,
@@ -147,7 +148,7 @@ int init_mdt_keyboard(struct mhl_dev_context *dev_context)
 	dev_keyboard->id.vendor = 0x1095;
 	dev_keyboard->id.product = MHL_PRODUCT_NUM;
 
-	
+	/* Use version to distinguish between devices */
 	dev_keyboard->id.version = 0xA;
 
 	error = input_register_device(dev_keyboard);
@@ -197,7 +198,7 @@ int init_mdt_mouse(struct mhl_dev_context *dev_context)
 	dev_mouse->id.vendor = 0x1095;
 	dev_mouse->id.product = MHL_PRODUCT_NUM;
 
-	
+	/* Use version to distinguish between devices */
 	dev_mouse->id.version = 0xB;
 
 	error = input_register_device(dev_mouse);
@@ -237,7 +238,7 @@ int init_mdt_touchscreen(struct mhl_dev_context *dev_context)
 	dev_touchscreen->id.vendor = 0x1095;
 	dev_touchscreen->id.product = MHL_PRODUCT_NUM;
 
-	
+	/* use version to distinguish between devices */
 	dev_touchscreen->id.version = 0xC;
 
 #if defined(SINGLE_TOUCH)
@@ -304,6 +305,9 @@ int init_mdt_touchscreen(struct mhl_dev_context *dev_context)
 
 	dev_context->mdt_devs.dev_touchscreen = dev_touchscreen;
 
+	/* initialize history; in parcitular initialize state elements with
+	 * MDT_TOUCH_INACTIVE
+	 */
 	memset(dev_context->mdt_devs.prior_touch_events, 0,
 	       MAX_TOUCH_CONTACTS *
 	       sizeof(dev_context->mdt_devs.prior_touch_events[0]));
@@ -332,6 +336,10 @@ static int destroy_device(struct mhl_dev_context *dev_context,
 		destroy_touchscreen(dev_context);
 		break;
 	case MDT_TYPE_COUNT:
+		/*
+		 * This case is out of range.
+		 * Code is included to avoid compiler warning.
+		 */
 		break;
 	}
 
@@ -345,6 +353,7 @@ static int destroy_device(struct mhl_dev_context *dev_context,
 	return REGISTRATION_SUCCESS;
 }
 
+/* The recursive piece of the registration function. */
 static int registration_helper(struct mhl_dev_context *dev_context,
 			       enum mdt_dev_types_e mdt_device_type)
 {
@@ -360,7 +369,7 @@ static int registration_helper(struct mhl_dev_context *dev_context,
 		if (init_mdt_mouse(dev_context) != REGISTRATION_SUCCESS)
 			return REGISTRATION_ERROR;
 
-		
+		/* Do not support both a pointer and touch. */
 		destroy_device(dev_context, MDT_TYPE_TOUCHSCREEN);
 		break;
 	case MDT_TYPE_TOUCHSCREEN:
@@ -369,10 +378,14 @@ static int registration_helper(struct mhl_dev_context *dev_context,
 		if (init_mdt_touchscreen(dev_context) != REGISTRATION_SUCCESS)
 			return REGISTRATION_ERROR;
 
-		
+		/* Do not support both a pointer and touch. */
 		destroy_device(dev_context, MDT_TYPE_MOUSE);
 		break;
 	case MDT_TYPE_COUNT:
+		/*
+		 * This case is out of range.
+		 * Code is included to avoid compiler warning.
+		 */
 		break;
 	}
 
@@ -388,6 +401,8 @@ static int register_device(struct mhl_dev_context *dev_context,
 	    (is_mdt_dev_waiting(dev_context, mdt_device_type) == false))
 		return REGISTRATION_ERROR;
 
+	/* Call recursive part of the function.
+	   Don't update is_dev_registered there. */
 	error = registration_helper(dev_context, mdt_device_type);
 
 	if (error != REGISTRATION_SUCCESS) {
@@ -424,14 +439,21 @@ void generate_event_keyboard(struct mhl_dev_context *dev_context,
 		return;
 	}
 
-	
-	
+	/* following code was copied from usbkbd.c */
+	/* generate events for CRL, SHIFT, and ALT keys */
 	for (i = 0; i < 3; i++)
 		input_report_key(dev_keyboard,
 				 usb_kbd_keycode[i + 224],
 				 (keycodes_new[0] >> i) & 1);
 
+	/*
+	 * Generate key press/release events for the
+	 * remaining bytes in the input packet
+	 */
 	for (i = 1; i < 7; i++) {
+		/* If keycode in pervious HID payload doesn't appear
+		 * in NEW HID payload, generate de-assertion event
+		 */
 		if ((keycodes_old[i] > 3) &&
 		    ((uint8_t *) memscan(keycodes_new + 1, keycodes_old[i], 6)
 		     == ((uint8_t *) (keycodes_new) + 7))) {
@@ -445,6 +467,9 @@ void generate_event_keyboard(struct mhl_dev_context *dev_context,
 			}
 		}
 
+		/* If keycode in NEW HID paylaod doesn't appear in previous
+		 * HID payload, generate assertion event
+		 */
 		if (keycodes_new[i] > 3 &&
 		    memscan(keycodes_old + 1, keycodes_new[i],
 			    6) == keycodes_old + 7) {
@@ -461,7 +486,7 @@ void generate_event_keyboard(struct mhl_dev_context *dev_context,
 
 	input_sync(dev_keyboard);
 
-	
+	/* NEW HID payload is now OLD */
 	memcpy(keycodes_old, keycodes_new, HID_INPUT_REPORT_CNT);
 }
 
@@ -499,7 +524,7 @@ void generate_event_mouse(struct mhl_dev_context *dev_context,
 		return;
 	}
 
-	
+	/* Translate and report mouse button changes */
 	input_report_key(dev_mouse, BTN_LEFT,
 			 mousePacket->header & MDT_HDR_MOUSE_BUTTON_1);
 
@@ -552,7 +577,7 @@ static uint8_t process_touch_packet(struct mhl_dev_context *dev_context,
 						 [MDT_TOUCH_Y_HIGH] << 8);
 
 #if (CORNER_BUTTON == 1)
-	
+	/* Handle LOWER RIGHT corner like a EXIT button (ESC key) */
 	if ((abs_x > X_CORNER_RIGHT_LOWER) && (abs_y > Y_CORNER_RIGHT_LOWER)) {
 		if (isTouched != dev_context->mdt_devs.prior_touch_button) {
 			dev_context->mdt_devs.prior_touch_button = isTouched;
@@ -563,6 +588,8 @@ static uint8_t process_touch_packet(struct mhl_dev_context *dev_context,
 		return 0xFF;
 	}
 #elif (ICS_BAR == 1)
+	/* JB421 doesn't allow this driver to trigger buttons on the bar.
+	   implement custom buttons to workaround the problem. */
 	if ((isTouched != dev_context->mdt_devs.prior_touch_button)
 	    && (abs_x >= X_BUTTON_BAR_START)) {
 		if ((abs_y > Y_BUTTON_RECENTAPPS_TOP)
@@ -581,7 +608,7 @@ static uint8_t process_touch_packet(struct mhl_dev_context *dev_context,
 	}
 #endif
 
-	
+	/* support dynamic configuration through ATTRIBUTES */
 	if (dev_context->mdt_devs.swap_xy != 0) {
 		prior_event->abs_x = abs_y;
 		prior_event->abs_y = abs_x;
@@ -619,6 +646,9 @@ static uint8_t process_touch_packet(struct mhl_dev_context *dev_context,
 
 	if (isTouched == 0) {
 		if (prior_event->isTouched == 0)
+			/* Multiple release events;
+			 * declare contact inactive & ignore
+			 */
 			prior_event->state = MDT_TOUCH_INACTIVE;
 	} else {
 		prior_event->state = MDT_TOUCH_ACTIVE;
@@ -660,7 +690,7 @@ static void submit_touchscreen_events_with_proto_B(
 		input_mt_report_slot_state(dev_ts, MT_TOOL_FINGER,
 					   prior_event->isTouched);
 
-		
+		/* Event already handled; don't handle it again. */
 		if (prior_event->isTouched == 0) {
 			prior_event->state = MDT_TOUCH_INACTIVE;
 		} else {
@@ -673,7 +703,7 @@ static void submit_touchscreen_events_with_proto_B(
 					 prior_event->abs_y);
 		}
 
-		
+		/* BTN_TOUCH breaks support brokend as of JB42 */
 #if !defined(JB_421)
 		if (counter == 1)
 			input_report_key(dev_ts, BTN_TOUCH, 1);
@@ -699,7 +729,7 @@ static void submit_touchscreen_events_with_proto_A(
 		count++;
 
 		if (prior_event->isTouched == 0)
-			
+			/* Event handled; don't handle it again. */
 			prior_event->state = MDT_TOUCH_INACTIVE;
 
 		input_report_key(dev_ts, BTN_TOUCH, prior_event->isTouched);
@@ -730,7 +760,7 @@ static void generate_event_touchscreen(struct mhl_dev_context *dev_context,
 		return;
 	}
 
-	
+	/* process touch packet into prior_touch_events */
 	contactID = process_touch_packet(dev_context, touchPacket);
 	if (contactID == 0xFF)
 		return;
@@ -742,20 +772,20 @@ static void generate_event_touchscreen(struct mhl_dev_context *dev_context,
 #else
 	submit_touchscreen_events_with_proto_A(dev_context, contactID);
 #endif
-	
+	/* generate touchscreen assertion */
 	input_sync(dev_ts);
 }
 
 static bool process_hotplug_packet(struct mhl_dev_context *dev_context,
 	struct mdt_packet *hotplug_packet)
 {
-	
+	/* 'M' previoulsy found to be in the header byte */
 	if ((hotplug_packet->event.hotplug.sub_header_d != D_CHAR) &&
 		(hotplug_packet->event.hotplug.sub_header_t != T_CHAR) &&
 		(hotplug_packet->event.hotplug.mdt_version != MDT_VERSION))
 		return false;
 
-	
+	/* in the future, support response with ACK or NACK */
 	MHL_TX_DBG_INFO("HP packet. Device type: %02x. Event: %02x.\n",
 			hotplug_packet->event.hotplug.device_type,
 			hotplug_packet->event.hotplug.event_code);
@@ -811,7 +841,7 @@ bool si_mhl_tx_mdt_process_packet(struct mhl_dev_context *dev_context,
 		return false;
 	}
 
-	
+	/* Consume the write burst event as an MDT event */
 	return true;
 }
 

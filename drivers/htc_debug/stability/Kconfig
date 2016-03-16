@@ -110,3 +110,9 @@ config HTC_DEBUG_PAGE_USER_TRACE
 config HTC_DEBUG_PAGE_ENTRIES_NR
 	int
 	default 4
+
+config HTC_REBOOT_BLOCK
+	bool "Store reboot reason / msg ...etc. in IMEM or storage"
+	default n
+	help
+	  Say Y here if you want the HTC Reboot Block features

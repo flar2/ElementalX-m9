@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -37,7 +37,7 @@
 
 struct msm_vidc_drv *vidc_driver;
 
-uint32_t msm_vidc_pwr_collapse_delay = 10000;
+uint32_t msm_vidc_pwr_collapse_delay = 2000;
 
 static inline struct msm_vidc_inst *get_vidc_inst(struct file *filp, void *fh)
 {
@@ -283,9 +283,6 @@ static const struct v4l2_file_operations msm_v4l2_vidc_fops = {
 	.release = msm_v4l2_close,
 	.ioctl = video_ioctl2,
 	.poll = msm_v4l2_poll,
-#ifdef CONFIG_COMPAT
-	.compat_ioctl32 = v4l2_compat_ioctl32,
-#endif
 };
 
 void msm_vidc_release_video_device(struct video_device *pvdev)

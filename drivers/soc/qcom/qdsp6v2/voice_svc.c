@@ -235,7 +235,7 @@ static int voice_svc_reg(char *svc, uint32_t src_port,
 {
 	int ret = 0;
 
-	pr_debug("%s\n", __func__);
+	pr_info("%s\n", __func__); 
 
 	if (handle == NULL) {
 		pr_err("%s: handle is NULL\n", __func__);
@@ -268,7 +268,7 @@ static int voice_svc_reg(char *svc, uint32_t src_port,
 		ret = -EFAULT;
 		goto done;
 	}
-	pr_debug("%s: Register %s successful\n",
+	pr_info("%s: Register %s successful\n", 
 		__func__, svc);
 done:
 	return ret;
@@ -278,7 +278,7 @@ static int voice_svc_dereg(char *svc, void **handle)
 {
 	int ret = 0;
 
-	pr_debug("%s\n", __func__);
+	pr_info("%s\n", __func__); 
 
 	if (handle == NULL) {
 		pr_err("%s: handle is NULL\n", __func__);
@@ -300,7 +300,7 @@ static int voice_svc_dereg(char *svc, void **handle)
 		goto done;
 	}
 	*handle = NULL;
-	pr_debug("%s: deregister %s successful\n", __func__, svc);
+	pr_info("%s: deregister %s successful\n", __func__, svc); 
 
 done:
 	return ret;
@@ -535,7 +535,7 @@ static int voice_svc_open(struct inode *inode, struct file *file)
 {
 	struct voice_svc_prvt *prtd = NULL;
 
-	pr_debug("%s\n", __func__);
+	pr_info("%s\n", __func__); 
 
 	prtd = kmalloc(sizeof(struct voice_svc_prvt), GFP_KERNEL);
 
@@ -580,7 +580,8 @@ static int voice_svc_release(struct inode *inode, struct file *file)
 	}
 
 	if (prtd->apr_q6_cvs != NULL) {
-		svc_name = VOICE_SVC_MVM_STR;
+		pr_info("%s: voice_svc_dereg VOICE_SVC_CVS_STR\n", __func__); 
+		svc_name = VOICE_SVC_CVS_STR; 
 		handle = &prtd->apr_q6_cvs;
 		ret = voice_svc_dereg(svc_name, handle);
 		if (ret)
@@ -588,6 +589,7 @@ static int voice_svc_release(struct inode *inode, struct file *file)
 	}
 
 	if (prtd->apr_q6_mvm != NULL) {
+		pr_info("%s: voice_svc_dereg VOICE_SVC_MVM_STR\n", __func__); 
 		svc_name = VOICE_SVC_MVM_STR;
 		handle = &prtd->apr_q6_mvm;
 		ret = voice_svc_dereg(svc_name, handle);

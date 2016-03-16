@@ -92,6 +92,7 @@ static enum transport_type str_to_xport(const char *name)
 	return USB_GADGET_XPORT_UNDEF;
 }
 
+/*++ 2014/11/14, USB Team, PCN00048 ++*/
 enum fserial_func_type {
     USB_FSER_FUNC_NONE,
     USB_FSER_FUNC_SERIAL,
@@ -121,6 +122,7 @@ static __maybe_unused enum fserial_func_type serial_str_to_func_type(const char 
 
 	return USB_FSER_FUNC_NONE;
 }
+/*-- 2014/11/14, USB Team, PCN00048 --*/
 
 enum gadget_type {
 	USB_GADGET_SERIAL,

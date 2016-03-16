@@ -619,8 +619,10 @@ static void dwc3_unknown_charger_notify_work(struct work_struct *w)
 	if (line_state == (3 << 8))
 		usb_set_connect_type(CONNECT_TYPE_AC);
 	else {
-		usb_set_connect_type(CONNECT_TYPE_UNKNOWN);
-		power_supply_set_supply_type(dotg->psy, POWER_SUPPLY_TYPE_USB);
+		if (dotg->charger->chg_type == DWC3_SDP_CHARGER) {
+			usb_set_connect_type(CONNECT_TYPE_UNKNOWN);
+			power_supply_set_supply_type(dotg->psy, POWER_SUPPLY_TYPE_USB);
+		}
 	}
 }
 
@@ -680,7 +682,7 @@ int dwc3_otg_init(struct dwc3 *dwc)
 
 	init_completion(&dotg->dwc3_xcvr_vbus_init);
 	INIT_DELAYED_WORK(&dotg->sm_work, dwc3_otg_sm_work);
-	INIT_DELAYED_WORK(&dotg->unknown_charger_notify_work, dwc3_unknown_charger_notify_work);
+	INIT_DELAYED_WORK(&dotg->unknown_charger_notify_work, dwc3_unknown_charger_notify_work); 
 	INIT_WORK(&dotg->usb_disable_work, usb_disable_work);
 
 	dbg_event(0xFF, "OTGInit get", 0);

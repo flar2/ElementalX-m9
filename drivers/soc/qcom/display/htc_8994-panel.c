@@ -25,8 +25,6 @@
 
 #include "../../../../drivers/video/msm/mdss/mdss_dsi.h"
 
-extern void set_screen_status(bool onoff);
-
 enum pane_id {
 	PANEL_JDI_RENESAS  = 0,
 	PANEL_TIA_RES63315 = 1,
@@ -458,9 +456,6 @@ static int htc_hima_panel_power_on(struct mdss_panel_data *pdata)
 
 	PR_DISP_INFO("--%s(%s)--\n", __func__, ((voltage == VOL_5V0) ? "5V" :
 						(voltage == VOL_5V4) ? "5V4" : "5V5"));
-
-	set_screen_status(true);
-
 	return ret;
 }
 
@@ -509,9 +504,6 @@ static int htc_hima_panel_power_off(struct mdss_panel_data *pdata)
 		ret = -EINVAL;
 	}
 	PR_DISP_INFO("--%s()--\n", __func__);
-
-	set_screen_status(false);
-
 	return ret;
 }
 
@@ -521,8 +513,20 @@ static int mdss_dsi_pwrctrl_probe(struct platform_device *pdev)
 		PR_DISP_ERR("HTC PWRCTRL driver only supports device tree probe\n");
 		return -ENOTSUPP;
 	} else {
-		memcpy(&pwrctrl_pdata, &dsi_pwrctrl, sizeof(struct mdss_dsi_pwrctrl));
-		PR_DISP_INFO("== %s: (Name:%s DONE ) ==\n", __func__, pdev->dev.of_node->name);
+		int rc = 0, project = 0;
+
+		rc = of_property_read_u32(pdev->dev.of_node, "htc,pwrctrl_proj", &project);
+		if (rc) {
+			pr_err("Can't find device tree setting to locate certain project\n");
+		} else {
+			switch (project) {
+			case 1:
+				memcpy(&pwrctrl_pdata, &dsi_pwrctrl, sizeof(struct mdss_dsi_pwrctrl));
+				break;
+			}
+			PR_DISP_INFO("== %s: (Name:%s DONE) ==\n", __func__,
+					pdev->dev.of_node->name);
+		}
 	}
 	return 0;
 }

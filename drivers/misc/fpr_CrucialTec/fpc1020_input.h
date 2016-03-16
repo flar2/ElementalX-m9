@@ -18,5 +18,5 @@ extern int fpc1020_input_enable(fpc1020_data_t *fpc1020, bool enabled);
 
 extern int fpc1020_input_task(fpc1020_data_t *fpc1020);
 
-#endif 
+#endif /* LINUX_SPI_FPC1020_NAV_H */
 

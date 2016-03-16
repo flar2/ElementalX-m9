@@ -28,6 +28,8 @@ enum {
 	CABC_INDEX = 0,
 	HUE_INDEX,
 	PP_PCC_INDEX,
+	SRE_INDEX,
+	LIM_BRI_INDEX,
 };
 
 struct attribute_status {
@@ -51,7 +53,9 @@ struct mdss_dspp_pcc_mode {
 
 void htc_register_camera_bkl(int level, int level_dua);
 void htc_register_attrs(struct kobject *led_kobj, struct msm_fb_data_type *mfd);
-void htc_set_cabc(struct msm_fb_data_type *mfd);
+void htc_set_cabc(struct msm_fb_data_type *mfd, bool skip_check);
+bool htc_set_sre(struct msm_fb_data_type *mfd);
+void htc_set_limit_brightness(struct msm_fb_data_type *mfd);
 void htc_reset_status(void);
 void htc_dimming_on(struct msm_fb_data_type *mfd);
 void htc_dimming_off(void);
@@ -60,4 +64,7 @@ void htc_set_pp_pa(struct mdss_mdp_ctl *ctl);
 void htc_set_pp_pcc(struct mdss_mdp_ctl *ctl);
 void htc_panel_info(const char *panel);
 
+int htc_backlight_transfer_bl_brightness(int val, struct mdss_panel_info *panel_info, bool brightness_to_bl);
+int htc_backlight_bl_to_nits(int val, struct mdss_panel_info *panel_info);
+int htc_backlight_nits_to_bl(int val, struct mdss_panel_info *panel_info);
 #endif 

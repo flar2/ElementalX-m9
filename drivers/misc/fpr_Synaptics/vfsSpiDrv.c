@@ -69,6 +69,9 @@ static struct of_device_id validity_metallica_table[] = {
 #else
 #define validity_metallica_table NULL
 #endif
+/*
+ * HTC define
+ */
 int fp_mount = 0;
 module_param(fp_mount,int,0444);
 
@@ -81,6 +84,26 @@ struct fingerprint_pdata_struct {
 struct fingerprint_pdata_struct *fingerprint_pdata;
 
 
+/*
+ * vfsspi_devData - The spi driver private structure
+ * @devt:Device ID
+ * @vfs_spi_lock:The lock for the spi device
+ * @spi:The spi device
+ * @device_entry:Device entry list
+ * @buffer_mutex:The lock for the transfer buffer
+ * @is_opened:Indicates that driver is opened
+ * @buffer:buffer for transmitting data
+ * @null_buffer:buffer for transmitting zeros
+ * @stream_buffer:buffer for transmitting data stream
+ * @stream_buffer_size:streaming buffer size
+ * @drdy_pin:DRDY GPIO pin number
+ * @sleep_pin:Sleep GPIO pin number
+ * @user_pid:User process ID, to which the kernel signal
+ *	indicating DRDY event is to be sent
+ * @signal_id:Signal ID which kernel uses to indicating
+ *	user mode driver that DRDY is asserted
+ * @current_spi_speed:Current baud rate of SPI master clock
+ */
 struct vfsspi_device_data {
 	dev_t devt;
 	struct cdev cdev;
@@ -172,6 +195,14 @@ static struct device_attribute *dev_attrs[] = {
 
 
 #ifdef VFSSPI_32BIT
+/*
+ * Used by IOCTL compat command:
+ *         VFSSPI_IOCTL_RW_SPI_MESSAGE
+ *
+ * @rx_buffer:pointer to retrieved data
+ * @tx_buffer:pointer to transmitted data
+ * @len:transmitted/retrieved data size
+ */
 struct vfsspi_compat_ioctl_transfer {
 	compat_uptr_t rx_buffer;
 	compat_uptr_t tx_buffer;
@@ -187,35 +218,35 @@ static int vfsspi_send_drdy_signal(struct vfsspi_device_data *vfsspi_device)
 	struct task_struct *t;
 	int ret = 0;
 
-	
-	
+	//pr_debug("vfsspi_send_drdy_signal\n");
+	//printk("[fp] vfsspi_send_drdy_signal +++\n");
 
 	if (vfsspi_device->user_pid != 0) {
 		rcu_read_lock();
-		
-		
-		
+		/* find the task_struct associated with userpid */
+		//pr_debug("Searching task with PID=%08x\n",
+		//	vfsspi_device->user_pid);
 		printk("[fp] vfsspi_send_drdy_signal - Searching task with PID=%08x\n", vfsspi_device->user_pid);
 		t = pid_task(find_pid_ns(vfsspi_device->user_pid, &init_pid_ns),
 			     PIDTYPE_PID);
 		if (t == NULL) {
-			
+			//pr_debug("No such pid\n");
 			printk("[fp] No such pid\n");
 			rcu_read_unlock();
 			return -ENODEV;
 		}
 		rcu_read_unlock();
-		
+		/* notify DRDY signal to user process */
 		ret = send_sig_info(vfsspi_device->signal_id,
 				    (struct siginfo *)1, t);
 		if (ret < 0)
 		{
-			
+			//pr_err("Error sending signal\n");
 			printk("[fp] Error sending signal\n");
 		}
 
 	} else {
-		
+		//pr_err("pid not received yet\n");
 		printk("[fp] pid not received yet\n");
 	}
 
@@ -230,8 +261,8 @@ static inline ssize_t vfsspi_writeSync(struct vfsspi_device_data *vfsspi_device,
 	struct spi_message m;
 	struct spi_transfer t;
 
-	
-	
+	//pr_debug("vfsspi_writeSync\n");
+	//printk("[fp] vfsspi_writeSync\n");
 
 	spi_message_init(&m);
 	memset(&t, 0, sizeof(t));
@@ -251,11 +282,12 @@ static inline ssize_t vfsspi_writeSync(struct vfsspi_device_data *vfsspi_device,
 #endif
 	if (status == 0)
 		status = m.actual_length;
-	
-	
+	//pr_debug("vfsspi_writeSync,length=%d\n", m.actual_length);
+	//printk("[fp] vfsspi_writeSync,length=%d\n", m.actual_length);
 	return status;
 }
 
+/* Return no. of bytes read > 0. negative integer incase of error. */
 static inline ssize_t vfsspi_readSync(struct vfsspi_device_data *vfsspi_device,
 					size_t len)
 {
@@ -263,8 +295,8 @@ static inline ssize_t vfsspi_readSync(struct vfsspi_device_data *vfsspi_device,
 	struct spi_message m;
 	struct spi_transfer t;
 
-	
-	
+	//pr_debug("vfsspi_readSync\n");
+	//printk("[fp] vfsspi_readSync\n");
 
 	spi_message_init(&m);
 	memset(&t, 0x0, sizeof(t));
@@ -286,8 +318,8 @@ static inline ssize_t vfsspi_readSync(struct vfsspi_device_data *vfsspi_device,
 	if (status == 0)
 		status = len;
 
-	
-	
+	//pr_debug("vfsspi_readSync,length=%d\n", len);
+	//printk("[fp] vfsspi_readSync,length=%d\n", len);
 
 	return status;
 }
@@ -298,8 +330,8 @@ static ssize_t vfsspi_write(struct file *filp, const char __user *buf,
 	struct vfsspi_device_data *vfsspi_device = NULL;
 	ssize_t               status = 0;
 
-	
-	
+	//pr_debug("vfsspi_write\n");
+	//printk("[fp] vfsspi_write\n");
 
 	if (count > DEFAULT_BUFFER_SIZE || count <= 0)
 	{
@@ -333,8 +365,8 @@ static ssize_t vfsspi_read(struct file *filp, char __user *buf,
 	struct vfsspi_device_data *vfsspi_device = NULL;
 	ssize_t                status    = 0;
 
-	
-	
+	//pr_debug("vfsspi_read\n");
+	//printk("[fp] vfsspi_read\n");
 
 	if (count > DEFAULT_BUFFER_SIZE || count <= 0)
 	{
@@ -357,13 +389,13 @@ static ssize_t vfsspi_read(struct file *filp, char __user *buf,
 
 	if (status > 0) {
 		unsigned long missing = 0;
-		
+		/* data read. Copy to user buffer.*/
 		missing = copy_to_user(buf, vfsspi_device->buffer, status);
 
 		if (missing == status) {
-			
+			//pr_err("copy_to_user failed\n");
 			printk("[fp] copy_to_user failed\n");
-			
+			/* Nothing was copied to user space buffer. */
 			status = -EFAULT;
 		} else {
 			status = status - missing;
@@ -382,8 +414,8 @@ static int vfsspi_xfer(struct vfsspi_device_data *vfsspi_device,
 	struct spi_message m;
 	struct spi_transfer t;
 
-	
-	
+	//pr_debug("vfsspi_xfer\n");
+	//printk("[fp] vfsspi_xfer\n");
 
 	if (vfsspi_device == NULL || tr == NULL)
 	{
@@ -434,11 +466,11 @@ static int vfsspi_xfer(struct vfsspi_device_data *vfsspi_device,
 				tr->len = tr->len - missing;
 		}
 	}
-	
-	
+	//pr_debug("vfsspi_xfer,length=%d\n", tr->len);
+	//printk("[fp] vfsspi_xfer,length=%d\n", tr->len);
 	return status;
 
-} 
+} /* vfsspi_xfer */
 
 static int vfsspi_rw_spi_message(struct vfsspi_device_data *vfsspi_device,
 				 unsigned long arg)
@@ -508,20 +540,20 @@ static int vfsspi_set_clk(struct vfsspi_device_data *vfsspi_device,
 	spin_unlock_irq(&vfsspi_device->vfs_spi_lock);
 	if (spidev != NULL) {
 		switch (clock) {
-		case 0:	
-			
+		case 0:	/* Running baud rate. */
+			//pr_debug("Running baud rate.\n");
 			printk("[fp] Running baud rate.(%d)\n", MAX_BAUD_RATE);
 			spidev->max_speed_hz = MAX_BAUD_RATE;
 			vfsspi_device->current_spi_speed = MAX_BAUD_RATE;
 			break;
-		case 0xFFFF: 
-			
+		case 0xFFFF: /* Slow baud rate */
+			//pr_debug("slow baud rate.\n");
 			printk("[fp] slow baud rate. (%d)\n", SLOW_BAUD_RATE);
 			spidev->max_speed_hz = SLOW_BAUD_RATE;
 			vfsspi_device->current_spi_speed = SLOW_BAUD_RATE;
 			break;
 		default:
-			
+			//pr_debug("baud rate is %d.\n", clock);
 			printk("[fp] baud rate is %d .\n", clock * BAUD_RATE_COEF);
 			vfsspi_device->current_spi_speed =
 				clock * BAUD_RATE_COEF;
@@ -541,7 +573,7 @@ static int vfsspi_register_drdy_signal(struct vfsspi_device_data *vfsspi_device,
 {
 	struct vfsspi_ioctl_register_signal usr_signal;
 	if (copy_from_user(&usr_signal, (void __user *)arg, sizeof(usr_signal)) != 0) {
-		
+		//pr_err("Failed copy from user.\n");
 		printk("[fp] Failed copy from user.\n");
 		return -EFAULT;
 	} else {
@@ -555,6 +587,13 @@ static irqreturn_t vfsspi_irq(int irq, void *context)
 {
 	struct vfsspi_device_data *vfsspi_device = context;
 
+	/* Linux kernel is designed so that when you disable
+	an edge-triggered interrupt, and the edge happens while
+	the interrupt is disabled, the system will re-play the
+	interrupt at enable time.
+	Therefore, we are checking DRDY GPIO pin state to make sure
+	if the interrupt handler has been called actually by DRDY
+	interrupt and it's not a previous interrupt re-play */
 	if (gpio_get_value(vfsspi_device->drdy_pin) == DRDY_ACTIVE_STATUS) {
 		vfsspi_sendDrdyNotify(vfsspi_device);
 	}
@@ -568,18 +607,18 @@ static int vfsspi_sendDrdyEventFd(struct vfsspi_device_data *vfsSpiDev)
     struct file *efd_file = NULL;
     struct eventfd_ctx *efd_ctx = NULL;	int ret = 0;
 
-    
+    //pr_debug("vfsspi_sendDrdyEventFd\n");
     printk("[fp]vfsspi_sendDrdyEventFd\n");
 
     if (vfsSpiDev->user_pid != 0) {
         rcu_read_lock();
-        
-        
-        
+        /* find the task_struct associated with userpid */
+        //pr_debug("Searching task with PID=%08x\n", vfsSpiDev->user_pid);
+        //printk("[fp] Searching task with PID=%08x\n", vfsSpiDev->user_pid);
         t = pid_task(find_pid_ns(vfsSpiDev->user_pid, &init_pid_ns),
             PIDTYPE_PID);
         if (t == NULL) {
-            
+            //pr_debug("No such pid\n");
             printk("[fp] No such pid\n");
             rcu_read_unlock();
             return -ENODEV;
@@ -588,22 +627,22 @@ static int vfsspi_sendDrdyEventFd(struct vfsspi_device_data *vfsSpiDev)
         rcu_read_unlock();
 
         if (efd_file == NULL) {
-            
+            //pr_debug("No such efd_file\n");
             printk("[fp] No such efd_file\n");
             return -ENODEV;
         }
         
         efd_ctx = eventfd_ctx_fileget(efd_file);
         if (efd_ctx == NULL) {
-            
+            //pr_debug("eventfd_ctx_fileget is failed\n");
             printk("[fp] eventfd_ctx_fileget is failed\n");
             return -ENODEV;
         }
 
-        
+        /* notify DRDY eventfd to user process */
         eventfd_signal(efd_ctx, 1);
 
-        
+        /* Release eventfd context */
         eventfd_ctx_put(efd_ctx);
     }
 
@@ -627,11 +666,11 @@ static int vfsspi_sendDrdyNotify(struct vfsspi_device_data *vfsSpiDev)
 
 static int vfsspi_enableIrq(struct vfsspi_device_data *vfsspi_device)
 {
-	
+	//pr_debug("vfsspi_enableIrq\n");
 	printk("[fp] vfsspi_enableIrq +++\n");
 
 	if (vfsspi_device->is_drdy_irq_enabled == DRDY_IRQ_ENABLE) {
-		
+		//pr_debug("DRDY irq already enabled\n");
 		printk("[fp] DRDY irq already enabled\n");
 		return -EINVAL;
 	}
@@ -645,11 +684,11 @@ static int vfsspi_enableIrq(struct vfsspi_device_data *vfsspi_device)
 
 static int vfsspi_disableIrq(struct vfsspi_device_data *vfsspi_device)
 {
-	
+	//pr_debug("vfsspi_disableIrq\n");
 	printk("[fp] vfsspi_disableIrq +++\n");
 
 	if (vfsspi_device->is_drdy_irq_enabled == DRDY_IRQ_DISABLE) {
-		
+		//pr_debug("DRDY irq already disabled\n");
 		printk("[fp] DRDY irq already disabled\n");
 		return -EINVAL;
 	}
@@ -666,7 +705,7 @@ static int vfsspi_set_drdy_int(struct vfsspi_device_data *vfsspi_device,
 	unsigned short drdy_enable_flag;
 	if (copy_from_user(&drdy_enable_flag, (void __user *)arg,
 			   sizeof(drdy_enable_flag)) != 0) {
-		
+		//pr_err("Failed copy from user.\n");
 		printk("[fp] Failed copy from user.\n");
 		return -EFAULT;
 	}
@@ -674,6 +713,10 @@ static int vfsspi_set_drdy_int(struct vfsspi_device_data *vfsspi_device,
 			vfsspi_disableIrq(vfsspi_device);
 	else {
 			vfsspi_enableIrq(vfsspi_device);
+			/* Workaround the issue where the system
+			  misses DRDY notification to host when
+			  DRDY pin was asserted before enabling
+			  device.*/
 			if (gpio_get_value(vfsspi_device->drdy_pin) ==
 				DRDY_ACTIVE_STATUS) {
 				vfsspi_sendDrdyNotify(vfsspi_device);
@@ -684,7 +727,7 @@ static int vfsspi_set_drdy_int(struct vfsspi_device_data *vfsspi_device,
 
 static void vfsspi_hardReset(struct vfsspi_device_data *vfsspi_device)
 {
-	
+	//pr_debug("vfsspi_hardReset\n");
 	printk("[fp] vfsspi_hardReset\n");
 
 	if (vfsspi_device != NULL) {
@@ -698,13 +741,13 @@ static void vfsspi_hardReset(struct vfsspi_device_data *vfsspi_device)
 
 static void vfsspi_suspend(struct vfsspi_device_data *vfsspi_device)
 {
-	
+	//pr_debug("vfsspi_suspend\n");
 	printk("[fp] vfsspi_suspend\n");
 
 	if (vfsspi_device != NULL) {
-		
+		//spin_lock(&vfsspi_device->vfs_spi_lock);
 		gpio_set_value(vfsspi_device->sleep_pin, 0);
-		
+		//spin_unlock(&vfsspi_device->vfs_spi_lock);
 	}
 }
 
@@ -714,12 +757,12 @@ static long vfsspi_ioctl(struct file *filp, unsigned int cmd,
 	int ret_val = 0;
 	struct vfsspi_device_data *vfsspi_device = NULL;
 
-	
-	
+	//pr_debug("vfsspi_ioctl\n");
+	//printk("[fp] vfsspi_ioctl\n");
 
 	if (_IOC_TYPE(cmd) != VFSSPI_IOCTL_MAGIC) {
-		
-		
+		//pr_err("invalid magic. cmd=0x%X Received=0x%X Expected=0x%X\n",
+		//	cmd, _IOC_TYPE(cmd), VFSSPI_IOCTL_MAGIC);
 		printk("[fp] invalid magic. cmd=0x%X Received=0x%X Expected=0x%X\n",
 			cmd, _IOC_TYPE(cmd), VFSSPI_IOCTL_MAGIC);
 		return -ENOTTY;
@@ -729,47 +772,47 @@ static long vfsspi_ioctl(struct file *filp, unsigned int cmd,
 	mutex_lock(&vfsspi_device->buffer_mutex);
 	switch (cmd) {
 	case VFSSPI_IOCTL_DEVICE_RESET:
-		
-		
+		//pr_debug("VFSSPI_IOCTL_DEVICE_RESET:\n");
+		//printk("[fp] VFSSPI_IOCTL_DEVICE_RESET:\n");
 		vfsspi_hardReset(vfsspi_device);
 		break;
 	case VFSSPI_IOCTL_DEVICE_SUSPEND:
 	{
-		
-		
+		//pr_debug("VFSSPI_IOCTL_DEVICE_SUSPEND:\n");
+		//printk("[fp] VFSSPI_IOCTL_DEVICE_SUSPEND:\n");
 		vfsspi_suspend(vfsspi_device);
 		break;
 	}		
 	case VFSSPI_IOCTL_RW_SPI_MESSAGE:
-		
-		
+		//pr_debug("VFSSPI_IOCTL_RW_SPI_MESSAGE");
+		//printk("[fp] VFSSPI_IOCTL_RW_SPI_MESSAGE");
 		ret_val = vfsspi_rw_spi_message(vfsspi_device, arg);
 		break;
 	case VFSSPI_IOCTL_SET_CLK:
-		
-		
+		//pr_debug("VFSSPI_IOCTL_SET_CLK\n");
+		//printk("[fp] VFSSPI_IOCTL_SET_CLK\n");
 		ret_val = vfsspi_set_clk(vfsspi_device, arg);
 		break;
 	case VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL:
-		
-		
+		//pr_debug("VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL\n");
+		//printk("[fp] VFSSPI_IOCTL_REGISTER_DRDY_SIGNAL\n");
 		ret_val = vfsspi_register_drdy_signal(vfsspi_device, arg);
 		break;
 	case VFSSPI_IOCTL_SET_DRDY_INT:
-		
-		
+		//pr_debug("VFSSPI_IOCTL_SET_DRDY_INT\n");
+		//printk("[fp] VFSSPI_IOCTL_SET_DRDY_INT\n");
 		ret_val = vfsspi_set_drdy_int(vfsspi_device, arg);
 		break;
 	case VFSSPI_IOCTL_SELECT_DRDY_NTF_TYPE:
         {
             vfsspi_iocSelectDrdyNtfType_t drdyTypes;
 
-            
-	    
+            //pr_debug("VFSSPI_IOCTL_SELECT_DRDY_NTF_TYPE\n");
+	    //printk("[fp] VFSSPI_IOCTL_SELECT_DRDY_NTF_TYPE\n"); 
 
             if (copy_from_user(&drdyTypes, (void __user *)arg,
                 sizeof(vfsspi_iocSelectDrdyNtfType_t)) != 0) {
-                    
+                    //pr_debug("copy from user failed.\n");
 	            printk("[fp] copy from user failed.\n");
                     ret_val = -EFAULT;
             } else {
@@ -786,7 +829,7 @@ static long vfsspi_ioctl(struct file *filp, unsigned int cmd,
                         ret_val = 0;
 			printk("[fp] sizeof(vfsspi_iocSelectDrdyNtfType_t) = %zu\n", sizeof(vfsspi_iocSelectDrdyNtfType_t));
                 } else {
-                    
+                    //pr_debug("copy to user failed\n");
 	            printk("[fp] copy to user failed\n");
                 }
             }
@@ -806,7 +849,7 @@ static int vfsspi_open(struct inode *inode, struct file *filp)
 	struct vfsspi_device_data *vfsspi_device = NULL;
 	int status = -ENXIO;
 
-	
+	//pr_debug("vfsspi_open\n");
 	printk("[fp] vfsspi_open\n");
 
 	mutex_lock(&device_list_mutex);
@@ -822,14 +865,14 @@ static int vfsspi_open(struct inode *inode, struct file *filp)
 		mutex_lock(&vfsspi_device->kernel_lock);
 		if (vfsspi_device->is_opened != 0) {
 			status = -EBUSY;
-			
+			//pr_err("vfsspi_open: is_opened != 0, -EBUSY");
 			printk("[fp] vfsspi_open: is_opened != 0, -EBUSY\n");
 			goto vfsspi_open_out;
 		}
 		vfsspi_device->user_pid = 0;
         vfsspi_device->drdy_ntf_type = VFSSPI_DRDY_NOTIFY_TYPE_SIGNAL;
 		if (vfsspi_device->buffer != NULL) {
-			
+			//pr_err("vfsspi_open: buffer != NULL");
 			printk("[fp] vfsspi_open: buffer != NULL\n");
 			goto vfsspi_open_out;
 		}
@@ -837,7 +880,7 @@ static int vfsspi_open(struct inode *inode, struct file *filp)
 			kmalloc(DEFAULT_BUFFER_SIZE, GFP_KERNEL);
 		if (vfsspi_device->null_buffer == NULL) {
 			status = -ENOMEM;
-			
+			//pr_err("vfsspi_open: null_buffer == NULL, -ENOMEM");
 			printk("[fp] vfsspi_open: null_buffer == NULL, -ENOMEM\n");
 			goto vfsspi_open_out;
 		}
@@ -846,7 +889,7 @@ static int vfsspi_open(struct inode *inode, struct file *filp)
 		if (vfsspi_device->buffer == NULL) {
 			status = -ENOMEM;
 			kfree(vfsspi_device->null_buffer);
-			
+			//pr_err("vfsspi_open: buffer == NULL, -ENOMEM");
 			printk("[fp] vfsspi_open: buffer == NULL, -ENOMEM\n");
 			goto vfsspi_open_out;
 		}
@@ -867,7 +910,7 @@ static int vfsspi_release(struct inode *inode, struct file *filp)
 	struct vfsspi_device_data *vfsspi_device = NULL;
 	int                   status     = 0;
 
-	
+	//pr_debug("vfsspi_release\n");
 	printk("[fp] vfsspi_release\n");
 
 	mutex_lock(&device_list_mutex);
@@ -888,6 +931,7 @@ static int vfsspi_release(struct inode *inode, struct file *filp)
 	return status;
 }
 
+/* file operations associated with device */
 static const struct file_operations vfsspi_fops = {
 	.owner   = THIS_MODULE,
 	.write   = vfsspi_write,
@@ -917,7 +961,7 @@ ssize_t fpr_test(struct spi_device *spi)
 
   fp_mount = 0;
 
-  tx_buf[0]=1;   
+  tx_buf[0]=1;   //EP0 Read 
   tx_buf[1]=0; 
 	
   spi->bits_per_word = 8;
@@ -928,7 +972,7 @@ ssize_t fpr_test(struct spi_device *spi)
   PerformReset();
   mdelay(5);
 
-  
+  /* Test the SPI driver reply quick */
   memset(&t, 0, sizeof(t));
   t.tx_buf = tx_buf;
   t.rx_buf = rx_buf;
@@ -937,9 +981,14 @@ ssize_t fpr_test(struct spi_device *spi)
   spi_message_init(&m);
   spi_message_add_tail(&t, &m);
   printk(KERN_ERR "[fp][SYN] ValiditySensor: spi_sync returned %d \n", spi_sync(spi, &m));
+  /*
+  printk(KERN_ERR "[fp][SYN] ValiditySensor: Get first 6 bytes\n");
+  for(i=0;i<6;i++)
+        printk(KERN_ERR "rx[%d] = 0x%0x ", i, rx_buf[i]);
+  */
   mdelay(10);
 
-  tx_buf[0]=1;   
+  tx_buf[0]=1;   //EP0 Read 
   tx_buf[1]=0; 
   memset(&t, 0, sizeof(t));
 
@@ -950,9 +999,13 @@ ssize_t fpr_test(struct spi_device *spi)
   spi_message_add_tail(&t, &m); 
   
   printk(KERN_ERR "[fp][SYN] ValiditySensor: spi_sync returned %d \n", spi_sync(spi, &m)); 
+  /*
+  for(i=0;i<6;i++) 
+        printk(KERN_ERR "%0x ",rx_buf[i]); 
+  */
   mdelay(5); 
  
-  tx_buf[0]=2;   
+  tx_buf[0]=2;   //Getver command on EP1OUT 
   tx_buf[1]=1; 
  
   memset(&t, 0, sizeof(t)); 
@@ -964,7 +1017,7 @@ ssize_t fpr_test(struct spi_device *spi)
   spi_sync(spi,&m); 
   mdelay(5); 
  
-  tx_buf[0]=3; 
+  tx_buf[0]=3; //Read Gerver command reply 
   tx_buf[1]=0; 
  
   memset(&t, 0, sizeof(t)); 
@@ -974,6 +1027,10 @@ ssize_t fpr_test(struct spi_device *spi)
   spi_message_init(&m); 
   spi_message_add_tail(&t, &m); 
   printk(KERN_ERR "[fp][SYN] ValiditySensor: spi_sync returned %d \n", spi_sync(spi, &m)); 
+  /*
+  for(i=0;i<40;i++) 
+        printk(KERN_ERR "%0x ",rx_buf[i]); 
+  */
 
   pos += snprintf(firmware+pos, sizeof(firmware), "[FP]FW Ver:[ ");
   for(i = 0; i < 20; i++)
@@ -981,6 +1038,10 @@ ssize_t fpr_test(struct spi_device *spi)
 
   pos += snprintf(firmware+pos, sizeof(firmware), "]");
   if(rx_buf[0]  == 0xff && rx_buf[1]  == 0xff && rx_buf[2]  == 0x0  && rx_buf[3]  == 0x0
+     /*&& rx_buf[4]  == 0xca && rx_buf[5]  == 0x74 && rx_buf[6]  == 0x5b && rx_buf[7]  == 0x51
+     && rx_buf[8]  == 0x3c && rx_buf[9]  == 0x0  && rx_buf[10] == 0x0  && rx_buf[11] == 0x0
+     && rx_buf[12] == 0x6  && rx_buf[13] == 0x1  && rx_buf[14] == 0x1  && rx_buf[15] == 0x30
+     && rx_buf[16] == 0x0  && rx_buf[17] == 0x1*/
      ) 
   {
   	printk(KERN_ERR "[fp][SYN] ValiditySensor: firmware version verify PASS\n"); 
@@ -998,6 +1059,7 @@ ssize_t fpr_test(struct spi_device *spi)
   return pos;
 
 }
+//htc add++
 #ifdef CONFIG_OF
 static int vfsspi_get_of_pdata(struct device *dev, struct vfsspi_platform_data *pdata)
 {
@@ -1061,7 +1123,7 @@ static int fpr_power_control(int power_state, struct vfsspi_platform_data *pdata
 
 	switch(power_state)
 	{
-		case 0: 
+		case 0: //Disable power
 		printk("[fp][SYN] Disable power source.\n");
 		       gpio_set_value(pdata->pwr_3v3_gpio, 0);
 		       mdelay(10);
@@ -1069,7 +1131,7 @@ static int fpr_power_control(int power_state, struct vfsspi_platform_data *pdata
 		       mdelay(100);
 		       break;
 
-		case 1: 
+		case 1: //Enable power
 		printk("[fp][SYN] Enable power source.\n");
 		       gpio_set_value(pdata->pwr_1v8_gpio, 1);
 		       mdelay(10);
@@ -1080,7 +1142,7 @@ static int fpr_power_control(int power_state, struct vfsspi_platform_data *pdata
 		       gpio_set_value(pdata->reset_gpio, 1);
 		       break;
 
-		case 3: 
+		case 3: //Power on sequence
 		printk("[fp][SYN] Device power-on sequence.\n");
 		       gpio_set_value(pdata->pwr_1v8_gpio, 0);
 		       mdelay(10);
@@ -1102,6 +1164,7 @@ static int fpr_power_control(int power_state, struct vfsspi_platform_data *pdata
 	return 0; 
 
 }
+//htc add--
 
 static int vfsspi_probe(struct spi_device *spi)
 {
@@ -1113,7 +1176,7 @@ static int vfsspi_probe(struct spi_device *spi)
         int retval;
 	struct device_attribute **dev_attr = dev_attrs;
 
-	
+	//pr_info("vfsspi_probe\n");
 	printk("[fp][SYN] vfsspi_probe+++\n");
 
 	if(dev == NULL)
@@ -1134,7 +1197,7 @@ static int vfsspi_probe(struct spi_device *spi)
 
 	vfsspi_get_of_pdata(dev, &pdata_of);
 	vfsspi_pdata = &pdata_of;
-	fpr_power_control(3, vfsspi_pdata); 
+	fpr_power_control(3, vfsspi_pdata); //Run Fingerprint power-on sequence
 
 	cs0_pinctrl = devm_pinctrl_get(&spi->dev);
 	if (IS_ERR(cs0_pinctrl)) {
@@ -1162,7 +1225,7 @@ static int vfsspi_probe(struct spi_device *spi)
 	
 	fpr_test(spi);
 	
-	if(fp_mount == 0) 
+	if(fp_mount == 0) //Once fingerprint check fail
 	{
 		set_state = pinctrl_lookup_state(cs0_pinctrl, "spi_0_cs0_suspend");
         	if (IS_ERR(set_state)) {
@@ -1176,7 +1239,7 @@ static int vfsspi_probe(struct spi_device *spi)
                 	return retval;
         	}
 
-		
+		//cs0_pin = of_get_named_gpio(node, "fpr_cs0", 0);
 		printk("[fp][SYN] CS0 GPIO pin is %d\n", vfsspi_pdata->cs_gpio);
 		gpio_free(vfsspi_pdata->cs_gpio);
 		retval = gpio_request(vfsspi_pdata->cs_gpio, "fpc_cs0");
@@ -1188,7 +1251,7 @@ static int vfsspi_probe(struct spi_device *spi)
 		}
 
 		retval = gpio_direction_input(vfsspi_pdata->cs_gpio);
-		
+		//retval = gpio_direction_output(vfsspi_pdata->cs_gpio, 0);
 
 		if (retval) {
 			dev_err(&spi->dev, "gpio_direction_input (irq) failed.\n");
@@ -1211,7 +1274,7 @@ static int vfsspi_probe(struct spi_device *spi)
 		return -ENOMEM;
 	}
 
-	
+	/* Initialize driver data. */
 	vfsspi_device->current_spi_speed = SLOW_BAUD_RATE;
 	vfsspi_device->spi = spi;
 
@@ -1236,6 +1299,14 @@ static int vfsspi_probe(struct spi_device *spi)
 		printk("[fp] vfsspi_probe: gpio request DRDY pin fail\n");
 		goto vfsspi_probe_drdy_failed;
 	}
+	/*
+	printk("[fp] vfsspi_device->sleep_pin = %d\n", vfsspi_device->sleep_pin);
+	if (gpio_request(vfsspi_device->sleep_pin, "vfsspi_sleep")) {
+		status = -EBUSY;
+		printk("[fp] vfsspi_probe: gpio request SLEEP pin fail\n");
+		goto vfsspi_probe_sleep_failed;
+	}
+	*/
 #if DO_CHIP_SELECT
 	pr_debug("HANDLING CHIP SELECT");
 	vfsspi_device->cs_pin  = VFSSPI_CS_PIN;
@@ -1247,17 +1318,26 @@ static int vfsspi_probe(struct spi_device *spi)
 	status = gpio_direction_output(vfsspi_device->cs_pin, 1);
 	if (status < 0) {
 		printk("[fp] vfsspi_probe: gpio_direction_input CS failed\n");
-		
+		//pr_err("gpio_direction_input CS failed\n");
 		status = -EBUSY;
 		goto vfsspi_probe_gpio_init_failed;
 	}
 	gpio_set_value(vfsspi_device->cs_pin, 1);
 #endif
 
+	/*
+	status = gpio_direction_output(vfsspi_device->sleep_pin, 1);
+	if (status < 0) {
+		//pr_err("gpio_direction_output SLEEP failed\n");
+		printk("[fp] vfsspi_probe: gpio_direction_output SLEEP failed\n");
+		status = -EBUSY;
+		goto vfsspi_probe_gpio_init_failed;
+	}
+	*/
 
 	status = gpio_direction_input(vfsspi_device->drdy_pin);
 	if (status < 0) {
-		
+		//pr_err("gpio_direction_input DRDY failed\n");
 		printk("[fp] vfsspi_probe: gpio_direction_output DRDY failed\n");
 		status = -EBUSY;
 		goto vfsspi_probe_gpio_init_failed;
@@ -1266,7 +1346,7 @@ static int vfsspi_probe(struct spi_device *spi)
 	gpio_irq = gpio_to_irq(vfsspi_device->drdy_pin);
 
 	if (gpio_irq < 0) {
-		
+		//pr_err("gpio_to_irq failed\n");
 		printk("[fp] vfsspi_probe: gpio_to_irq failed (drdy)\n");
 		status = -EBUSY;
 		goto vfsspi_probe_gpio_init_failed;
@@ -1274,7 +1354,7 @@ static int vfsspi_probe(struct spi_device *spi)
 
 	if (request_irq(gpio_irq, vfsspi_irq, IRQF_TRIGGER_RISING,
 			"vfsspi_irq", vfsspi_device) < 0) {
-		
+		//pr_err("request_irq failed\n");
 		printk("[fp] vfsspi_probe: request_irq failed (drdy)\n");
 		status = -EBUSY;
 		goto vfsspi_probe_irq_failed;
@@ -1294,12 +1374,12 @@ static int vfsspi_probe(struct spi_device *spi)
 	}
 
 	mutex_lock(&device_list_mutex);
-	
-	
+	/* Create device node */
+	/* register major number for character device */
 	status = alloc_chrdev_region(&(vfsspi_device->devt),
 				     0, 1, VALIDITY_PART_NAME);
 	if (status < 0) {
-		
+		//pr_err("alloc_chrdev_region failed\n");
 		printk("[fp] vfsspi_probe: alloc_chrdev_region failed\n");
 		goto vfsspi_probe_alloc_chardev_failed;
 	}
@@ -1308,7 +1388,7 @@ static int vfsspi_probe(struct spi_device *spi)
 	vfsspi_device->cdev.owner = THIS_MODULE;
 	status = cdev_add(&(vfsspi_device->cdev), vfsspi_device->devt, 1);
 	if (status < 0) {
-		
+		//pr_err("cdev_add failed\n");
 		printk("[fp] vfsspi_probe: cdev_add failed\n");
 		unregister_chrdev_region(vfsspi_device->devt, 1);
 		goto vfsspi_probe_cdev_add_failed;
@@ -1317,7 +1397,7 @@ static int vfsspi_probe(struct spi_device *spi)
 	vfsspi_device_class = class_create(THIS_MODULE, "validity_fingerprint");
 
 	if (IS_ERR(vfsspi_device_class)) {
-		
+		//pr_err("vfsspi_init: class_create() is failed - unregister chrdev.\n");
 		printk("[fp] vfsspi_probe: class_create() is failed - unregister chrdev.\n");
 		cdev_del(&(vfsspi_device->cdev));
 		unregister_chrdev_region(vfsspi_device->devt, 1);
@@ -1340,7 +1420,7 @@ static int vfsspi_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, vfsspi_device);
 
-	
+	//pr_info("vfsspi_probe successful");
 	printk("[fp] vfsspi_probe successful");
 
 	return 0;
@@ -1359,11 +1439,15 @@ vfsspi_probe_gpio_init_failed:
 vfsspi_probe_cs_failed:
 #endif
 	gpio_free(vfsspi_device->sleep_pin);
+/*
+vfsspi_probe_sleep_failed:
+	gpio_free(vfsspi_device->drdy_pin);
+*/
 vfsspi_probe_drdy_failed:
 	mutex_destroy(&vfsspi_device->buffer_mutex);
 	mutex_destroy(&vfsspi_device->kernel_lock);
 	kfree(vfsspi_device);
-	
+	//pr_err("vfsspi_probe failed!!\n");
 	printk("[fp] vfsspi_probe failed!!\n");
 	return status;
 }
@@ -1374,7 +1458,7 @@ static int vfsspi_remove(struct spi_device *spi)
 
 	struct vfsspi_device_data *vfsspi_device = NULL;
 
-	
+	//pr_debug("vfsspi_remove\n");
 	printk("[fp] vfsspi_remove\n");
 
 	vfsspi_device = spi_get_drvdata(spi);
@@ -1394,7 +1478,7 @@ static int vfsspi_remove(struct spi_device *spi)
 		gpio_free(vfsspi_device->sleep_pin);
 		gpio_free(vfsspi_device->drdy_pin);
 
-		
+		/* Remove device entry. */
 		list_del(&vfsspi_device->device_entry);
 		device_destroy(vfsspi_device_class, vfsspi_device->devt);
 		class_destroy(vfsspi_device_class);
@@ -1425,16 +1509,16 @@ static int __init vfsspi_init(void)
 {
 	int status = 0;
 
-	
+	//pr_debug("vfsspi_init\n");
 	printk("[fp] vfsspi_init\n");
 
 	status = spi_register_driver(&vfsspi_spi);
 	if (status < 0) {
-		
+		//pr_err("vfsspi_init: spi_register_driver() is failed - unregister chrdev.\n");
 		printk("[fp] vfsspi_init: spi_register_driver() is failed - unregister chrdev.\n");
 		return status;
 	}
-	
+	//pr_debug("init is successful\n");
 	printk("[fp] init is successful\n");
 
 	return status;

@@ -21,7 +21,18 @@
 
 #include <linux/cxd224x.h>
 #include <linux/wakelock.h>
-#define CXD224X_WAKE_LOCK_TIMEOUT	10		
+
+#include <linux/types.h>
+#include <linux/htc_flags.h>
+#include "cxd224x_mfg.h"
+
+#define NFC_BOOT_MODE_NORMAL 0
+#define NFC_BOOT_MODE_FTM 1
+#define NFC_BOOT_MODE_DOWNLOAD 2
+#define NFC_BOOT_MODE_OFF_MODE_CHARGING 5
+
+#define CXD224X_WAKE_LOCK_TIMEOUT	3		
+#define CXD224X_WAKE_LOCK_RF_NFT_TIMEOUT	10		
 #define CXD224X_WAKE_LOCK_NAME	"cxd224x-i2c"		
 #define CXD224X_WAKE_LOCK_TIMEOUT_LP	3		
 #define CXD224X_WAKE_LOCK_NAME_LP "cxd224x-i2c-lp"	
@@ -46,10 +57,9 @@ int is_debug = 0;
 #define CONFIG_CXD224X_NFC_VEN
 #define LATCH_ERROR_NO (-110)
 
-int nfc_cmd_result;	
-static int readout_reest_err_code = 0;
+int nfc_cmd_result;
+static int readout_core_reset_ntf = 1;
 
-#include "cxd224x_mfg.h"
 static int mfc_nfc_cmd_result = 0;
 
 static   unsigned long watchdog_counter;
@@ -57,6 +67,7 @@ static   unsigned int watchdogEn;
 static   unsigned int watchdog_timeout;
 char  NCI_TMP[MAX_BUFFER_SIZE];
 char dataresp[MAX_BUFFER_SIZE];
+char  FelicaIDm[MAX_BUFFER_SIZE];
 #define WATCHDOG_FTM_TIMEOUT_SEC 30
 
 int attr_dbg_value = 0;
@@ -69,6 +80,8 @@ static void cxd224x_hw_reset(void);
 static void cxd224x_pon_on(void);
 static void cxd224x_pon_off(void);
 static void cxd224x_nci_read(void);
+static int cxd224x_nci_write(uint8_t *buf, int len);
+extern void force_disable_PM8994_VREG_ID_L30(void);
 
 struct cxd224x_dev {
 	struct class	*cxd224x_class;
@@ -78,10 +91,11 @@ struct cxd224x_dev {
 	struct i2c_client *client;
 	struct miscdevice cxd224x_device;
 	unsigned int en_gpio;	
+	unsigned int rst_gpio;	
 	unsigned int irq_gpio;	
 	unsigned int wake_gpio;	
 	unsigned int rfs_gpio;	
-	unsigned int rst_gpio;
+	int boot_mode;
 	bool irq_enabled;
 	struct mutex lock;
 	spinlock_t irq_enabled_lock;
@@ -100,6 +114,28 @@ struct cxd224x_dev {
 
 struct cxd224x_dev *cxd224x_info;
 
+void cxd224x_htc_off_mode_charging (void) {
+	force_disable_PM8994_VREG_ID_L30();
+}
+
+int cxd224x_htc_get_bootmode(void) {
+	char sbootmode[30] = "default";
+	strcpy(sbootmode,htc_get_bootmode());
+	if (strcmp(sbootmode, "offmode_charging") == 0) {
+		I("%s: Check bootmode done NFC_BOOT_MODE_OFF_MODE_CHARGING\n",__func__);
+		return NFC_BOOT_MODE_OFF_MODE_CHARGING;
+	} else if (strcmp(sbootmode, "ftm") == 0) {
+		I("%s: Check bootmode done NFC_BOOT_MODE_FTM\n",__func__);
+		return NFC_BOOT_MODE_FTM;
+	} else if (strcmp(sbootmode, "download") == 0) {
+		I("%s: Check bootmode done NFC_BOOT_MODE_DOWNLOAD\n",__func__);
+		return NFC_BOOT_MODE_DOWNLOAD;
+	} else {
+		I("%s: Check bootmode done NFC_BOOT_MODE_NORMAL mode = %s\n",__func__,sbootmode);
+		return NFC_BOOT_MODE_NORMAL;
+	}
+}
+
 #ifdef CONFIG_CXD224X_NFC_RST
 static void cxd224x_workqueue(struct work_struct *work)
 {
@@ -107,20 +143,29 @@ static void cxd224x_workqueue(struct work_struct *work)
 	unsigned long flags;
 
 	dev_info(&cxd224x_dev->client->dev, "%s()++++, xrst assert, chk irq:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio));
-	I("%s: gpio_set_value(0+), chk_1 irq:(%d), rst:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio));
-        spin_lock_irqsave(&cxd224x_dev->irq_enabled_lock, flags);
-	gpio_set_value(cxd224x_dev->rst_gpio, 0);
-	I("%s: gpio_set_value(0-), chk_2 irq:(%d), rst:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio));
-        cxd224x_dev->count_irq=0; 
-        spin_unlock_irqrestore(&cxd224x_dev->irq_enabled_lock, flags);
+	I("%s: gpio_set_value(+), chk_1 irq:(%d), gp_rst:(%d)/mpp_en:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio), gpio_get_value(cxd224x_dev->en_gpio));
 
-	I("%s: +msleep(2), chk_3 irq:(%d), rst:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio));
-	msleep(2);	
+    spin_lock_irqsave(&cxd224x_dev->irq_enabled_lock, flags);
+
+	gpio_set_value(cxd224x_dev->en_gpio, 0);	
+	gpio_set_value(cxd224x_dev->rst_gpio, 1);	
+
+	I("%s: gpio_set_value(-), chk_2 irq:(%d), gp_rst:(%d)/mpp_en:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio), gpio_get_value(cxd224x_dev->en_gpio));
+
+    cxd224x_dev->count_irq=0; 
+    spin_unlock_irqrestore(&cxd224x_dev->irq_enabled_lock, flags);
+
+	I("%s: +msleep(2), chk_3 irq:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio));
+	msleep(2);
+
 	dev_info(&cxd224x_dev->client->dev, "%s, xrst deassert, chk irq:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio));
-	I("%s: gpio_set_value(1+), chk_4 irq:(%d), rst:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio));
-	gpio_set_value(cxd224x_dev->rst_gpio, 1);
-	I("%s: gpio_set_value(1-), chk_5 irq:(%d), rst:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio));
-	dev_info(&cxd224x_dev->client->dev, "%s()---, skip delay, chk irq:%d, pon:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->wake_gpio));
+	I("%s: gpio_set_value(+), chk_4 irq:(%d), gp_rst:(%d)/mpp_en:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio), gpio_get_value(cxd224x_dev->en_gpio));
+
+	gpio_set_value(cxd224x_dev->en_gpio, 1);	
+	gpio_set_value(cxd224x_dev->rst_gpio, 0);	
+
+	I("%s: gpio_set_value(-), chk_5 irq:(%d), gp_rst:(%d)/mpp_en:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->rst_gpio), gpio_get_value(cxd224x_dev->en_gpio));
+	dev_info(&cxd224x_dev->client->dev, "%s()---, skip delay, chk irq:%d, pon:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->wake_gpio));	
 }
 
 static int __init init_wqueue(struct cxd224x_dev *cxd224x_dev)
@@ -168,7 +213,6 @@ static irqreturn_t cxd224x_dev_irq_handler(int irq, void *dev_id)
 	spin_lock_irqsave(&cxd224x_dev->irq_enabled_lock, flags);
 	cxd224x_dev->count_irq++;
 	spin_unlock_irqrestore(&cxd224x_dev->irq_enabled_lock, flags);
-	I("%s: wake_up\n", __func__);
 	wake_up(&cxd224x_dev->read_wq);
 
 	return IRQ_HANDLED;
@@ -201,7 +245,6 @@ static ssize_t cxd224x_dev_read(struct file *filp, char __user *buf,
 	struct cxd224x_dev *cxd224x_dev = filp->private_data;
 	unsigned char tmp[MAX_BUFFER_SIZE];
 	int total, len, ret;
-
 	total = 0;
 	len = 0;
 
@@ -210,13 +253,18 @@ static ssize_t cxd224x_dev_read(struct file *filp, char __user *buf,
 
 	mutex_lock(&cxd224x_dev->read_mutex);
 
-	I("%s: i2c_master_recv, irq:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio));
 	ret = i2c_master_recv(cxd224x_dev->client, tmp, 3);
 	if (ret == 3 && (tmp[0] != 0xff)) {
 		total = ret;
 
 		len = tmp[PACKET_HEADER_SIZE_NCI-1];
 
+		if ( 0x61 == tmp[0] ) {
+			wake_lock_timeout(&cxd224x_dev->wakelock, CXD224X_WAKE_LOCK_RF_NFT_TIMEOUT*HZ);
+			I("%s: RF NFT, wake_lock_timeout(10sec), tmp[0]:%x\n", __func__, tmp[0]);
+		}
+
+		
 		if (len > 0 && (len + total) <= count) {
 			ret = i2c_master_recv(cxd224x_dev->client, tmp+total, len);
 			if (ret == len)
@@ -224,20 +272,18 @@ static ssize_t cxd224x_dev_read(struct file *filp, char __user *buf,
 		}
 	} 
 
+#ifdef CONFIG_CXD224X_NFC_RST
 	if ( LATCH_ERROR_NO == ret ) {
-		I("%s: I2C Bus Latch, Reset Chip to Recovery+++\n", __func__);
-		cxd224x_hw_reset();
-		cxd224x_pon_on();
-		cxd224x_nci_read();
-		cxd224x_pon_off();
-		I("%s: I2C Bus Latch, Reset Chip to Recovery---\n", __func__);
+	    I("%s: sony patch triger\n", __func__);
+            queue_work(cxd224x_dev->wqueue, &cxd224x_dev->qmsg);
 	}
+#endif
 
 	mutex_unlock(&cxd224x_dev->read_mutex);
 
 	if (total > count || copy_to_user(buf, tmp, total)) {
 		dev_err(&cxd224x_dev->client->dev,
-			"failed to copy to user space, total = %d\n", total);
+			"[NFC] cxd224x_dev_read failed to copy to user space, total = %d\n", total);
 		total = -EFAULT;
 	}
 
@@ -265,20 +311,16 @@ static ssize_t cxd224x_dev_write(struct file *filp, const char __user *buf,
 	mutex_lock(&cxd224x_dev->read_mutex);
 	
 
-	I("%s: i2c_master_send\n", __func__);
 	ret = i2c_master_send(cxd224x_dev->client, tmp, count);
+
+	if ( LATCH_ERROR_NO == ret ) {
+		I("%s: I2C Bus Latch, set ret -EIO\n", __func__);
+		ret = -EIO;
+	}
+
 	if (ret != count) {
 		dev_err(&cxd224x_dev->client->dev,
 			"failed to write %d\n", ret);
-
-		if ( LATCH_ERROR_NO == ret ) {
-			I("%s: I2C Bus Latch, Reset Chip to Recovery+++\n", __func__);
-			cxd224x_hw_reset();
-			cxd224x_pon_on();
-			cxd224x_nci_read();
-			cxd224x_pon_off();
-			I("%s: I2C Bus Latch, Reset Chip to Recovery---\n", __func__);
-		}
 		ret = -EIO;
 	}
 	mutex_unlock(&cxd224x_dev->read_mutex);
@@ -347,11 +389,13 @@ static long cxd224x_dev_unlocked_ioctl(struct file *filp,
 #endif
 		break;
 	case CXDNFC_POWER_CTL:
+#ifdef CONFIG_CXD224X_NFC_VEN
 		if (arg == 0) {
 		} else if (arg == 1) {
 		} else {
 			
 		}
+#endif
 		break;
 	case CXDNFC_WAKE_CTL:
 		if (arg == 0) {
@@ -470,6 +514,7 @@ int nci_Reader(control_msg_pack *script, unsigned int scriptSize) {
 	int rf_support_len = 0;
 
 	I("%s()+++\n", __func__);
+	memset(FelicaIDm, 0, MAX_BUFFER_SIZE);
 
 	if (previous != script) {
 		I("new command, reset flags.\r\n");
@@ -499,7 +544,6 @@ int nci_Reader(control_msg_pack *script, unsigned int scriptSize) {
 		I("I2C error while read out the NCI header.\r\n");
 		return -255;
 	} else {
-		I("@@@1 joner_dbg, NCI header read: 0x%02X, 0x%02X\r\n", nci_joner_header[0], nci_joner_header[1]);
 		memcpy(nci_rx_header,nci_joner_header,2);
 		I("@@@1 NCI header read: 0x%02X, 0x%02X\r\n", nci_rx_header[0], nci_rx_header[1]);
 
@@ -697,6 +741,17 @@ int nci_Reader(control_msg_pack *script, unsigned int scriptSize) {
 			} else
 				I("No response requirement.\r\n");
 		}
+	}
+
+	
+	E("### process Felica IDm...\r\n");
+	if ( (0x02 == nci_rx_header[0]) && (0x00 == nci_rx_header[1]) ) {
+		E("Felica IDm+++ : \r\n");
+		nfc_nci_dump_data(&receiverBuffer[2], 8);
+		memcpy(FelicaIDm,NCI_TMP,MAX_BUFFER_SIZE);
+		E("Felica IDm--- : %s\r\n", FelicaIDm);
+		res_achieved = 1;
+		return 1;
 	}
 
 	
@@ -1062,13 +1117,15 @@ static void cxd224x_hw_reset(void)
 
 	I("%s()+++\n", __func__);
 
-	I("%s: set RST rst_gpio pin [Low]\n", __func__);
-	gpio_set_value_cansleep(cxd224x_dev->rst_gpio, 0);
-	I("%s: wait for 50 ms, irq:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio)); 
+	I("%s: 1_set RST en_gpio/rst_gpio pin [Low/HIGH]\n", __func__);
+	gpio_set_value_cansleep(cxd224x_dev->en_gpio, 0);	
+	gpio_set_value(cxd224x_dev->rst_gpio, 1);	
+	I("%s: 2_wait for 50 ms, chk irq:%d, en:%d, rst:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->rst_gpio)); 
 	mdelay(50);
-	I("%s: set RST rst_gpio pin [High]\n", __func__);
-	gpio_set_value_cansleep(cxd224x_dev->rst_gpio, 1);
-	I("%s: wait for 50 ms, chk irq:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio)); 
+	I("%s: 3_set RST en_gpio/rst_gpio pin [High/LOW]\n", __func__);
+	gpio_set_value_cansleep(cxd224x_dev->en_gpio, 1);	
+	gpio_set_value(cxd224x_dev->rst_gpio, 0);	
+	I("%s: 4_wait for 50 ms, chk irq:%d, en:%d, rst:%d\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->rst_gpio)); 
 	mdelay(50);
 
     I("%s()---\n", __func__);
@@ -1257,9 +1314,15 @@ static void cxd224x_nci_read(void)
 			
 			
 			if (0x60 == (nci_read_header[0] & 0xF0)) {
-				I("NCI NTF!!"); 
+				I("NCI NTF!!");
+
+				if ((1 == nci_data_len) && (0xee == receiverBuffer[0])) {
+					I("### received CORE_RESET_NTF_ERROR!! ###");
+					readout_core_reset_ntf = 0xEE;
+				}
+
 				if ((2 == nci_data_len) && (0x00 == receiverBuffer[0]) && (0x01 == receiverBuffer[1]))
-					readout_reest_err_code = 1;
+					readout_core_reset_ntf = 0;
 			}
 		}	else {
 			break;
@@ -1341,8 +1404,8 @@ static ssize_t debug_cmd_store(struct device *dev,
 	sscanf(buf, "%d", &code);
 
 	I("%s()+++\n", __func__);
-	I("%s: irq = %d,  rst_gpio = %d,  wake_gpio = %d +\n", __func__, \
-		gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value_cansleep(cxd224x_dev->rst_gpio), \
+	I("%s: irq = %d,  en = %d, rst = %d,  wake_gpio = %d +\n", __func__, \
+		gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->rst_gpio), \
 		gpio_get_value(cxd224x_dev->wake_gpio));
 
 	I("%s: store value = %d\n", __func__, code);
@@ -1353,11 +1416,11 @@ static ssize_t debug_cmd_store(struct device *dev,
 			cxd224x_hw_reset();
 			break;
 	case 1:
-			I("%s: cxd224x_pon_off\n", __func__);			
+			I("%s: cxd224x_pon_off\n", __func__);
 			cxd224x_pon_off();
 			break;
 	case 2:
-			I("%s: cxd224x_pon_on\n", __func__);			
+			I("%s: cxd224x_pon_on\n", __func__);
 			cxd224x_pon_on();
 			break;
 	case 3:
@@ -1365,19 +1428,19 @@ static ssize_t debug_cmd_store(struct device *dev,
 			cxd224x_nci_read();
 			break;
 	case 4:
-			I("%s: cxd224x_core_version\n", __func__);			
+			I("%s: cxd224x_core_version\n", __func__);
 			cxd224x_core_version();
 			break;
 	case 5:
-			I("%s: cxd224x_core_reset\n", __func__);			
+			I("%s: cxd224x_core_reset\n", __func__);
 			cxd224x_core_reset();
 			break;
 	case 6:
-			I("%s: cxd224x_core_init\n", __func__);			
+			I("%s: cxd224x_core_init\n", __func__);
 			cxd224x_core_init();
 			break;
 	case 7:
-			I("%s: cxd224x_patch_version\n", __func__); 		
+			I("%s: cxd224x_patch_version\n", __func__);
 			cxd224x_patch_version();
 			break;
 	default:
@@ -1398,13 +1461,14 @@ static int mfg_nfc_test(int code)
 {
 	int ret = 0;
 	struct cxd224x_dev *cxd224x_dev = cxd224x_info;
+	uint8_t fn_cup_cmd[8] = {0x00, 0x00, 0x05, 0x05, 0xF0, 0x00, 0x12, 0x34};
 
 	watchdog_counter = 0;
 	watchdogEn = 1;
 
 	I("%s()+++\n", __func__);
 	I("%s: irq = %d,  ven_gpio = %d,  wake_gpio = %d +\n", __func__, \
-		gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value_cansleep(cxd224x_dev->rst_gpio), \
+		gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->en_gpio), \
 		gpio_get_value(cxd224x_dev->wake_gpio));
 
 	I("%s: store value = %d\n", __func__, code);
@@ -1420,34 +1484,38 @@ static int mfg_nfc_test(int code)
 			cxd224x_pon_off();
 			break;
 	case 1:
-			I("%s: type-A polling\n", __func__);			
+			I("%s: type-A polling\n", __func__);
 			cxd224x_pon_on();
 			if (script_processor(nfc_reader_A_script, sizeof(nfc_reader_A_script)) == 0) {
 				I("%s: type-A polling succeed", __func__);
 				mfc_nfc_cmd_result = 1;
-			}			
+			}
 			cxd224x_pon_off();
 			break;
 	case 2:
-			I("%s: type-B polling\n", __func__);			
+			I("%s: type-B polling\n", __func__);
 			cxd224x_pon_on();
 			if (script_processor(nfc_reader_B_script, sizeof(nfc_reader_B_script)) == 0) {
 				I("%s: type-B polling succeed", __func__);
 				mfc_nfc_cmd_result = 1;
-			}			
+			}
 			cxd224x_pon_off();
 			break;
 	case 3:
-			I("%s: type-F polling\n", __func__);			
+			I("%s: type-F polling\n", __func__);
 			cxd224x_pon_on();
 			if (script_processor(nfc_reader_F_script, sizeof(nfc_reader_F_script)) == 0) {
 				I("%s: type-F polling succeed", __func__);
 				mfc_nfc_cmd_result = 1;
 			}
+			I("%s, Launch CUP command()+++++\n", __func__);
+			ret = cxd224x_nci_write(fn_cup_cmd, sizeof(fn_cup_cmd));
+			cxd224x_nci_read();
+			I("%s, Launch CUP command()-----\n", __func__);
 			cxd224x_pon_off();
 			break;
 	case 4:
-			I("%s: type-A listen\n", __func__);			
+			I("%s: type-A listen\n", __func__);
 			cxd224x_pon_on();
 			if (script_processor(nfc_card_script, sizeof(nfc_card_script)) == 0) {
 				I("%s: type-A listen succeed", __func__);
@@ -1456,7 +1524,7 @@ static int mfg_nfc_test(int code)
 			cxd224x_pon_off();
 			break;
 	case 5:
-			I("%s: nfc_card_without_sim listen\n", __func__);			
+			I("%s: nfc_card_without_sim listen\n", __func__);
 			cxd224x_pon_on();
 			if (script_processor(nfc_card_without_sim, sizeof(nfc_card_without_sim)) == 0) {
 				I("%s: nfc_card_without_sim listen succeed", __func__);
@@ -1478,12 +1546,20 @@ static int mfg_nfc_test(int code)
 			cxd224x_reset_pon();
 			break;
 	case 8:
-			I("%s: set pon off\n", __func__);
-			cxd224x_pon_off();
+			I("%s: cancel cxd_reset pin\n", __func__);
+			I("%s: set RST en_gpio/rst_gpio pin [High/LOW]\n", __func__);
+			gpio_set_value_cansleep(cxd224x_dev->en_gpio, 1);	
+			gpio_set_value(cxd224x_dev->rst_gpio, 0);	
+			I("%s: wait for 50 ms, chk en:%d, rst:%d\n", __func__, gpio_get_value(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->rst_gpio));
+			mdelay(50);
 			break;
 	case 9:
-			I("%s: set pon off\n", __func__);
-			cxd224x_pon_on();
+			I("%s: set cxd_reset pin\n", __func__);
+			I("%s: set RST en_gpio/rst_gpio pin [Low/HIGH]\n", __func__);
+			gpio_set_value_cansleep(cxd224x_dev->en_gpio, 0);	
+			gpio_set_value(cxd224x_dev->rst_gpio, 1);	
+			I("%s: wait for 50 ms, chk en:%d, rst:%d\n", __func__, gpio_get_value(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->rst_gpio));
+			mdelay(50);
 			break;
 	case 10:
 			I("%s: felica_ese_without_sim listen\n", __func__);
@@ -1491,6 +1567,15 @@ static int mfg_nfc_test(int code)
 			if (script_processor(felica_ese_without_sim, sizeof(felica_ese_without_sim)) == 0) {
 				I("%s: felica_ese_without_sim succeed", __func__);
 				mfc_nfc_cmd_result = 1;
+			}
+			cxd224x_pon_off();
+			break;
+	case 11:
+			I("%s: get felica_ese_IDm\n", __func__);
+			memset(FelicaIDm, 0, MAX_BUFFER_SIZE);
+			cxd224x_pon_on();
+			if (script_processor(felica_ese_idm, sizeof(felica_ese_idm)) == 0) {
+				I("%s: get felica_ese_IDm succeed", __func__);
 			}
 			cxd224x_pon_off();
 			break;
@@ -1530,7 +1615,8 @@ static ssize_t mfg_nfcreader(struct device *dev,
 {
 	int ret = 0;
 	I("%s watchdogEn is %d\n", __func__, watchdogEn);
-	ret = mfg_nfc_test(1);
+	ret = mfg_nfc_test(3);	
+
 	if (mfc_nfc_cmd_result == 1) {
 		return scnprintf(buf, PAGE_SIZE,
 			"%s Succeed\n",__func__);
@@ -1576,7 +1662,7 @@ static ssize_t mfg_nfccard(struct device *dev,
 {
 	int ret = 0;
 	I("%s watchdogEn is %d\n", __func__, watchdogEn);
-	ret = mfg_nfc_test(5);
+	ret = mfg_nfc_test(10);	
 	if (mfc_nfc_cmd_result == 1) {
 		return scnprintf(buf, PAGE_SIZE,
 			"%s Succeed\n",__func__);
@@ -1616,6 +1702,21 @@ static ssize_t mfg_felicacard(struct device *dev,
 	return ret;
 }
 static DEVICE_ATTR(mfg_felicacard, 0440, mfg_felicacard, NULL);
+
+static ssize_t mfg_felicaidm(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	int ret = 0;
+	I("%s+ watchdogEn is %d\n", __func__, watchdogEn);
+	ret = mfg_nfc_test(11);
+
+
+	I("%s IDm:%s\n", __func__, FelicaIDm);
+	ret = sprintf(buf, "[J] Felica IDm : %s\n", FelicaIDm);
+	I("%s-\n", __func__);
+	return ret;
+}
+static DEVICE_ATTR(mfg_felicaidm, 0440, mfg_felicaidm, NULL);
 
 static ssize_t mfg_nfc_ctrl_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
@@ -1771,10 +1872,8 @@ static ssize_t setedceem_store(struct device *dev,
 				const char *buf, size_t count)
 {
 	uint8_t edc_configure[12] = {0x2F, 0x38, 0x09, 0x60, 0x00, 0x00, 0x00, 0x04, 0x80, 0x00, 0x00, 0x0E};
-
-	int ret = 0;
 	unsigned int input;
-
+	int ret = 0;
 	I("%s()+++\n", __func__);
 
 	sscanf(buf, "%2x", &input);
@@ -1784,12 +1883,13 @@ static ssize_t setedceem_store(struct device *dev,
 	I("%s: edc_11:0x%x\n", __func__, edc_configure[11]);
 	ret = cxd224x_nci_write(edc_configure, sizeof(edc_configure));
 	mdelay(200);
+	I("%s() delay 200ms\n", __func__);
 	cxd224x_nci_read();
 
 	I("%s()---\n", __func__);
 	return count;
 }
-static DEVICE_ATTR(setedceem, 0664, NULL, setedceem_store);
+static DEVICE_ATTR(setedceem, 0222, NULL, setedceem_store);
 
 static ssize_t setedcreg_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
@@ -1801,6 +1901,7 @@ static ssize_t setedcreg_show(struct device *dev,
 
 	ret = cxd224x_nci_write(edcreg_conf, sizeof(edcreg_conf));
 	mdelay(200);
+	I("%s() delay 200ms\n", __func__);
 	cxd224x_nci_read();
 
     I("%s : flag:%d, resp : %s\n\n", __func__, bcpyrespflag, dataresp);
@@ -1819,7 +1920,6 @@ static ssize_t setedcreg_store(struct device *dev,
 	uint8_t edcreg_conf[11] = {0x2F, 0x34, 0x08, 0x20, 0x11, 0x07, 0x03, 0x0E, 0x00, 0x00, 0x80};
 	int ret = 0;
 	unsigned int input;
-
 	I("%s()+++\n", __func__);
 
 	sscanf(buf, "%2x", &input);
@@ -1829,6 +1929,7 @@ static ssize_t setedcreg_store(struct device *dev,
 	I("%s: edc_7:0x%x\n", __func__, edcreg_conf[7]);
 	ret = cxd224x_nci_write(edcreg_conf, sizeof(edcreg_conf));
 	mdelay(200);
+	I("%s() delay 200ms\n", __func__);
 	cxd224x_nci_read();
 
 	I("%s()---\n", __func__);
@@ -1871,6 +1972,7 @@ static ssize_t seteem_store(struct device *dev,
 	I("%s: reg_addr:%x-%x, value:%x-%x-%x-%x \n", __func__, eem_configure[4], eem_configure[3], eem_configure[8], eem_configure[9], eem_configure[10], eem_configure[11]);
 	ret = cxd224x_nci_write(eem_configure, sizeof(eem_configure));
 	mdelay(200);
+	I("%s() delay 200ms\n", __func__);
 	cxd224x_nci_read();
 
 	I("%s()---\n", __func__);
@@ -1895,27 +1997,28 @@ static ssize_t geteem_store(struct device *dev,
 				const char *buf, size_t count)
 {
 		uint8_t eem_configure[8] = {0x2F, 0x37, 0x05, 0x60, 0x00, 0x00, 0x00, 0x04};
-		unsigned long addr;
+		unsigned int addr;
 		int ret = 0;
 
 		I("%s()+++\n", __func__);
 		bcpyrespflag = 1;
 
-		sscanf(buf, "%lx", &addr);
-		I("%s: chk addr:%lx\n", __func__, addr);
-		eem_configure[3] = (uint8_t)(addr >> 24) & 0xFF;
-		eem_configure[4] = (uint8_t)(addr >> 16) & 0xFF;
-		eem_configure[5] = (uint8_t)(addr >> 8) & 0xFF;
-		eem_configure[6] = (uint8_t)addr & 0xFF;
+		sscanf(buf, "%4x", &addr);
+
+		I("%s: chk addr :%4x\n", __func__, addr);
+
+		eem_configure[4] = (uint8_t)(addr >> 8) & 0xFF;
+		eem_configure[3] = (uint8_t)addr & 0xFF;
+
 		I("%s: eem_addr:%x-%x-%x-%x \n", __func__, eem_configure[3], eem_configure[4], eem_configure[5], eem_configure[6]);
 		ret = cxd224x_nci_write(eem_configure, sizeof(eem_configure));
 		mdelay(200);
+		I("%s() delay 200ms\n", __func__);
 		cxd224x_nci_read();
 		I("%s : flag:%d, resp : %s\n NFC_TMP:%s\n\n", __func__, bcpyrespflag, dataresp, NCI_TMP);
 
 		cpyresplen = 0;
 		bcpyrespflag = 0;
-
 		I("%s()---\n", __func__);
 	return count;
 }
@@ -1931,6 +2034,7 @@ static ssize_t setreg_show(struct device *dev,
 
 	ret = cxd224x_nci_write(edcreg_conf, sizeof(edcreg_conf));
 	mdelay(200);
+	I("%s() delay 200ms\n", __func__);
 	cxd224x_nci_read();
 
 	memcpy(dataresp,NCI_TMP,MAX_BUFFER_SIZE);
@@ -1953,7 +2057,6 @@ static ssize_t setreg_store(struct device *dev,
 	int ret = 0;
 	unsigned int addr;
 	unsigned long value;
-
 	I("%s()+++\n", __func__);
 
 	sscanf(buf, "%4x %lx", &addr, &value);
@@ -1968,6 +2071,7 @@ static ssize_t setreg_store(struct device *dev,
 	I("%s: reg_addr:%x-%x, value:%x-%x-%x-%x \n", __func__, reg_configure[4], reg_configure[3], reg_configure[10], reg_configure[9], reg_configure[8], reg_configure[7]);
 	ret = cxd224x_nci_write(reg_configure, sizeof(reg_configure));
 	mdelay(200);
+	I("%s() delay 200ms\n", __func__);
 	cxd224x_nci_read();
 
 	I("%s()---\n", __func__);
@@ -1994,7 +2098,6 @@ static ssize_t getreg_store(struct device *dev,
 	uint8_t reg_configure[7] = {0x2F, 0x33, 0x04, 0x20, 0x11, 0x07, 0x03};
 	unsigned int addr;
 	int ret = 0;
-
 	I("%s()+++\n", __func__);
 	bcpyrespflag = 1;
 
@@ -2006,56 +2109,29 @@ static ssize_t getreg_store(struct device *dev,
 
 	ret = cxd224x_nci_write(reg_configure, sizeof(reg_configure));
 	mdelay(200);
+	I("%s() delay 200ms\n", __func__);
 	cxd224x_nci_read();
 	I("%s : flag:%d, resp : %s\n NFC_TMP:%s\n\n", __func__, bcpyrespflag, dataresp, NCI_TMP);
 
 	cpyresplen = 0;
 	bcpyrespflag = 0;
-
+	I("%s()---\n", __func__);
 	return count;
 }
 static DEVICE_ATTR(getreg, 0664, getreg_show, getreg_store);
 
-static ssize_t autotune_show(struct device *dev,
+static ssize_t chkrstnft_show(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 	I("%s()+++\n", __func__);
-	ret = mfg_nfc_test(6);
-
-	if (mfc_nfc_cmd_result == 1) {
-		return scnprintf(buf, PAGE_SIZE,
-			"%s Succeed\n",__func__);
-	}
-	else if (mfc_nfc_cmd_result == 0) {
-		return scnprintf(buf, PAGE_SIZE,
-			"%s watchdog timeout fail\n",__func__);
-	}
-	else {
-		return scnprintf(buf, PAGE_SIZE,
-			"%s Fail %d\n",__func__,mfc_nfc_cmd_result);
-	}
-
-	return ret;
-
-	I("%s is %d\n", __func__, attr_dbg_value);
-	ret = sprintf(buf, "%d\n", attr_dbg_value);
+	I("%s chk readout_core_reset_ntf: 0x%x\n", __func__, readout_core_reset_ntf);
+	ret = sprintf(buf, "core_reset_ntf is 0x%x\n", readout_core_reset_ntf);
 
 	I("%s()---\n", __func__);
 	return ret;
 }
-static ssize_t autotune_store(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t count)
-{
-	I("%s()+++\n", __func__);
-
-	sscanf(buf, "%d", &attr_dbg_value);
-
-	I("%s()---\n", __func__);
-	return count;
-}
-static DEVICE_ATTR(autotune, 0664, autotune_show, autotune_store);
+static DEVICE_ATTR(chkrstnft, 0440, chkrstnft_show, NULL);
 
 static int cxd224x_parse_dt(struct device *dev, struct cxd224x_platform_data *pdata)
 {
@@ -2075,7 +2151,7 @@ static int cxd224x_parse_dt(struct device *dev, struct cxd224x_platform_data *pd
 	else
 		I("DT:pdata->en_gpio=%d\n", pdata->en_gpio);
 
-	pdata->rst_gpio = of_get_named_gpio(dt, "sony,en_gpio", 0);
+	pdata->rst_gpio = of_get_named_gpio(dt, "sony,rst_gpio", 0);
 	if (!gpio_is_valid(pdata->rst_gpio))
 		E("DT:pdata->rst_gpio value is not valid\n");
 	else
@@ -2093,7 +2169,7 @@ static int cxd224x_parse_dt(struct device *dev, struct cxd224x_platform_data *pd
 	else
 		I("DT:pdata->rfs_gpio RFS=%d\n", pdata->rfs_gpio);
 
-	I("%s: End, irq_gpio(FEL_IRQ):%d, en_gpio(FEL_RST):%d, wake_gpio(FEL_PON):%d, rfs_gpio:%d \n", __func__, pdata->irq_gpio, pdata->rst_gpio, pdata->wake_gpio, pdata->rfs_gpio);
+	I("%s: End, irq_gpio(FEL_IRQ):%d, en_gpio(FEL_EN):%d, rst_gpio(FEL_RST):%d, wake_gpio(FEL_PON):%d \n", __func__, pdata->irq_gpio, pdata->en_gpio, pdata->rst_gpio, pdata->wake_gpio);
 
 	return 0;
 }
@@ -2114,7 +2190,14 @@ static int cxd224x_probe(struct i2c_client *client,
 #endif
 	int wake_gpio_ok = 0;
 
-        I("%s: Start\n", __func__);
+	I("%s: Start, bootmode:%d\n", __func__, cxd224x_htc_get_bootmode());
+
+	if (cxd224x_htc_get_bootmode() == NFC_BOOT_MODE_OFF_MODE_CHARGING){
+		I("%s: OFF mode charging, turn-off HVDD and return exit!\n", __func__);
+		cxd224x_htc_off_mode_charging();
+		return ret;
+	}
+
 #if 0
 	platform_data = client->dev.platform_data;	
 	if (platform_data == NULL) {
@@ -2158,16 +2241,17 @@ static int cxd224x_probe(struct i2c_client *client,
 	}
 	irq_gpio_ok=1;
 
+	I("%s: gpio_request(en_gpio)\n", __func__);
+	ret = gpio_request_one(platform_data->en_gpio, GPIOF_OUT_INIT_HIGH, "nfc_cen");	
+	if (ret)
+		goto err_exit;
+	en_gpio_ok=1;
 
-#ifdef CONFIG_CXD224X_NFC_RST
-	ret = gpio_request_one(platform_data->rst_gpio, GPIOF_OUT_INIT_HIGH, "nfc_rst");
+	I("%s: gpio_request(rst_gpio)\n", __func__);
+	ret = gpio_request_one(platform_data->rst_gpio, GPIOF_OUT_INIT_LOW, "nfc_rst");	
 	if (ret)
 		goto err_exit;
 	rst_gpio_ok=1;
-	dev_info(&client->dev, "%s, xrst deassert\n", __func__);
-	I("%s: SKIP gpio_set_value(rst)+++, chk irq:(%d), rst:(%d)\n", __func__, gpio_get_value(platform_data->irq_gpio), gpio_get_value_cansleep(platform_data->rst_gpio));
-	I("%s: SKIP gpio_set_value(rst)---, chk irq:(%d), rst:(%d)\n", __func__, gpio_get_value(platform_data->irq_gpio), gpio_get_value_cansleep(platform_data->rst_gpio));
-#endif
 
 	ret = gpio_request_one(platform_data->wake_gpio, GPIOF_OUT_INIT_HIGH, "nfc_wake");
 	if (ret)
@@ -2192,12 +2276,13 @@ static int cxd224x_probe(struct i2c_client *client,
 
 	cxd224x_dev->irq_gpio = platform_data->irq_gpio;
 	cxd224x_dev->en_gpio = platform_data->en_gpio;
-	cxd224x_dev->wake_gpio = platform_data->wake_gpio;
 	cxd224x_dev->rst_gpio = platform_data->rst_gpio;
+	cxd224x_dev->wake_gpio = platform_data->wake_gpio;
 	cxd224x_dev->rfs_gpio = platform_data->rfs_gpio;
 	cxd224x_dev->client = client;
+	cxd224x_dev->boot_mode = cxd224x_htc_get_bootmode();
 
-	I("%s: before_config irq_gpio value:(%d), rst_gpio_value:(%d), wake_gpio_value:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value_cansleep(cxd224x_dev->rst_gpio), gpio_get_value(cxd224x_dev->wake_gpio));
+	I("%s: before_config irq_gpio value:(%d), en_gpio_value:(%d), wake_gpio_value:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->wake_gpio));
 
 	ret = gpio_direction_input(cxd224x_dev->irq_gpio);
 	I("%s : irq_gpio set input %d \n", __func__,ret);
@@ -2206,7 +2291,7 @@ static int cxd224x_probe(struct i2c_client *client,
 	ret = gpio_direction_input(cxd224x_dev->rfs_gpio);
 	I("%s : rfs_gpio set input %d \n", __func__,ret);
 
-	I("%s: after_config irq_gpio value:(%d), rst_gpio_value:(%d), wake_gpio_value:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value_cansleep(cxd224x_dev->rst_gpio), gpio_get_value(cxd224x_dev->wake_gpio));
+	I("%s: after_config irq_gpio value:(%d), en_gpio_value:(%d), wake_gpio_value:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->wake_gpio));
 
 	cxd224x_info = cxd224x_dev;
 
@@ -2305,6 +2390,12 @@ static int cxd224x_probe(struct i2c_client *client,
 	    goto err_create_pn_file;
     }
 
+    ret = device_create_file(cxd224x_dev->cxd_dev, &dev_attr_mfg_felicaidm);
+    if (ret) {
+	    E("%s : device_create_file dev_attr_mfg_felicaidm failed\n", __func__);
+	    goto err_create_pn_file;
+    }
+
     ret = device_create_file(cxd224x_dev->cxd_dev, &dev_attr_poll_typeF);
     if (ret) {
 	    E("%s : device_create_file dev_attr_poll_typeF failed\n", __func__);
@@ -2365,9 +2456,9 @@ static int cxd224x_probe(struct i2c_client *client,
 	    goto err_create_pn_file;
     }
 
-    ret = device_create_file(cxd224x_dev->cxd_dev, &dev_attr_autotune);
+    ret = device_create_file(cxd224x_dev->cxd_dev, &dev_attr_chkrstnft);
     if (ret) {
-	    E("%s : device_create_file dev_attr_autotune failed\n", __func__);
+	    E("%s : device_create_file dev_attr_chkrstnft failed\n", __func__);
 	    goto err_create_pn_file;
     }
 
@@ -2385,19 +2476,15 @@ static int cxd224x_probe(struct i2c_client *client,
 	watchdog_timeout = WATCHDOG_FTM_TIMEOUT_SEC; 
 
 #if 0	
-	I("%s: 0. check irq_gpio(FEL_IRQ):%d, en_gpio(FEL_RST):%d, wake_gpio(FEL_PON):%d\n", __func__, cxd224x_dev->irq_gpio, cxd224x_dev->en_gpio, cxd224x_dev->wake_gpio);
-	I("%s: 1. check irq_gpio value:(%d), en_gpio_value:(%d), wake_gpio_value:(%d)\n", __func__, gpio_get_value(cxd224x_dev->irq_gpio), gpio_get_value_cansleep(cxd224x_dev->en_gpio), gpio_get_value(cxd224x_dev->wake_gpio));
-	I("%s: 1a. check rfs_gpio value:(%d)\n", __func__, gpio_get_value(cxd224x_dev->rfs_gpio));
-
 	cxd224x_hw_reset();
 	cxd224x_pon_on();
 	cxd224x_nci_read();
 
-    I("%s(), +++++ check readout_reest_err_code:%d\n", __func__, readout_reest_err_code);
-    if ( readout_reest_err_code ) {
-    	I("%s(), ------ chip HW reset DONE!\n", __func__);
-    } else
-    	I("%s(), ------ SKIP chip HW reset!\n", __func__);
+    I("%s(), +++++ check readout_core_reset_ntf: 0x%x\n", __func__, readout_core_reset_ntf);
+    if ( !readout_core_reset_ntf )
+    	I("%s(), ---- CORE_RESET_NFT DONE!\n", __func__);
+	else
+    	I("%s(), ---- CORE_RESET_NFT ERROR!\n", __func__);
 #endif
 
 	I("%s, probing cxd224x driver exited successfully\n", __func__);
@@ -2441,9 +2528,8 @@ static int cxd224x_remove(struct i2c_client *client)
 	misc_deregister(&cxd224x_dev->cxd224x_device);
 	mutex_destroy(&cxd224x_dev->read_mutex);
 	gpio_free(cxd224x_dev->irq_gpio);
-#ifdef CONFIG_CXD224X_NFC_VEN
 	gpio_free(cxd224x_dev->en_gpio);
-#endif
+	gpio_free(cxd224x_dev->rst_gpio);
 	gpio_free(cxd224x_dev->wake_gpio);
 	kfree(cxd224x_dev);
 

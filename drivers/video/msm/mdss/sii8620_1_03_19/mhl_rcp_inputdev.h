@@ -39,4 +39,4 @@ int init_rcp_input_dev(struct mhl_dev_context *dev_context);
 void destroy_rcp_input_dev(struct mhl_dev_context *dev_context);
 void rcp_input_dev_one_time_init(struct mhl_dev_context *dev_context);
 
-#endif 
+#endif /* #ifndef _MHL_RCP_INPUTDEV_H_ */

@@ -1853,6 +1853,10 @@ static ssize_t diag_show(struct device *dev,
 	size_t count = 0;
 	uint16_t i, j;
 	int ret, button_count = 0;
+	u16 cmd_force_active[] = {0x0020, 0x0001, 0x0003};
+	u16 cmd_auto_active[]  = {0x0020, 0x0001, 0x0002};
+
+	(void)send_mtp_command(ts, cmd_force_active, NWORDS(cmd_force_active));
 
 	if (ts->baseline_mode != MAX1187X_AUTO_BASELINE)
 		if (set_baseline_mode(ts->client, ts->baseline_mode) < 0) {
@@ -1910,6 +1914,8 @@ static ssize_t diag_show(struct device *dev,
 			return -1;
 		}
 	ENABLE_IRQ();
+
+	(void)send_mtp_command(ts, cmd_auto_active, NWORDS(cmd_auto_active));
 
 	return count;
 }
@@ -3102,6 +3108,7 @@ static int hallsensor_status_handler_func(struct notifier_block *this,
 {
 	int pole = 0, pole_value = 0;
 	struct data *ts = gl_ts;
+	u16 data1[] = {0x0034, 0x0001, 0x0000};
 
 	pole_value = status & 0x01;
 	pole = (status & 0x02) >> HALL_POLE_BIT;
@@ -3125,6 +3132,10 @@ static int hallsensor_status_handler_func(struct notifier_block *this,
 				ts->glove_enable = 1;
 			if (PDATA(hall_block_touch_time) > 1)
 				max1187x_handle_block_touch(ts, 1);
+
+			if(PDATA(force_calibration_hall_near) && (!ts->i2c_to_mcu)) {
+				(void)send_mtp_command(ts, data1, NWORDS(data1));
+			}
 		}
 
 		if (!ts->i2c_to_mcu) {
@@ -3645,6 +3656,14 @@ static struct max1187x_pdata *max1187x_get_platdata_dt(struct device *dev)
 		pdata->retry_config_update_delay = 100;
 	}
 	pr_info("parse retry_config_update_delay = %d", pdata->retry_config_update_delay);
+
+	if(of_property_read_bool(devnode, "force_calibration_hall_near")) {
+		pr_info("Need force calibration while getting NEAR event from hall");
+		pdata->force_calibration_hall_near = true;
+	} else {
+		pr_debug("No property: force_calibration_hall_near");
+		pdata->force_calibration_hall_near = false;
+	}
 
 	
 	if (of_property_read_u32(devnode, "eng_id", &pdata->eng_id) == 0) {
@@ -4580,6 +4599,8 @@ static void free_finger(struct data *ts)
 					} else {
 						input_report_abs(ts->input_dev, ABS_MT_GLOVE, 0);
 					}
+
+					ts->report_points[i].state = 0;
 
 					if (PDATA(support_htc_event)) {
 #if defined(ABS_MT_AMPLITUDE) && defined(ABS_MT_POSITION)

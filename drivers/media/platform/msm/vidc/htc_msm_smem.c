@@ -1,4 +1,5 @@
 #include "htc_msm_smem.h"
+// Include msm_vidc_debug.h due to debug log levels are defined here
 #include "msm_vidc_debug.h"
 
 static void *htc_ion_new_client_alloc(void)

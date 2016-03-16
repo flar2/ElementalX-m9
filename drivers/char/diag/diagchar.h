@@ -25,12 +25,17 @@
 #include <soc/qcom/smd.h>
 #include <asm/atomic.h>
 #include "diagfwd_bridge.h"
+/*++ 2014/10/17, USB Team, PCN00016 ++*/
 #include <linux/usb/usbdiag.h>
+/*-- 2014/10/17, USB Team, PCN00016 --*/
+/* Size of the USB buffers used for read and write*/
 #define USB_MAX_OUT_BUF 4096
 #define APPS_BUF_SIZE	4096
 #define IN_BUF_SIZE		16384
 #define MAX_IN_BUF_SIZE	32768
 #define MAX_SYNC_OBJ_NAME_SIZE	32
+/* Size of the buffer used for deframing a packet
+  reveived from the PC tool*/
 #define HDLC_MAX 4096
 #define HDLC_OUT_BUF_SIZE	(driver->itemsize_hdlc)
 #define DIAG_HDLC_BUF_SIZE	8195
@@ -46,9 +51,11 @@
 #define APPS_DATA		(LAST_PERIPHERAL + 1)
 #define REMOTE_DATA		4
 #define APPS_PROC		1
+/*++ 2014/09/18, USB Team, PCN00002 ++*/
 #define MODEM_PROC		0
 #define LPASS_PROC		2
 #define WCNSS_PROC		3
+/*-- 2014/09/18, USB Team, PCN00002 --*/
 
 #define USER_SPACE_DATA 8192
 #define PKT_SIZE 4096
@@ -58,10 +65,10 @@
 #define DIAG_CTRL_MSG_F3_MASK	11
 #define CONTROL_CHAR	0x7E
 
-#define DIAG_CON_APSS (0x0001)	
-#define DIAG_CON_MPSS (0x0002)	
-#define DIAG_CON_LPASS (0x0004)	
-#define DIAG_CON_WCNSS (0x0008)	
+#define DIAG_CON_APSS (0x0001)	/* Bit mask for APSS */
+#define DIAG_CON_MPSS (0x0002)	/* Bit mask for MPSS */
+#define DIAG_CON_LPASS (0x0004)	/* Bit mask for LPASS */
+#define DIAG_CON_WCNSS (0x0008)	/* Bit mask for WCNSS */
 #define DIAG_CON_SENSORS (0x0016)
 
 
@@ -110,8 +117,14 @@
 
 #define FEATURE_MASK_LEN	2
 
-#define DIAG_STATUS_OPEN (0x00010000)	
-#define DIAG_STATUS_CLOSED (0x00020000)	
+/*
+ * The status bit masks when received in a signal handler are to be
+ * used in conjunction with the peripheral list bit mask to determine the
+ * status for a peripheral. For instance, 0x00010002 would denote an open
+ * status on the MPSS
+ */
+#define DIAG_STATUS_OPEN (0x00010000)	/* DCI channel open status mask   */
+#define DIAG_STATUS_CLOSED (0x00020000)	/* DCI channel closed status mask */
 
 #define MODE_NONREALTIME	0
 #define MODE_REALTIME		1
@@ -132,7 +145,16 @@
 #define NUM_SMD_DCI_CHANNELS 4
 #define NUM_SMD_CMD_CHANNELS 4
 #define NUM_SMD_DCI_CMD_CHANNELS 4
+/*
+ * Number of stm processors includes all the peripherals and
+ * apps.Added 1 below to indicate apps
+ */
 #define NUM_STM_PROCESSORS	(NUM_SMD_CONTROL_CHANNELS + 1)
+/*
+ * Indicates number of peripherals that can support DCI and Apps
+ * processor. This doesn't mean that a peripheral has the
+ * feature.
+ */
 #define NUM_DCI_PERIPHERALS	(NUM_SMD_DATA_CHANNELS + 1)
 
 #define SMD_DATA_TYPE 0
@@ -144,19 +166,24 @@
 #define DIAG_PROC_DCI			1
 #define DIAG_PROC_MEMORY_DEVICE		2
 
+/* Flags to vote the DCI or Memory device process up or down
+   when it becomes active or inactive */
 #define VOTE_DOWN			0
 #define VOTE_UP				1
 
 #define DIAG_TS_SIZE	50
 
 #define DIAG_MDM_BUF_SIZE	2048
+/* The Maximum request size is 2k + DCI header + footer (6 bytes) */
 #define DIAG_MDM_DCI_BUF_SIZE	(2048 + 6)
 
 #define DIAG_LOCAL_PROC	0
 
 #ifndef CONFIG_DIAGFWD_BRIDGE_CODE
+/* Local Processor only */
 #define DIAG_NUM_PROC	1
 #else
+/* Local Processor + Remote Devices */
 #define DIAG_NUM_PROC	(1 + NUM_REMOTE_DEV)
 #endif
 
@@ -167,6 +194,7 @@
 #define DIAG_CNTL_TYPE		2
 #define DIAG_DCI_TYPE		3
 
+/* Maximum number of pkt reg supported at initialization*/
 extern int diag_max_reg;
 extern int diag_threshold_reg;
 
@@ -177,11 +205,14 @@ do {							\
 	(diag_debug_buf_idx++) : (diag_debug_buf_idx = 0); \
 } while (0)
 
+/* List of remote processor supported */
 enum remote_procs {
 	MDM = 1,
 	MDM2 = 2,
+/*++ 2014/09/18, USB Team, PCN00002 ++*/
 	MDM3 = 3,
 	MDM4 = 4,
+/*-- 2014/09/18, USB Team, PCN00002 --*/
 	QSC = 5,
 };
 
@@ -208,10 +239,10 @@ struct diag_master_table {
 };
 
 struct bindpkt_params_per_process {
-	
+	/* Name of the synchronization object associated with this proc */
 	char sync_obj_name[MAX_SYNC_OBJ_NAME_SIZE];
-	uint32_t count;	
-	struct bindpkt_params *params; 
+	uint32_t count;	/* Number of entries in this bind */
+	struct bindpkt_params *params; /* first bind params */
 };
 
 struct bindpkt_params {
@@ -219,18 +250,20 @@ struct bindpkt_params {
 	uint16_t subsys_id;
 	uint16_t cmd_code_lo;
 	uint16_t cmd_code_hi;
-	
+	/* For Central Routing, used to store Processor number */
 	uint16_t proc_id;
 	uint32_t event_id;
 	uint32_t log_code;
-	
+	/* For Central Routing, used to store SMD channel pointer */
 	uint32_t client_id;
 };
 
 struct diag_client_map {
 	char name[20];
 	int pid;
+/*++ 2014/09/18, USB Team, PCN00002 ++*/
 	int timeout;
+/*-- 2014/09/18, USB Team, PCN00002 --*/
 };
 
 struct real_time_vote_t {
@@ -257,6 +290,7 @@ struct diag_ws_ref_t {
 	spinlock_t lock;
 };
 
+/* This structure is defined in USB header file */
 #ifndef CONFIG_DIAG_OVER_USB
 struct diag_request {
 	char *buf;
@@ -267,6 +301,16 @@ struct diag_request {
 };
 #endif
 
+/*
+ * High level structure for storing Diag masks.
+ *
+ * @ptr: Pointer to the buffer that stores the masks
+ * @mask_len: Length of the buffer pointed by ptr
+ * @update_buf: Buffer for performing mask updates to peripherals
+ * @update_buf_len: Length of the buffer pointed by buf
+ * @status: status of the mask - all enable, disabled, valid
+ * @lock: To protect access to the mask variables
+ */
 struct diag_mask_info {
 	uint8_t *ptr;
 	int mask_len;
@@ -277,10 +321,10 @@ struct diag_mask_info {
 };
 
 struct diag_smd_info {
-	int peripheral;	
-	int type;	
+	int peripheral;	/* The peripheral this smd channel communicates with */
+	int type;	/* The type of smd channel (data, control, dci) */
 	uint16_t peripheral_mask;
-	int encode_hdlc; 
+	int encode_hdlc; /* Whether data is raw and needs to be hdlc encoded */
 
 	smd_channel_t *ch;
 	smd_channel_t *ch_save;
@@ -315,13 +359,17 @@ struct diag_smd_info {
 	int general_context;
 	uint8_t inited;
 
+	/*
+	 * Function ptr for function to call to process the data that
+	 * was just read from the smd channel
+	 */
 	int (*process_smd_read_data)(struct diag_smd_info *smd_info,
 						void *buf, int num_bytes);
 };
 
 struct diagchar_dev {
 
-	
+	/* State for the char driver */
 	unsigned int major;
 	unsigned int minor_start;
 	int num;
@@ -341,16 +389,16 @@ struct diagchar_dev {
 	int use_device_tree;
 	int supports_separate_cmdrsp;
 	int supports_apps_hdlc_encoding;
-	
+	/* The state requested in the STM command */
 	int stm_state_requested[NUM_STM_PROCESSORS];
-	
+	/* The current STM state */
 	int stm_state[NUM_STM_PROCESSORS];
-	
+	/* Whether or not the peripheral supports STM */
 	int peripheral_supports_stm[NUM_SMD_CONTROL_CHANNELS];
-	
+	/* Delayed response Variables */
 	uint16_t delayed_rsp_id;
 	struct mutex delayed_rsp_mutex;
-	
+	/* DCI related variables */
 	struct list_head dci_req_list;
 	struct list_head dci_client_list;
 	int dci_tag;
@@ -360,7 +408,7 @@ struct diagchar_dev {
 	unsigned char *apps_dci_buf;
 	int dci_state;
 	struct workqueue_struct *diag_dci_wq;
-	
+	/* Sizes that reflect memory pool sizes */
 	unsigned int itemsize;
 	unsigned int poolsize;
 	unsigned int itemsize_hdlc;
@@ -369,15 +417,15 @@ struct diagchar_dev {
 	unsigned int poolsize_dci;
 	unsigned int debug_flag;
 	int used;
-	
+	/* Buffers for masks */
 	struct mutex diag_cntl_mutex;
-	
+	/* Members for Sending response */
 	unsigned char *encoded_rsp_buf;
 	int encoded_rsp_len;
 	uint8_t rsp_buf_busy;
 	spinlock_t rsp_buf_busy_lock;
 	int rsp_buf_ctxt;
-	
+	/* State for diag forwarding */
 	struct diag_smd_info smd_data[NUM_SMD_DATA_CHANNELS];
 	struct diag_smd_info smd_cntl[NUM_SMD_CONTROL_CHANNELS];
 	struct diag_smd_info smd_dci[NUM_SMD_DCI_CHANNELS];
@@ -393,14 +441,14 @@ struct diagchar_dev {
 	unsigned char *apps_rsp_buf;
 	unsigned char *user_space_data_buf;
 	uint8_t user_space_data_busy;
-	
+	/* buffer for updating mask to peripherals */
 	unsigned char *buf_feature_mask_update;
 	struct mutex diag_hdlc_mutex;
 	unsigned char *hdlc_buf;
 	unsigned hdlc_count;
 	unsigned hdlc_escape;
 	int in_busy_pktdata;
-	
+	/* Variables for non real time mode */
 	int real_time_mode[DIAG_NUM_PROC];
 	int real_time_update_busy;
 	uint16_t proc_active_mask;
@@ -408,6 +456,7 @@ struct diagchar_dev {
 	struct mutex real_time_mutex;
 	struct work_struct diag_real_time_work;
 	struct workqueue_struct *diag_real_time_wq;
+/*++ 2014/10/17, USB Team, PCN00016 ++*/
 #if DIAG_XPST
 	unsigned char nohdlc;
 	unsigned char in_busy_dmrounter;
@@ -416,6 +465,7 @@ struct diagchar_dev {
 	unsigned char is2ARM11;
 	int debug_dmbytes_recv;
 #endif
+/*-- 2014/10/17, USB Team, PCN00016 --*/
 #ifdef CONFIG_DIAG_OVER_USB
 	int usb_connected;
 #endif
@@ -426,7 +476,7 @@ struct diagchar_dev {
 	struct diag_master_table *table;
 	uint8_t *pkt_buf;
 	int pkt_length;
-	uint8_t *dci_pkt_buf; 
+	uint8_t *dci_pkt_buf; /* For Apps DCI packets */
 	uint32_t dci_pkt_length;
 	int in_busy_dcipktdata;
 	int logging_mode;
@@ -434,15 +484,19 @@ struct diagchar_dev {
 	int logging_process_id;
 	struct task_struct *socket_process;
 	struct task_struct *callback_process;
-	
+	/* Power related variables */
 	struct diag_ws_ref_t dci_ws;
 	struct diag_ws_ref_t md_ws;
 	spinlock_t ws_lock;
+/*++ 2014/09/18, USB Team, PCN00002 ++*/
 	int qxdm2sd_drop;
+/*++ 2014/10/17, USB Team, PCN00016 ++*/
 	int qxdmusb_drop;
+/*-- 2014/10/17, USB Team, PCN00016 --*/
 	struct timeval st0;
 	struct timeval st1;
-	
+/*-- 2014/09/18, USB Team, PCN00002 --*/
+	/* Pointers to Diag Masks */
 	struct diag_mask_info *msg_mask;
 	struct diag_mask_info *log_mask;
 	struct diag_mask_info *event_mask;
@@ -450,18 +504,19 @@ struct diagchar_dev {
 	uint8_t msg_mask_tbl_count;
 	uint16_t event_mask_size;
 	uint16_t last_event_id;
-	
+	/* Variables for Mask Centralization */
 	uint16_t num_event_id[NUM_SMD_CONTROL_CHANNELS];
 	uint32_t num_equip_id[NUM_SMD_CONTROL_CHANNELS];
 	uint32_t max_ssid_count[NUM_SMD_CONTROL_CHANNELS];
 #ifdef CONFIG_DIAGFWD_BRIDGE_CODE
-	
+	/* For sending command requests in callback mode */
 	unsigned char *cb_buf;
 	int cb_buf_len;
 #endif
 };
 
 extern struct diagchar_dev *driver;
+/*++ 2014/09/18, USB Team, PCN00002 ++*/
 #define DIAG_DBG_READ  1
 #define DIAG_DBG_WRITE 2
 #define DIAG_DBG_DROP  3
@@ -472,11 +527,14 @@ extern unsigned diag9k_debug_mask;
 #define DIAGFWD_9K_RAWDATA(buf, src, flag) \
 	__diagfwd_dbg_raw_data(buf, src, flag, diag9k_debug_mask)
 void __diagfwd_dbg_raw_data(void *buf, const char *src, unsigned dbg_flag, unsigned mask);
+/*-- 2014/09/18, USB Team, PCN00002 --*/
 extern int wrap_enabled;
 extern uint16_t wrap_count;
 
+/*++ 2014/10/17, USB Team, PCN00016 ++*/
 #define    SMDDIAG_NAME "DIAG"
 extern struct diagchar_dev *driver;
+/*-- 2014/10/17, USB Team, PCN00016 --*/
 
 void diag_get_timestamp(char *time_str);
 int diag_find_polling_reg(int i);

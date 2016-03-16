@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfg80211.h 531139 2015-02-02 12:11:44Z $
+ * $Id: wl_cfg80211.h 561094 2015-06-03 08:47:02Z $
  */
 
 
@@ -972,8 +972,9 @@ int wl_cfg80211_do_driver_init(struct net_device *net);
 void wl_cfg80211_enable_trace(bool set, u32 level);
 extern s32 wl_update_wiphybands(struct bcm_cfg80211 *cfg, bool notify);
 extern s32 wl_cfg80211_if_is_group_owner(void);
-extern  chanspec_t wl_chspec_host_to_driver(chanspec_t chanspec);
+extern chanspec_t wl_chspec_host_to_driver(chanspec_t chanspec);
 extern chanspec_t wl_ch_host_to_driver(u16 channel);
+extern chanspec_t wl_chspec_driver_to_host(chanspec_t chanspec);
 extern s32 wl_set_tx_power(struct net_device *dev,
 	enum nl80211_tx_power_setting type, s32 dbm);
 extern s32 wl_get_tx_power(struct net_device *dev, s32 *dbm);

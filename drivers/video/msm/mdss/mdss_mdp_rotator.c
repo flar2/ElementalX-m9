@@ -244,7 +244,8 @@ static int mdss_mdp_rot_mgr_remove_free_pipe(void)
 		if (!rot_mgr->rot_pipes[i].pipe)
 			continue;
 
-		if (!rot_mgr->rot_pipes[i].active_session)
+		if (!rot_mgr->rot_pipes[i].active_session &&
+			!rot_mgr->rot_pipes[i].wait_count)
 			break;
 	}
 
@@ -649,8 +650,12 @@ static int mdss_mdp_rotator_queue_helper(struct mdss_mdp_rotator_session *rot)
 
 	pr_debug("rotator session=%x start\n", rot->session_id);
 
-	if (rot->use_sync_pt)
-		mdss_fb_wait_for_fence(rot->rot_sync_pt_data);
+	if (rot->use_sync_pt && rot->rot_sync_pt_data->temp_fen_cnt) {
+		mdss_fb_wait_for_fences(rot->rot_sync_pt_data,
+				rot->rot_sync_pt_data->temp_fen,
+				rot->rot_sync_pt_data->temp_fen_cnt);
+		rot->rot_sync_pt_data->temp_fen_cnt = 0;
+	}
 
 	rot_pipe = mdss_mdp_rot_mgr_acquire_pipe(rot);
 	if (!rot_pipe) {
@@ -677,6 +682,9 @@ static int mdss_mdp_rotator_queue(struct mdss_mdp_rotator_session *rot)
 	int ret = 0;
 
 	if (rot->use_sync_pt) {
+		mdss_fb_copy_fence(rot->rot_sync_pt_data,
+				rot->rot_sync_pt_data->temp_fen,
+				&rot->rot_sync_pt_data->temp_fen_cnt);
 		atomic_inc(&rot->rot_sync_pt_data->commit_cnt);
 		queue_work(rot_mgr->rot_work_queue, &rot->commit_work);
 	} else {

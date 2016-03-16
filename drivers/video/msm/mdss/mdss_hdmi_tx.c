@@ -1302,9 +1302,11 @@ static int hdmi_tx_init_panel_info(struct hdmi_tx_ctrl *hdmi_ctrl)
 	pinfo->lcdc.h_back_porch = timing.back_porch_h;
 	pinfo->lcdc.h_front_porch = timing.front_porch_h;
 	pinfo->lcdc.h_pulse_width = timing.pulse_width_h;
+	pinfo->lcdc.h_polarity = timing.active_low_h;
 	pinfo->lcdc.v_back_porch = timing.back_porch_v;
 	pinfo->lcdc.v_front_porch = timing.front_porch_v;
 	pinfo->lcdc.v_pulse_width = timing.pulse_width_v;
+	pinfo->lcdc.v_polarity = timing.active_low_v;
 
 	pinfo->type = DTV_PANEL;
 	pinfo->pdest = DISPLAY_2;
@@ -2585,7 +2587,7 @@ static int hdmi_tx_get_cable_status(struct platform_device *pdev, u32 vote)
 	}
 
 	spin_lock_irqsave(&hdmi_ctrl->hpd_state_lock, flags);
-	hpd = hdmi_ctrl->hpd_state;
+	hpd = hdmi_ctrl->hpd_state && hdmi_ctrl->panel_power_on;
 	spin_unlock_irqrestore(&hdmi_ctrl->hpd_state_lock, flags);
 
 	hdmi_ctrl->vote_hdmi_core_on = false;
@@ -2874,10 +2876,6 @@ static int hdmi_tx_power_on(struct mdss_panel_data *panel_data)
 		return rc;
 	}
 
-	mutex_lock(&hdmi_ctrl->power_mutex);
-	hdmi_ctrl->panel_power_on = true;
-	mutex_unlock(&hdmi_ctrl->power_mutex);
-
 	hdmi_cec_config(hdmi_ctrl->feature_data[HDMI_TX_FEAT_CEC]);
 
 	if (hdmi_ctrl->hpd_state) {
@@ -2890,6 +2888,10 @@ static int hdmi_tx_power_on(struct mdss_panel_data *panel_data)
 			return rc;
 		}
 	}
+
+	mutex_lock(&hdmi_ctrl->power_mutex);
+	hdmi_ctrl->panel_power_on = true;
+	mutex_unlock(&hdmi_ctrl->power_mutex);
 end:
 	dss_reg_dump(io->base, io->len, "HDMI-ON: ", REG_DUMP);
 

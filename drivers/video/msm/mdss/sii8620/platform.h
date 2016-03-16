@@ -202,6 +202,7 @@ extern bool input_dev_rbp;
 extern bool input_dev_rcp;
 extern bool input_dev_ucp;
 
+/* Starter kit board signal control index definitions */
 #define TX_HW_RESET			0
 #define TX_FW_WAKE			1
 #define CHG_DET				2
@@ -243,4 +244,4 @@ extern bool input_dev_ucp;
 #define ANSI_ESC_BLACK_TEXT ""
 #define ANSI_ESC_WHITE_TEXT ""
 #endif
-#endif 
+#endif /* if !defined(PLATFORM_H) */

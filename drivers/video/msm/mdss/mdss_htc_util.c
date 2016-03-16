@@ -27,6 +27,8 @@ struct attribute_status htc_attr_status[] = {
 	{"cabc_level_ctl", 1, 1, 1},
 	{"mdss_pp_hue", 0, 0, 0},
 	{"pp_pcc", 0, 0, 0},
+	{"sre_level", 0, 0, 0},
+	{"limit_brightness", MDSS_MAX_BL_BRIGHTNESS, MDSS_MAX_BL_BRIGHTNESS, MDSS_MAX_BL_BRIGHTNESS},
 };
 
 int dspp_pcc_mode_cnt;
@@ -494,10 +496,14 @@ static DEVICE_ATTR(backlight_info, S_IRUGO, camera_bl_show, NULL);
 static DEVICE_ATTR(cabc_level_ctl, S_IRUGO | S_IWUSR, attrs_show, attr_store);
 static DEVICE_ATTR(mdss_pp_hue, S_IRUGO | S_IWUSR, attrs_show, attr_store);
 static DEVICE_ATTR(pp_pcc, S_IRUGO | S_IWUSR, pcc_attrs_show, pcc_attr_store);
+static DEVICE_ATTR(sre_level, S_IRUGO | S_IWUSR, attrs_show, attr_store);
+static DEVICE_ATTR(limit_brightness, S_IRUGO | S_IWUSR, attrs_show, attr_store);
 static struct attribute *htc_extend_attrs[] = {
 	&dev_attr_backlight_info.attr,
 	&dev_attr_cabc_level_ctl.attr,
 	&dev_attr_mdss_pp_hue.attr,
+	&dev_attr_sre_level.attr,
+	&dev_attr_limit_brightness.attr,
 	NULL,
 };
 
@@ -545,7 +551,7 @@ void htc_register_camera_bkl(int level, int dua_level)
 	dua_backlightvalue = dua_level;
 }
 
-void htc_set_cabc(struct msm_fb_data_type *mfd)
+void htc_set_cabc(struct msm_fb_data_type *mfd, bool skip_check)
 {
 	struct mdss_panel_data *pdata;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -568,7 +574,7 @@ void htc_set_cabc(struct msm_fb_data_type *mfd)
 	if (!ctrl_pdata->cabc_video_cmds.cmds)
 		return;
 
-	if (htc_attr_status[CABC_INDEX].req_value == htc_attr_status[CABC_INDEX].cur_value)
+	if (!skip_check && (htc_attr_status[CABC_INDEX].req_value == htc_attr_status[CABC_INDEX].cur_value))
 		return;
 
 	memset(&cmdreq, 0, sizeof(cmdreq));
@@ -597,6 +603,100 @@ void htc_set_cabc(struct msm_fb_data_type *mfd)
 	PR_DISP_INFO("%s cabc mode=%d\n", __func__, htc_attr_status[CABC_INDEX].cur_value);
 	return;
 }
+
+bool htc_set_sre(struct msm_fb_data_type *mfd)
+{
+	struct mdss_panel_data *pdata;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+	struct dcs_cmd_req cmdreq;
+	static bool sre_state = false;
+
+	pdata = dev_get_platdata(&mfd->pdev->dev);
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+					panel_data);
+
+	if (!ctrl_pdata->sre_off_cmds.cmds)
+		return false;
+
+	if (!ctrl_pdata->sre_on_cmds.cmds)
+		return false;
+
+	if (!ctrl_pdata->sre_ebi_value)
+		return false;
+
+	if (htc_attr_status[SRE_INDEX].req_value == htc_attr_status[SRE_INDEX].cur_value)
+		return false;
+
+	if (sre_state && htc_attr_status[SRE_INDEX].req_value < ctrl_pdata->sre_ebi_value) {
+		sre_state = false;
+	} else if (!sre_state && htc_attr_status[SRE_INDEX].req_value >= ctrl_pdata->sre_ebi_value) {
+		sre_state = true;
+	} else {
+		htc_attr_status[SRE_INDEX].cur_value = htc_attr_status[SRE_INDEX].req_value;
+		return false;
+	}
+
+	memset(&cmdreq, 0, sizeof(cmdreq));
+
+	
+	if (!sre_state) {
+		cmdreq.cmds = ctrl_pdata->sre_off_cmds.cmds;
+		cmdreq.cmds_cnt = ctrl_pdata->sre_off_cmds.cmd_cnt;
+	} else {
+		cmdreq.cmds = ctrl_pdata->sre_on_cmds.cmds;
+		cmdreq.cmds_cnt = ctrl_pdata->sre_on_cmds.cmd_cnt;
+	}
+
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+
+	mdss_dsi_cmdlist_put(ctrl_pdata, &cmdreq);
+
+	htc_attr_status[SRE_INDEX].cur_value = htc_attr_status[SRE_INDEX].req_value;
+	PR_DISP_INFO("%s sre mode=%d\n", __func__, htc_attr_status[SRE_INDEX].cur_value);
+	return true;
+}
+
+void htc_set_limit_brightness(struct msm_fb_data_type *mfd)
+{
+	struct mdss_panel_info *panel_info = mfd->panel_info;
+	int bl_lvl = 0;
+	int nits_lvl = 0;
+	if (htc_attr_status[LIM_BRI_INDEX].req_value > MDSS_MAX_BL_BRIGHTNESS)
+		return;
+
+	if (htc_attr_status[LIM_BRI_INDEX].req_value == htc_attr_status[LIM_BRI_INDEX].cur_value)
+		return;
+
+	panel_info->brightness_max = htc_attr_status[LIM_BRI_INDEX].req_value;
+
+	bl_lvl = htc_backlight_transfer_bl_brightness(panel_info->brightness_max, panel_info, true);
+	if (bl_lvl < 0) {
+		MDSS_BRIGHT_TO_BL(bl_lvl, panel_info->brightness_max, mfd->panel_info->bl_max,
+							MDSS_MAX_BL_BRIGHTNESS);
+	}
+
+	nits_lvl = htc_backlight_bl_to_nits(bl_lvl, panel_info);
+	if (nits_lvl < 0) {
+		
+		panel_info->nits_bl_table.max_nits = 0;
+	} else {
+		panel_info->nits_bl_table.max_nits = nits_lvl;
+	}
+
+	if (bl_lvl < mfd->bl_level) {
+		
+		mfd->bl_updated = false;
+		mfd->unset_bl_level = bl_lvl;
+	}
+
+	htc_attr_status[LIM_BRI_INDEX].cur_value = htc_attr_status[LIM_BRI_INDEX].req_value;
+	PR_DISP_INFO("%s limit_brightness = %d, nits = %d\n", __func__, panel_info->brightness_max, panel_info->nits_bl_table.max_nits);
+	return;
+}
+
 static void dimming_do_work(struct work_struct *work)
 {
 	struct mdss_panel_data *pdata;
@@ -740,3 +840,164 @@ void htc_set_pp_pcc(struct mdss_mdp_ctl *ctl)
 	htc_attr_status[PP_PCC_INDEX].cur_value = req_val;
 	PR_DISP_INFO("%s pp_pcc mode = 0x%x\n", __func__, req_val);
 }
+
+int htc_backlight_transfer_bl_brightness(int val, struct mdss_panel_info *panel_info, bool brightness_to_bl)
+{
+	unsigned int result;
+	int index = 0;
+	u16 *val_table;
+	u16 *ret_table;
+	struct htc_backlight1_table *brt_bl_table = &panel_info->brt_bl_table;
+	int size = brt_bl_table->size;
+
+	
+	if(!size || !brt_bl_table->brt_data || !brt_bl_table->bl_data)
+		return -ENOENT;
+
+	if (brightness_to_bl) {
+		val_table = brt_bl_table->brt_data;
+		ret_table = brt_bl_table->bl_data;
+	} else {
+		val_table = brt_bl_table->bl_data;
+		ret_table = brt_bl_table->brt_data;
+	}
+
+	if (val <= 0){
+		result = 0;
+	} else if (val < val_table[0]) {
+		
+		result = ret_table[0];
+	} else if (val >= val_table[size - 1]) {
+		
+		result = ret_table[size - 1];
+	} else {
+		
+		result = val;
+		for(index = 0; index < size - 1; index++){
+			if (val >= val_table[index] && val <= val_table[index + 1]) {
+				int x0 = val_table[index];
+				int y0 = ret_table[index];
+				int x1 = val_table[index + 1];
+				int y1 = ret_table[index + 1];
+
+				if (x0 == x1)
+					result = y0;
+				else
+					result = y0 + (y1 - y0) * (val - x0) / (x1 - x0);
+
+				break;
+			}
+		}
+	}
+
+	pr_info("%s: mode=%d, %d transfer to %d\n",
+		__func__, brightness_to_bl, val, result);
+
+	return result;
+}
+
+int htc_backlight_bl_to_nits(int val, struct mdss_panel_info *panel_info)
+{
+	int index = 0, remainder = 0, max_index = 0;
+	unsigned int nits, code1, code2;
+	int scale;
+	struct htc_backlight2_table *nits_bl_table = &panel_info->nits_bl_table;
+
+	scale = nits_bl_table->scale;
+	max_index = nits_bl_table->size;
+	if (!scale || !max_index || !nits_bl_table->data)
+		return -ENOENT;
+
+	if (val <= 0)
+		return 0;
+
+
+	for (index = 1; index < max_index; index++) {
+		if (val <= nits_bl_table->data[index])
+			break;
+	}
+
+	code1 = nits_bl_table->data[index - 1];
+	code2 = nits_bl_table->data[index];
+	remainder = (code2 - val) * scale / (code2 - code1);
+
+	nits = index * scale - remainder;
+
+	pr_info("%s: bl=%d, nits=%d", __func__, val, nits);
+	return nits;
+}
+
+static void print_bl_log_suppressed(int val, int index, unsigned int code, int scale)
+{
+	bool print_log = false;
+	unsigned long flags;
+	static unsigned long timeout = 0;
+	static int suppress_count = 0;
+	static int suppress_nits = 0;
+	static int prev_val = 0;
+	static DEFINE_SPINLOCK(lock);
+
+	spin_lock_irqsave(&lock, flags);
+
+	
+	print_log = time_after(jiffies, timeout);
+	print_log |= !prev_val || ((prev_val / scale) != index);
+	print_log |= !val;
+
+	if (print_log || !timeout) {
+		if (suppress_count) {
+			pr_info("%s: nits=%d, bl=%d, suppress %d logs, last value=(%d)", __func__, val, code, suppress_count, suppress_nits);
+			suppress_count = 0;
+		} else {
+			pr_info("%s: nits=%d, bl=%d", __func__, val, code);
+		}
+		
+		timeout = jiffies + msecs_to_jiffies(500);
+		prev_val = val;
+	} else {
+		suppress_nits = val;
+		suppress_count++;
+		pr_debug("%s: nits=%d, bl=%d \n", __func__, val, code);
+	}
+	spin_unlock_irqrestore(&lock, flags);
+}
+
+int htc_backlight_nits_to_bl(int val, struct mdss_panel_info *panel_info)
+{
+	int index = 0, remainder = 0, max_index = 0;
+	unsigned int code, code1, code2;
+	int scale;
+
+	struct htc_backlight2_table *nits_bl_table = &panel_info->nits_bl_table;
+
+	scale = nits_bl_table->scale;
+	max_index = nits_bl_table->size;
+
+	if (!scale || !max_index || !nits_bl_table->data)
+		return -ENOENT;
+
+	index = val / scale;
+	remainder = val % scale;
+
+	
+	if (index >= max_index) {
+		index = max_index;
+		remainder = 0;
+	}
+
+	if (remainder != 0 ) {
+		code1 = nits_bl_table->data[index];
+		code2 = nits_bl_table->data[index + 1];
+
+		
+		code = (code2 - code1) * remainder / scale + code1;
+	} else {
+		
+		code = nits_bl_table->data[index];
+	}
+
+	print_bl_log_suppressed(val, index, code, scale);
+
+	return code;
+}
+

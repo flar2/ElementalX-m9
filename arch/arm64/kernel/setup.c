@@ -45,6 +45,7 @@
 #include <linux/of_platform.h>
 #include <linux/dma-mapping.h>
 #include <linux/efi.h>
+#include <linux/personality.h>
 
 #include <asm/fixmap.h>
 #include <asm/cputype.h>
@@ -122,6 +123,19 @@ void __init early_print(const char *str, ...)
 	va_end(ap);
 
 	printk("%s", buf);
+}
+
+struct cpuinfo_arm64 {
+	struct cpu	cpu;
+	u32		reg_midr;
+};
+
+static DEFINE_PER_CPU(struct cpuinfo_arm64, cpu_data);
+
+void cpuinfo_store_cpu(void)
+{
+	struct cpuinfo_arm64 *info = this_cpu_ptr(&cpu_data);
+	info->reg_midr = read_cpuid_id();
 }
 
 void __init smp_setup_processor_id(void)
@@ -264,6 +278,8 @@ static void __init setup_processor(void)
 
 static void __init setup_machine_fdt(phys_addr_t dt_phys)
 {
+	cpuinfo_store_cpu();
+
 	if (!dt_phys || !early_init_dt_scan(phys_to_virt(dt_phys))) {
 		early_print("\n"
 			"Error: invalid device tree blob at physical address 0x%p (virtual address 0x%p)\n"
@@ -384,14 +400,12 @@ static int __init arm64_device_init(void)
 }
 arch_initcall(arm64_device_init);
 
-static DEFINE_PER_CPU(struct cpu, cpu_data);
-
 static int __init topology_init(void)
 {
 	int i;
 
 	for_each_possible_cpu(i) {
-		struct cpu *cpu = &per_cpu(cpu_data, i);
+		struct cpu *cpu = &per_cpu(cpu_data.cpu, i);
 		cpu->hotpluggable = 1;
 		register_cpu(cpu, i);
 	}
@@ -492,48 +506,73 @@ static u32 Get_min_mx(void) {
 	}
 	return lookup_val;
 }
+#ifdef CONFIG_COMPAT
+static const char *compat_hwcap_str[] = {
+	"swp",
+	"half",
+	"thumb",
+	"26bit",
+	"fastmult",
+	"fpa",
+	"vfp",
+	"edsp",
+	"java",
+	"iwmmxt",
+	"crunch",
+	"thumbee",
+	"neon",
+	"vfpv3",
+	"vfpv3d16",
+	"tls",
+	"vfpv4",
+	"idiva",
+	"idivt",
+	"vfpd32",
+	"lpae",
+	"evtstrm"
+};
+#endif 
 
 static int c_show(struct seq_file *m, void *v)
 {
-	int i;
-
-	seq_printf(m, "Processor\t: %s rev %d (%s)\n",
-		   cpu_name, read_cpuid_id() & 15, ELF_PLATFORM);
+	int i, j;
 
 	for_each_present_cpu(i) {
+		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
+		u32 midr = cpuinfo->reg_midr;
+
 #ifdef CONFIG_SMP
 		seq_printf(m, "processor\t: %d\n", i);
 #endif
+		seq_puts(m, "Features\t:");
+		if (personality(current->personality) == PER_LINUX32) {
+#ifdef CONFIG_COMPAT
+			for (j = 0; compat_hwcap_str[j]; j++)
+				if (COMPAT_ELF_HWCAP & (1 << j))
+					seq_printf(m, " %s", compat_hwcap_str[j]);
+#endif 
+		} else {
+			for (j = 0; hwcap_str[j]; j++)
+				if (elf_hwcap & (1 << j))
+					seq_printf(m, " %s", hwcap_str[j]);
+		}
+#ifdef CONFIG_ARMV7_COMPAT_CPUINFO
+		if (is_compat_task()) {
+			
+			seq_printf(m, "wp half thumb fastmult vfp edsp neon vfpv3 tlsi ");
+			seq_printf(m, "vfpv4 idiva idivt ");
+		}
+#endif
+		seq_puts(m, "\n");
+
+		seq_printf(m, "CPU implementer\t: 0x%02x\n", (midr >> 24));
+		seq_printf(m, "CPU architecture: 8\n");
+		seq_printf(m, "CPU variant\t: 0x%x\n", ((midr >> 20) & 0xf));
+		seq_printf(m, "CPU part\t: 0x%03x\n", ((midr >> 4) & 0xfff));
+		seq_printf(m, "CPU revision\t: %d\n\n", (midr & 0xf));
 	}
 	seq_printf(m, "min_vddcx\t: %d\n", Get_min_cx());
 	seq_printf(m, "min_vddmx\t: %d\n", Get_min_mx());
-
-	
-	seq_puts(m, "Features\t: ");
-
-	for (i = 0; hwcap_str[i]; i++)
-		if (elf_hwcap & (1 << i))
-			seq_printf(m, "%s ", hwcap_str[i]);
-#ifdef CONFIG_ARMV7_COMPAT_CPUINFO
-	if (is_compat_task()) {
-		
-		seq_printf(m, "wp half thumb fastmult vfp edsp neon vfpv3 tlsi ");
-		seq_printf(m, "vfpv4 idiva idivt ");
-	}
-#endif
-
-	seq_printf(m, "\nCPU implementer\t: 0x%02x\n", read_cpuid_id() >> 24);
-	seq_printf(m, "CPU architecture: 8\n");
-	seq_printf(m, "CPU variant\t: 0x%x\n", (read_cpuid_id() >> 20) & 15);
-	seq_printf(m, "CPU part\t: 0x%03x\n", (read_cpuid_id() >> 4) & 0xfff);
-	seq_printf(m, "CPU revision\t: %d\n", read_cpuid_id() & 15);
-
-	seq_puts(m, "\n");
-
-	if (!arch_read_hardware_id)
-		seq_printf(m, "Hardware\t: %s\n", machine_name);
-	else
-		seq_printf(m, "Hardware\t: %s\n", arch_read_hardware_id());
 
 	return 0;
 }
@@ -581,6 +620,7 @@ static int __init msm8994_check_tlbi_workaround(void)
 			return -ENOMEM;
 		major_rev  = SOC_MAJOR_REV((__raw_readl(addr)));
 		msm8994_req_tlbi_wa = (major_rev >= 2) ? 0 : 1;
+		iounmap(addr);
 	} else {
 		
 		msm8994_req_tlbi_wa = 0;
@@ -599,6 +639,7 @@ static int msm8994_read_fuse(void){
 		if (!addr)
 			return -ENOMEM;
 		fuse_data = readl_relaxed(addr);
+		iounmap(addr);
 	}
 	else {
 		return -ENOMEM;

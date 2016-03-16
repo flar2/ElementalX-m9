@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_android.c 556862 2015-05-15 04:01:30Z $
+ * $Id: wl_android.c 559387 2015-05-27 12:44:13Z $
  */
 
 #include <linux/module.h>
@@ -3795,7 +3795,7 @@ static int wl_android_set_ap_mac_list(struct net_device *dev, void *buf)
 						break;
 					}
 				}
-				if (j == android_ap_white_list.count) {
+				if ((j == android_ap_white_list.count) || (j == 16)) {
 					DHD_TRACE(("match black, deauth it\n"));
 					scbval.val = htod32(1);
 					bcopy(&assoc_maclist->ea[i], &scbval.ea, ETHER_ADDR_LEN);
@@ -4167,7 +4167,7 @@ static int wl_android_gateway_add(struct net_device *ndev, char *command, int to
 
 static int wl_android_auto_channel(struct net_device *dev, char *command, int total_len)
 {
-	int chosen = 0;
+	uint chosen = 0;
 	char req_buf[64] = {0};
 	wl_uint32_list_t *request = (wl_uint32_list_t *)req_buf;
 	int rescan = 0;
@@ -4267,18 +4267,19 @@ get_channel_retry:
 
 	res = wldev_ioctl(dev, WLC_GET_CHANNEL_SEL, &chosen, sizeof(chosen), 0);
 
-	
-	chosen &= 0x00FF;
+	chosen = wl_chspec_driver_to_host(chosen);
 
-	if (res < 0 || dtoh32(chosen) == 0) {
+	if (res < 0 || chosen == 0) {
 		if (retry++ < 6)
 			goto get_channel_retry;
 		else {
 			DHD_ERROR(("can't get auto channel sel, err = %d, "
-						"chosen = %d\n", res, chosen));
+						"chosen = %04x\n", res, chosen));
 			chosen = 6; 
 		}
 	}
+
+	chosen = wf_chspec_ctlchan(chosen);
 
 	if ((chosen == start_channel) && (!rescan++)) {
 		retry = 0;

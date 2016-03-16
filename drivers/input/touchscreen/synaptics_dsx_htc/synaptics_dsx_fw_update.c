@@ -308,7 +308,7 @@ struct synaptics_rmi4_fwu_handle {
 static struct bin_attribute dev_attr_data = {
 	.attr = {
 		.name = "data",
-		.mode = (S_IRUGO | S_IWUGO),
+		.mode = (S_IRUGO | S_IWUSR),
 	},
 	.size = 0,
 	.read = fwu_sysfs_show_image,
@@ -316,22 +316,22 @@ static struct bin_attribute dev_attr_data = {
 };
 
 static struct device_attribute attrs[] = {
-	__ATTR(doreflash, S_IWUGO,
+	__ATTR(doreflash, S_IWUSR,
 			synaptics_rmi4_show_error,
 			fwu_sysfs_do_reflash_store),
-	__ATTR(writeconfig, S_IWUGO,
+	__ATTR(writeconfig, S_IWUSR,
 			synaptics_rmi4_show_error,
 			fwu_sysfs_write_config_store),
-	__ATTR(readconfig, S_IWUGO,
+	__ATTR(readconfig, S_IWUSR,
 			synaptics_rmi4_show_error,
 			fwu_sysfs_read_config_store),
-	__ATTR(configarea, S_IWUGO,
+	__ATTR(configarea, S_IWUSR,
 			synaptics_rmi4_show_error,
 			fwu_sysfs_config_area_store),
-	__ATTR(imagename, S_IWUGO,
+	__ATTR(imagename, S_IWUSR,
 			synaptics_rmi4_show_error,
 			fwu_sysfs_image_name_store),
-	__ATTR(imagesize, S_IWUGO,
+	__ATTR(imagesize, S_IWUSR,
 			synaptics_rmi4_show_error,
 			fwu_sysfs_image_size_store),
 	__ATTR(blocksize, S_IRUGO,
@@ -1613,6 +1613,7 @@ static int fwu_start_reflash(void)
 		retval = fwu_do_write_config();
 		break;
 	case NONE:
+		retval = 1;
 	default:
 		goto exit;
 	}
@@ -2071,6 +2072,10 @@ static int check_img_version(const struct firmware *fw, int *tagLen, unsigned in
 		pr_info("%s: tag=%s\n", __func__, tag);
 		snprintf(fw_ver, 40, "%d", version);
 		pr_info("%s: fw_ver=%s\n", __func__, fw_ver);
+		if (version==0) {
+			pr_info("%s: Need Update\n", __func__);
+			return 1;
+		}
 		if (strstr(tag, fw_ver) != NULL) {
 			pr_info("%s: Update Bypass\n", __func__);
 			return 0; 
@@ -2085,7 +2090,7 @@ int synaptics_touch_fw_update(struct firmware *fw)
 {
 	struct synaptics_rmi4_data *rmi4_data = fwu->rmi4_data;
 	unsigned char *fw_source;
-	int tagLen = 0;
+	int tagLen = 0, ret = 0;
 
 	synaptics_fwu_progress(0);
 	if (check_img_version(fw, &tagLen, rmi4_data->firmware_id)) {
@@ -2093,20 +2098,21 @@ int synaptics_touch_fw_update(struct firmware *fw)
 		memcpy(fw_source, fw->data+tagLen, fw->size-tagLen);
 		fwu->do_lockdown = DO_LOCKDOWN;
 		synaptics_fwu_progress(50);
-		if (synaptics_fw_updater(fw_source)) {
-			kfree(fw_source);
-			pr_err("firmware download failed\n");
-			return -1;
-		}
+		ret = synaptics_fw_updater(fw_source);
 		kfree(fw_source);
 		fwu->do_lockdown = DO_LOCKDOWN;
+		if (ret < 0) {
+			pr_err("firmware download failed\n");
+			return -1;
+		} else if (ret == 1) {
+			pr_info("firmware download bypass\n");
+		}
 	} else {
-		synaptics_fwu_progress(100);
-		return 1;
+		ret = 1;
 	}
 
 	synaptics_fwu_progress(100);
-	return 0;
+	return ret;
 }
 
 int register_synaptics_fw_update(void)

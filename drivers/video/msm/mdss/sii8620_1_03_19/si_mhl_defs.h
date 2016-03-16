@@ -16,7 +16,13 @@
 #ifndef _SI_MHL_DEFS_H_
 #define _SI_MHL_DEFS_H_
 
+/*
+ * This file contains MHL Specs related definitions.
+ */
 
+/*
+ * DEVCAP offsets
+ */
 
 enum {
 	DEVCAP_OFFSET_DEV_STATE,
@@ -35,7 +41,7 @@ enum {
 	DEVCAP_OFFSET_SCRATCHPAD_SIZE,
 	DEVCAP_OFFSET_INT_STAT_SIZE,
 	DEVCAP_OFFSET_RESERVED,
-	
+	/* this one must be last */
 	DEVCAP_SIZE
 };
 
@@ -64,10 +70,12 @@ union MHLDevCap_u {
 	uint8_t devcap_cache[DEVCAP_SIZE];
 };
 
+/* Version that this chip supports */
 #define MHL_VER_MAJOR				0x30
 #define MHL_VER_MINOR				0x02
 #define MHL_VERSION				(MHL_VER_MAJOR | MHL_VER_MINOR)
 
+/* Device Category */
 #define MHL_DEV_CATEGORY_OFFSET			DEVCAP_OFFSET_DEV_CAT
 #define MHL_DEV_CATEGORY_POW_BIT		0x10
 #define MHL_DEV_CATEGORY_PLIM2_0		0xE0
@@ -81,6 +89,7 @@ union MHLDevCap_u {
 #define MHL_DEV_CAT_DONGLE			0x03
 #define MHL_DEV_CAT_SELF_POWERED_DONGLE		0x13
 
+/* Video Link Mode */
 #define MHL_DEV_VID_LINK_SUPP_RGB444		0x01
 #define MHL_DEV_VID_LINK_SUPP_YCBCR444		0x02
 #define MHL_DEV_VID_LINK_SUPP_YCBCR422		0x04
@@ -89,9 +98,11 @@ union MHLDevCap_u {
 #define MHL_DEV_VID_LINK_SUPP_VGA		0x20
 #define MHL_DEV_VID_LINK_SUPP_16BPP		0x40
 
+/* Audio Link Mode Support */
 #define MHL_DEV_AUD_LINK_2CH			0x01
 #define MHL_DEV_AUD_LINK_8CH			0x02
 
+/* Feature Flag in the devcap */
 #define MHL_DEV_FEATURE_FLAG_OFFSET		DEVCAP_OFFSET_FEATURE_FLAG
 #define MHL_FEATURE_RCP_SUPPORT			0x01
 #define MHL_FEATURE_RAP_SUPPORT			0x02
@@ -100,12 +111,14 @@ union MHLDevCap_u {
 #define MHL_FEATURE_UCP_RECV_SUPPORT		0x10
 #define MHL_FEATURE_RBP_SUPPORT			0x40
 
+/* VIDEO TYPES */
 #define MHL_VT_GRAPHICS				0x00
 #define MHL_VT_PHOTO				0x02
 #define MHL_VT_CINEMA				0x04
 #define MHL_VT_GAMES				0x08
 #define MHL_SUPP_VT				0x80
 
+/* Logical Dev Map */
 #define MHL_DEV_LD_DISPLAY			0x01
 #define MHL_DEV_LD_VIDEO			0x02
 #define MHL_DEV_LD_AUDIO			0x04
@@ -115,7 +128,8 @@ union MHLDevCap_u {
 #define MHL_DEV_LD_SPEAKER			0x40
 #define MHL_DEV_LD_GUI				0x80
 
-#define MHL_BANDWIDTH_LIMIT			22	
+/* Bandwidth */
+#define MHL_BANDWIDTH_LIMIT			22	/* 225 MHz */
 
 #define MHL_STATUS_REG_CONNECTED_RDY		0x30
 #define MHL_STATUS_REG_LINK_MODE		0x31
@@ -145,10 +159,13 @@ union MHLDevCap_u {
 #define MHL3_INT_FEAT_REQ			0x20
 #define MHL3_INT_FEAT_COMPLETE			0x40
 
+/* On INTR_1 the EDID_CHG is located at BIT 0 */
 #define MHL_INT_EDID_CHG			0x02
 
+/* This contains one nibble each - max offset */
 #define MHL_INT_AND_STATUS_SIZE			0x33
 #define MHL_SCRATCHPAD_SIZE			16
+/* manually define highest number */
 #define MHL_MAX_BUFFER_SIZE			MHL_SCRATCHPAD_SIZE
 
 #define SILICON_IMAGE_ADOPTER_ID		367
@@ -177,9 +194,9 @@ enum BurstId_e {
 	burst_id_DCDB = 0x0072,
 	adopter_id_RANGE_START = 0x0080,
 	LOCAL_ADOPTER_ID = SILICON_IMAGE_ADOPTER_ID,
-	
+	/* add new burst ID's above here */
 
-	
+	/* Burst ID's are a 16-bit big-endian quantity. */
 	burst_id_16_BITS_REQUIRED = 0x8000
 };
 
@@ -215,24 +232,25 @@ struct SI_PACK_THIS_STRUCT standard_transport_header_t {
 	sizeof(struct SI_PACK_THIS_STRUCT standard_transport_header_t)
 
 struct SI_PACK_THIS_STRUCT block_rcv_buffer_info_t {
-	
+	/* use the BURST_ID macro to access this */
 	struct MHL_burst_id_t burst_id;
 	uint8_t blk_rcv_buffer_size_low;
 	uint8_t blk_rcv_buffer_size_high;
 };
 
+/* see MHL2.0 spec section 5.9.1.2 */
 struct SI_PACK_THIS_STRUCT MHL2_video_descriptor_t {
 	uint8_t reserved_high;
-	unsigned char frame_sequential:1;	
-	unsigned char top_bottom:1;		
-	unsigned char left_right:1;		
+	unsigned char frame_sequential:1;	/*FB_SUPP*/
+	unsigned char top_bottom:1;		/*TB_SUPP*/
+	unsigned char left_right:1;		/*LR_SUPP*/
 	unsigned char reserved_low:5;
 };
 
 struct MHL3_vdi_l_t {
-	unsigned char frame_sequential:1;	
-	unsigned char top_bottom:1;		
-	unsigned char left_right:1;		
+	unsigned char frame_sequential:1;	/*FB_SUPP*/
+	unsigned char top_bottom:1;		/*TB_SUPP*/
+	unsigned char left_right:1;		/*LR_SUPP*/
 	unsigned char reserved_low:5;
 };
 
@@ -240,8 +258,9 @@ struct MHL3_vdi_h_t {
 	unsigned char reserved;
 };
 
+/* see MHL3.0 spec section 5.11 */
 struct SI_PACK_THIS_STRUCT MHL3_video_descriptor_t {
-	
+	/* VDI_H comes before VDI_L.  See Table 5-5 */
 	struct MHL3_vdi_h_t vdi_h;
 	struct MHL3_vdi_l_t vdi_l;
 };
@@ -281,9 +300,9 @@ struct SI_PACK_THIS_STRUCT MHL3_hev_dtd_a_payload_t {
 
 struct SI_PACK_THIS_STRUCT MHL3_hev_dtd_b_payload_t {
 	struct MHL_high_low_t v_total_in_lines;
-	uint8_t v_blank_in_lines;	
-	uint8_t v_front_porch_in_lines;	
-	uint8_t v_sync_width_in_lines;	
+	uint8_t v_blank_in_lines;	/* note 7 for table 5-16 is wrong */
+	uint8_t v_front_porch_in_lines;	/* note 7 for table 5-16 is wrong */
+	uint8_t v_sync_width_in_lines;	/* note 7 for table 5-16 is wrong */
 	uint8_t v_refresh_rate_in_fields_per_second;
 	uint8_t v_flags;
 	uint8_t reserved[4];
@@ -373,7 +392,11 @@ struct SI_PACK_THIS_STRUCT MHL_bits_per_pixel_fmt_data_t {
 	struct MHL3_burst_header_t header;
 	uint8_t num_entries_this_burst;
 
-	
+	/* reserve 5 for use with WRITE_BURST
+	   actual length is variable, indicated by
+	   num_entries_this_burst
+	 */
+	/* todo change this to 1 when WRITE_BURST OPTION is removed */
 	struct MHL3_bits_per_pixel_fmt_descriptor_t descriptors[5];
 };
 
@@ -395,6 +418,10 @@ struct SI_PACK_THIS_STRUCT mhl3_vsif_t {
 	struct MHL_high_low_t av_delay_sync;
 };
 
+/* the enum's in the following section are
+	defined "in position" to avoid
+	shifting on the fly
+*/
 #define MHL3_VSIF_TYPE		0x81
 #define MHL3_VSIF_VERSION	0x03
 #define IEEE_OUI_MHL		0x7CA61D
@@ -409,12 +436,12 @@ enum mhl_vid_fmt_e {
 
 #define PB4_MASK_MHL_3D_FMT_TYPE 0x1C
 enum mhl_3d_fmt_type_e {
-	MHL_3D_FMT_TYPE_FS,		
-	MHL_3D_FMT_TYPE_TB = 0x04,	
-	MHL_3D_FMT_TYPE_LR = 0x08,	
-	MHL_3D_FMT_TYPE_FS_TB = 0x0C,	
-	MHL_3D_FMT_TYPE_FS_LR = 0x10,	
-	MHL_3D_FMT_TYPE_TBLR = 0x14	
+	MHL_3D_FMT_TYPE_FS,		/* Frame Sequential */
+	MHL_3D_FMT_TYPE_TB = 0x04,	/* Top-Bottom */
+	MHL_3D_FMT_TYPE_LR = 0x08,	/* Left-Right */
+	MHL_3D_FMT_TYPE_FS_TB = 0x0C,	/* Frame Sequential Top-Bottom */
+	MHL_3D_FMT_TYPE_FS_LR = 0x10,	/* Frame Sequential Left-Right */
+	MHL_3D_FMT_TYPE_TBLR = 0x14	/* Top-Bottom-Left-Right */
 };
 
 #define PB4_MASK_SEP_AUD 0x20
@@ -479,23 +506,23 @@ enum InfoFrameType_e {
 
 SI_POP_STRUCT_PACKING
 enum {
-	MHL_MSC_MSG_RCP = 0x10,  
-	MHL_MSC_MSG_RCPK = 0x11, 
-	MHL_MSC_MSG_RCPE = 0x12, 
-	MHL_MSC_MSG_RAP = 0x20,  
-	MHL_MSC_MSG_RAPK = 0x21, 
-	MHL_MSC_MSG_RBP = 0x22,  
-	MHL_MSC_MSG_RBPK = 0x23, 
-	MHL_MSC_MSG_RBPE = 0x24, 
-	MHL_MSC_MSG_UCP = 0x30,  
-	MHL_MSC_MSG_UCPK = 0x31, 
-	MHL_MSC_MSG_UCPE = 0x32, 
-	MHL_MSC_MSG_RUSB = 0x40, 
-	MHL_MSC_MSG_RUSBK = 0x41, 
-	MHL_MSC_MSG_RHID = 0x42, 
-	MHL_MSC_MSG_RHIDK = 0x43, 
-	MHL_MSC_MSG_ATT = 0x50,	
-	MHL_MSC_MSG_ATTK = 0x51, 
+	MHL_MSC_MSG_RCP = 0x10,  /* RCP sub-command */
+	MHL_MSC_MSG_RCPK = 0x11, /* RCP Acknowledge sub-command */
+	MHL_MSC_MSG_RCPE = 0x12, /* RCP Error sub-command */
+	MHL_MSC_MSG_RAP = 0x20,  /* Mode Change Warning sub-command */
+	MHL_MSC_MSG_RAPK = 0x21, /* MCW Acknowledge sub-command */
+	MHL_MSC_MSG_RBP = 0x22,  /* Remote Button Protocol sub-command */
+	MHL_MSC_MSG_RBPK = 0x23, /* RBP Acknowledge sub-command */
+	MHL_MSC_MSG_RBPE = 0x24, /* RBP Error sub-command */
+	MHL_MSC_MSG_UCP = 0x30,  /* UCP sub-command */
+	MHL_MSC_MSG_UCPK = 0x31, /* UCP Acknowledge sub-command */
+	MHL_MSC_MSG_UCPE = 0x32, /* UCP Error sub-command */
+	MHL_MSC_MSG_RUSB = 0x40, /* Request USB host role */
+	MHL_MSC_MSG_RUSBK = 0x41, /* Acknowledge request for USB host role */
+	MHL_MSC_MSG_RHID = 0x42, /* Request HID host role */
+	MHL_MSC_MSG_RHIDK = 0x43, /* Acknowledge request for HID host role */
+	MHL_MSC_MSG_ATT = 0x50,	/* Request attention sub-command */
+	MHL_MSC_MSG_ATTK = 0x51, /* ATT Acknowledge sub-command */
 	MHL_MSC_MSG_BIST_TRIGGER = 0x60,
 	MHL_MSC_MSG_BIST_REQUEST_STAT = 0x61,
 	MHL_MSC_MSG_BIST_READY = 0x62,
@@ -546,82 +573,102 @@ enum {
 #define T_RAP_WAIT_MAX			1000
 
 enum {
-	
+	/* Command or Data byte acknowledge */
 	MHL_ACK = 0x33,
-	
+	/* Command or Data byte not acknowledge */
 	MHL_NACK = 0x34,
-	
+	/* Transaction abort */
 	MHL_ABORT = 0x35,
-	
+	/* Write one status register strip top bit */
 	MHL_WRITE_STAT = 0x60 | 0x80,
-	
+	/* Write one interrupt register */
 	MHL_SET_INT = 0x60,
-	
+	/* Read one register */
 	MHL_READ_DEVCAP_REG = 0x61,
-	
+	/* Read CBUS revision level from follower */
 	MHL_GET_STATE = 0x62,
-	
+	/* Read vendor ID value from follower */
 	MHL_GET_VENDOR_ID = 0x63,
-	
+	/* Set Hot Plug Detect in follower */
 	MHL_SET_HPD = 0x64,
-	
+	/* Clear Hot Plug Detect in follower */
 	MHL_CLR_HPD = 0x65,
-	
+	/* Set Capture ID for downstream device */
 	MHL_SET_CAP_ID = 0x66,
-	
+	/* Get Capture ID from downstream device */
 	MHL_GET_CAP_ID = 0x67,
-	
+	/* VS command to send RCP sub-commands */
 	MHL_MSC_MSG = 0x68,
-	
+	/* Get Vendor-Specific command error code */
 	MHL_GET_SC1_ERRORCODE = 0x69,
-	
+	/* Get DDC channel command error code */
 	MHL_GET_DDC_ERRORCODE = 0x6A,
-	
+	/* Get MSC command error code */
 	MHL_GET_MSC_ERRORCODE = 0x6B,
-	
+	/* Write 1-16 bytes to responder's scratchpad */
 	MHL_WRITE_BURST = 0x6C,
-	
+	/* Get channel 3 command error code */
 	MHL_GET_SC3_ERRORCODE = 0x6D,
-	
+	/* Write one extended status register */
 	MHL_WRITE_XSTAT = 0x70,
-	
+	/* Read one extended devcap register */
 	MHL_READ_XDEVCAP_REG = 0x71,
-	
+	/* let the rest of these float, they are software specific */
 	MHL_READ_EDID_BLOCK,
 	MHL_SEND_3D_REQ_OR_FEAT_REQ,
 	MHL_READ_DEVCAP,
 	MHL_READ_XDEVCAP
 };
 
-#define MHL_RAP_POLL		0x00	
-#define MHL_RAP_CONTENT_ON	0x10	
-#define MHL_RAP_CONTENT_OFF	0x11	
+/* RAP action codes */
+#define MHL_RAP_POLL		0x00	/* Just do an ack */
+#define MHL_RAP_CONTENT_ON	0x10	/* Turn content stream ON */
+#define MHL_RAP_CONTENT_OFF	0x11	/* Turn content stream OFF */
 #define MHL_RAP_CBUS_MODE_DOWN	0x20
 #define MHL_RAP_CBUS_MODE_UP	0x21
 
-#define MHL_RAPK_NO_ERR		0x00	
-#define MHL_RAPK_UNRECOGNIZED	0x01	
-#define MHL_RAPK_UNSUPPORTED	0x02	
-#define MHL_RAPK_BUSY		0x03	
+/* RAPK status codes */
+#define MHL_RAPK_NO_ERR		0x00	/* RAP action recognized & supported */
+#define MHL_RAPK_UNRECOGNIZED	0x01	/* Unknown RAP action code received */
+#define MHL_RAPK_UNSUPPORTED	0x02	/* Rcvd RAP action code not supported */
+#define MHL_RAPK_BUSY		0x03	/* Responder too busy to respond */
 
+/*
+ * Error status codes for RCPE messages
+ */
+/* No error. (Not allowed in RCPE messages) */
 #define MHL_RCPE_STATUS_NO_ERROR		0x00
+/* Unsupported/unrecognized key code */
 #define MHL_RCPE_STATUS_INEFFECTIVE_KEY_CODE	0x01
+/* Responder busy. Initiator may retry message */
 #define MHL_RCPE_STATUS_BUSY			0x02
 
+/*
+ * Error status codes for RBPE messages
+ */
+/* No error. (Not allowed in RBPE messages) */
 #define MHL_RBPE_STATUS_NO_ERROR		0x00
+/* Unsupported/unrecognized button code */
 #define MHL_RBPE_STATUS_INEFFECTIVE_BUTTON_CODE	0x01
+/* Responder busy. Initiator may retry message */
 #define MHL_RBPE_STATUS_BUSY			0x02
 
+/*
+ * Error status codes for UCPE messages
+ */
+/* No error. (Not allowed in UCPE messages) */
 #define MHL_UCPE_STATUS_NO_ERROR		0x00
+/* Unsupported/unrecognized key code */
 #define MHL_UCPE_STATUS_INEFFECTIVE_KEY_CODE	0x01
 
+/* Extended Device Capability Registers 7.12.1 */
 enum {
 	XDEVCAP_START = 0x80,
 	XDEVCAP_ADDR_ECBUS_SPEEDS = XDEVCAP_START,
 	XDEVCAP_ADDR_TMDS_SPEEDS = 0x81,
 	XDEVCAP_ADDR_ECBUS_DEV_ROLES = 0x82,
 	XDEVCAP_ADDR_LOG_DEV_MAPX = 0x83,
-	XDEVCAP_LIMIT,	
+	XDEVCAP_LIMIT,	/* don't hard-code this one */
 	XDEVCAP_ADDR_RESERVED_4 = 0x84,
 	XDEVCAP_ADDR_RESERVED_5 = 0x85,
 	XDEVCAP_ADDR_RESERVED_6 = 0x86,
@@ -634,7 +681,7 @@ enum {
 	XDEVCAP_ADDR_RESERVED_D = 0x8D,
 	XDEVCAP_ADDR_RESERVED_E = 0x8E,
 	XDEVCAP_ADDR_RESERVED_F = 0x8F,
-	XDEVCAP_ADDR_LAST,	
+	XDEVCAP_ADDR_LAST,	/* this one must be last */
 	XDEVCAP_SIZE = XDEVCAP_ADDR_LAST - XDEVCAP_START
 };
 
@@ -665,25 +712,30 @@ union MHLXDevCap_u {
 };
 SI_POP_STRUCT_PACKING
 
+/* XDEVCAP - eCBUS Speeds 7.12.1.1 */
 #define MHL_XDC_ECBUS_S_075			0x01
 #define MHL_XDC_ECBUS_S_8BIT			0x02
 #define MHL_XDC_ECBUS_S_12BIT			0x04
 #define MHL_XDC_ECBUS_D_150			0x10
 #define MHL_XDC_ECBUS_D_8BIT			0x20
 
+/* XDEVCAP - TMDS Speeds 7.12.1.2 */
 #define MHL_XDC_TMDS_000			0x00
 #define MHL_XDC_TMDS_150			0x01
 #define MHL_XDC_TMDS_300			0x02
 #define MHL_XDC_TMDS_600			0x04
 
+/* XDEVCAP - Device Roles 7.12.1.3 */
 #define MHL_XDC_DEV_HOST			0x01
 #define MHL_XDC_DEV_DEVICE			0x02
 #define MHL_XDC_DEV_CHARGER			0x04
 #define MHL_XDC_HID_HOST			0x08
 #define MHL_XDC_HID_DEVICE			0x10
 
+/* XDEVCAP - Extended Logical Device Map 7.12.1.4 */
 #define MHL_XDC_LD_PHONE			0x01
 
+/* Extended Device Status Registers 7.12.2 */
 enum {
 	XDEVSTAT_OFFSET_CURR_ECBUS_MODE,
 	XDEVSTAT_OFFSET_AVLINK_MODE_STATUS,
@@ -717,10 +769,11 @@ enum {
 	XDEVSTAT_OFFSET_RESERVED_1D,
 	XDEVSTAT_OFFSET_RESERVED_1E,
 	XDEVSTAT_OFFSET_RESERVED_1F,
-	
+	/* this one must be last */
 	XDEVSTAT_SIZE
 };
 
+/* XDEVSTAT - Current eCBUS Mode 7.12.2.1 */
 #define MHL_XSTATUS_REG_CBUS_MODE		0x90
 #define MHL_XDS_SLOT_MODE_8BIT			0x00
 #define MHL_XDS_SLOT_MODE_6BIT			0x01
@@ -732,17 +785,20 @@ enum {
 #define MHL_XDS_LINK_CLOCK_300MHZ		0x20
 #define MHL_XDS_LINK_CLOCK_600MHZ		0x30
 
+/* XDEVSTAT - AV Link Mode Status 7.12.2.2 */
 #define MHL_XDS_LINK_STATUS_NO_SIGNAL		0x00
 #define MHL_XDS_LINK_STATUS_CRU_LOCKED		0x01
 #define MHL_XDS_LINK_STATUS_TMDS_NORMAL		0x02
 #define MHL_XDS_LINK_STATUS_TMDS_RESERVED	0x03
 
+/* XDEVSTAT - AV Link Mode Control 7.12.2.3 */
 #define MHL_STATUS_REG_AV_LINK_MODE_CONTROL	0x92
 #define MHL_XDS_LINK_RATE_1_5_GBPS		0x00
 #define MHL_XDS_LINK_RATE_3_0_GBPS		0x01
 #define MHL_XDS_LINK_RATE_6_0_GBPS		0x02
 #define MHL_XDS_ATT_CAPABLE			0x08
 
+/* XDEVSTAT - Multi-Sink Status 7.12.2.4 */
 #define MHL_XDS_SINK_STATUS_1_HPD_LOW		0x00
 #define MHL_XDS_SINK_STATUS_1_HPD_HIGH		0x01
 #define MHL_XDS_SINK_STATUS_2_HPD_LOW		0x00
@@ -752,6 +808,10 @@ enum {
 #define MHL_XDS_SINK_STATUS_4_HPD_LOW		0x00
 #define MHL_XDS_SINK_STATUS_4_HPD_HIGH		0x40
 
+/*
+ * Define format of Write Burst used in MHL 3
+ * to assign TDM slots to virtual channels.
+ */
 struct SI_PACK_THIS_STRUCT virt_chan_info {
 	uint8_t vc_num;
 	uint8_t feature_id;
@@ -780,6 +840,7 @@ struct SI_PACK_THIS_STRUCT tdm_alloc_burst {
 	uint8_t reserved;
 };
 
+/* BIST_SETUP WRITE_BURST 15.1.1 */
 #define BIST_ECBUS_PATTERN_UNSPECIFIED		0x00
 #define BIST_ECBUS_PATTERN_PRBS			0x01
 #define BIST_ECBUS_PATTERN_FIXED_8		0x02
@@ -830,6 +891,7 @@ struct SI_PACK_THIS_STRUCT bist_setup_burst {
 	uint8_t impedance_mode;
 };
 
+/* BIST_RETURN_STAT WRITE_BURST 15.1.2 */
 struct SI_PACK_THIS_STRUCT bist_return_stat_burst {
 	uint8_t burst_id_h;
 	uint8_t burst_id_l;
@@ -890,7 +952,7 @@ struct SI_PACK_THIS_STRUCT si_adopter_id_data {
 	struct SI_PACK_THIS_STRUCT si_adopter_id_sub_payload_hdr hdr;
 	union {
 		struct SI_PACK_THIS_STRUCT si_opcode_data_edid_block edid_blk;
-		
+		/* more members to come later */
 	} opcode_data;
 };
 

@@ -3662,6 +3662,14 @@ static uint8_t parse_861_short_descriptors(
 				       data_block_length /
 				       sizeof(p_audio_data_block->
 					      short_audio_descriptors[0])) {
+					if (i == MAX_A_DESCRIPTORS) {
+						MHL_TX_EDID_INFO(
+						    "# of audio descriptors "
+						    "larger than %d\n",
+						    MAX_A_DESCRIPTORS
+						);
+						break;
+					}
 					mhl_edid_3d_data->parse_data.
 					    audio_descriptors[a_desc_index]
 					    = p_audio_data_block->

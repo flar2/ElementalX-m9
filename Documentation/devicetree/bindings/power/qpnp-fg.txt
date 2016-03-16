@@ -30,12 +30,18 @@ Optionally ADC nodes can be added
 
 Parent node required properties:
 - compatible : should be "qcom,qpnp-fg" for the FG driver.
+- qcom,pmic-revid :			Should specify the phandle of PMIC
+					revid module. This is used to identify
+					the PMIC subtype.
 
 Parent node optional properties:
 - qcom,warm-bat-decidegc:		Warm battery temperature in decidegC.
 - qcom,cool-bat-decidegc:		Cool battery temperature in decidegC.
 - qcom,hot-bat-decidegc:		Hot battery temperature in decidegC.
 - qcom,cold-bat-decidegc:		Cold battery temperature in decidegC.
+- qcom,cold-hot-jeita-hysteresis:	A tuple of 2. Index[0] is cold
+					hysteresis and index[1] is hot
+					hysterisis(in decidegC).
 - qcom,ext-sense-type:			Current sense channel used by the FG.
 					Set this to use external rsense.
 
@@ -44,6 +50,12 @@ Parent node optional properties:
 					be exactly 6 bytes in length.
 					Example: [01 02 03 04 05 06]
 - qcom,resume-soc:			soc to resume charging in percentage.
+- qcom,resume-soc-raw:			soc to resume charging in the scale of
+					[0-255]. This overrides qcom,resume-soc
+					if defined.
+- qcom,hold-soc-while-full:		A boolean property that when defined
+					holds SOC at 100% when the battery is
+					full.
 - qcom,bcl-lm-threshold-ma:		BCL LPM to MPM mode transition threshold
 					in milliAmpere.
 - qcom,bcl-mh-threshold-ma:		BCL MPM to HPM mode transition threshold
@@ -108,16 +120,16 @@ Parent node optional properties:
 					present, then the following properties
 					to specify low and high soc thresholds
 					should be defined.
-- qcom,cycle-counter-low-soc:		Low SOC threshold which will be compared
-					against the battery SOC before starting
-					the cycle counter algorithm.
-- qcom,cycle-counter-high-soc:		High SOC threshold which will be compared
-					against the battery SOC before incrementing
-					the cycle counter.
 - qcom,capacity-learning-on:		A boolean property to have the fuel
 					gauge driver attempt to learn the
 					battery capacity when charging. Takes
 					precedence over capacity-estimation-on.
+- qcom,capacity-learning-feedback:	A boolean property to have the fuel
+					gauge driver to feedback the learned
+					capacity into the capacity learning
+					algorithm. This has to be used only if
+					the property "qcom,capacity-learning-on"
+					is specified.
 - qcom,cl-max-increment-deciperc:	The maximum percent that the capacity
 					can rise as the result of a single
 					charge cycle. This property corresponds
@@ -133,6 +145,10 @@ Parent node optional properties:
 - qcom,cl-max-start-soc:		The battery soc has to be below this
 					value at the start of a charge cycle
 					for capacity learning to be run.
+- qcom,cl-vbat-est-thr-uv:		The maximum difference between the
+					battery voltage shadow and the current
+					predicted voltage in uV to initiate
+					capacity learning.
 - qcom,capacity-estimation-on:		A boolean property to have the fuel
 					gauge driver attempt to estimate the
 					battery capacity using battery
@@ -185,6 +201,7 @@ pmi8994_fg: qcom,fg {
 	#address-cells = <1>;
 	#size-cells = <1>;
 	status = "disabled";
+	qcom,pmic-revid = <&pmi8994_revid>;
 
 	qcom,fg-soc@4000 {
 		reg = <0x4000 0x100>;
@@ -244,5 +261,7 @@ pmi8994_fg: qcom,fg {
 
 		interrupt-names =	"mem-avail",
 					"data-rcvry-sug";
+
+		qcom,cold-hot-jeita-hysteresis = <30 50>;
 	};
 };

@@ -147,7 +147,7 @@ static int snd_compr_update_tstamp(struct snd_compr_stream *stream,
 	err = stream->ops->pointer(stream, tstamp);
 	if (err)
 		return err;
-	pr_debug("dsp consumed till %d total %d bytes\n",
+	pr_debug("dsp consumed till %d total %llu bytes\n",
 		tstamp->byte_offset, tstamp->copied_total);
 	if (stream->direction == SND_COMPRESS_PLAYBACK)
 		stream->runtime->total_bytes_transferred = tstamp->copied_total;
@@ -472,9 +472,6 @@ static int snd_compress_check_input(struct snd_compr_params *params)
 	if (params->codec.ch_in == 0 || params->codec.ch_out == 0)
 		return -EINVAL;
 
-	if (!(params->codec.sample_rate & SNDRV_PCM_RATE_8000_192000))
-		return -EINVAL;
-
 	return 0;
 }
 
@@ -713,6 +710,27 @@ static int snd_compr_partial_drain(struct snd_compr_stream *stream)
 	return retval;
 }
 
+static int snd_compr_set_next_track_param(struct snd_compr_stream *stream,
+		unsigned long arg)
+{
+	union snd_codec_options codec_options;
+	int retval;
+
+	
+	if (stream->runtime->state != SNDRV_PCM_STATE_SETUP &&
+			stream->runtime->state != SNDRV_PCM_STATE_RUNNING)
+		return -EPERM;
+
+	if (copy_from_user(&codec_options, (void __user *)arg,
+				sizeof(codec_options)))
+		return -EFAULT;
+
+	retval = stream->ops->set_next_track_param(stream, &codec_options);
+	if (retval != 0)
+		return retval;
+	return 0;
+}
+
 static int snd_compress_simple_ioctls(struct file *file,
 				struct snd_compr_stream *stream,
 				unsigned int cmd, unsigned long arg)
@@ -852,6 +870,11 @@ static long snd_compr_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 	case _IOC_NR(SNDRV_COMPRESS_NEXT_TRACK):
 		retval = snd_compr_next_track(stream);
 		break;
+
+	case _IOC_NR(SNDRV_COMPRESS_SET_NEXT_TRACK_PARAM):
+		retval = snd_compr_set_next_track_param(stream, arg);
+		break;
+
 	case _IOC_NR(SNDRV_COMPRESS_ENABLE_EFFECT):
 		retval = snd_compr_effect(stream, arg);
 		break;

@@ -32,6 +32,7 @@
 #define SCM_FUSE_READ			0x7
 #define SCM_CMD_HDCP			0x01
 
+/* SCM Features */
 #define SCM_SVC_SEC_CAMERA		0xD
 
 #define TZ_HTC_SVC_GET_SECURITY_LEVEL   0x10
@@ -76,12 +77,22 @@ enum scm_arg_types {
 
 #define SCM_ARGS(...) SCM_ARGS_IMPL(__VA_ARGS__, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
+/**
+ * struct scm_desc
+ * @arginfo: Metadata describing the arguments in args[]
+ * @args: The array of arguments for the secure syscall
+ * @ret: The values returned by the secure syscall
+ * @extra_arg_buf: The buffer containing extra arguments
+		   (that don't fit in available registers)
+ * @x5: The 4rd argument to the secure syscall or physical address of
+	extra_arg_buf
+ */
 struct scm_desc {
 	u32 arginfo;
 	u64 args[MAX_SCM_ARGS];
 	u64 ret[MAX_SCM_RETS];
 
-	
+	/* private */
 	void *extra_arg_buf;
 	u64 x5;
 };

@@ -151,6 +151,7 @@ enum dsi_pm_type {
 #define DSI_CMD_DST_FORMAT_RGB666	7
 #define DSI_CMD_DST_FORMAT_RGB888	8
 
+#define DSI_INTR_DESJEW_MASK			BIT(31)
 #define DSI_INTR_DYNAMIC_REFRESH_MASK		BIT(29)
 #define DSI_INTR_DYNAMIC_REFRESH_DONE		BIT(28)
 #define DSI_INTR_ERROR_MASK		BIT(25)
@@ -164,6 +165,15 @@ enum dsi_pm_type {
 #define DSI_INTR_CMD_DMA_DONE_MASK	BIT(1)
 #define DSI_INTR_CMD_DMA_DONE		BIT(0)
 #define DSI_INTR_TOTAL_MASK		0x2222AA02
+
+#define DSI_INTR_MASK_ALL	\
+		(DSI_INTR_DESJEW_MASK | \
+		DSI_INTR_DYNAMIC_REFRESH_MASK | \
+		DSI_INTR_ERROR_MASK | \
+		DSI_INTR_BTA_DONE_MASK | \
+		DSI_INTR_VIDEO_DONE_MASK | \
+		DSI_INTR_CMD_MDP_DONE_MASK | \
+		DSI_INTR_CMD_DMA_DONE_MASK)
 
 #define DSI_CMD_TRIGGER_NONE		0x0	
 #define DSI_CMD_TRIGGER_TE		0x02
@@ -179,6 +189,7 @@ enum dsi_pm_type {
 
 #define DSI_DATA_LANES_STOP_STATE	0xF
 #define DSI_CLK_LANE_STOP_STATE		BIT(4)
+#define DSI_DATA_LANES_ENABLED		0xF0
 
 #define DSI_DYNAMIC_REFRESH_CTRL		0x200
 #define DSI_DYNAMIC_REFRESH_PIPE_DELAY		0x204
@@ -237,6 +248,16 @@ struct dsi_panel_cmds {
 	struct dsi_cmd_desc *cmds;
 	int cmd_cnt;
 	int link_state;
+};
+
+struct dsi_panel_timing {
+	struct mdss_panel_timing timing;
+	uint32_t phy_timing[12];
+	
+	char t_clk_post;
+	char t_clk_pre;
+	struct dsi_panel_cmds on_cmds;
+	struct dsi_panel_cmds switch_cmds;
 };
 
 struct dsi_kickoff_action {
@@ -300,6 +321,7 @@ enum BACKLIGHT_TO_BRIGHTNESS_HTC_V1 {
 #define DSI_EV_MDP_FIFO_UNDERFLOW	0x0002
 #define DSI_EV_DSI_FIFO_EMPTY		0x0004
 #define DSI_EV_DLNx_FIFO_OVERFLOW	0x0008
+#define DSI_EV_LP_RX_TIMEOUT		0x0010
 #define DSI_EV_STOP_HS_CLK_LANE		0x40000000
 #define DSI_EV_MDP_BUSY_RELEASE		0x80000000
 
@@ -308,7 +330,7 @@ struct mdss_dsi_ctrl_pdata {
 	int (*on) (struct mdss_panel_data *pdata);
 	int (*off) (struct mdss_panel_data *pdata);
 	int (*low_power_config) (struct mdss_panel_data *pdata, int enable);
-	int (*set_col_page_addr) (struct mdss_panel_data *pdata);
+	int (*set_col_page_addr)(struct mdss_panel_data *pdata, bool force);
 	int (*check_status) (struct mdss_dsi_ctrl_pdata *pdata);
 	int (*check_read_status) (struct mdss_dsi_ctrl_pdata *pdata);
 	int (*cmdlist_commit)(struct mdss_dsi_ctrl_pdata *ctrl, int from_mdp);
@@ -425,22 +447,18 @@ struct mdss_dsi_ctrl_pdata {
 	struct panel_horizontal_idle *line_idle;
 	struct mdss_util_intf *mdss_util;
 
+	bool dfps_status;	
+
 	
 	void *dsi_pwrctrl_data;			
 	struct dsi_panel_cmds cabc_off_cmds;
 	struct dsi_panel_cmds cabc_ui_cmds;
 	struct dsi_panel_cmds cabc_video_cmds;
 	struct dsi_panel_cmds dimming_on_cmds;
+	struct dsi_panel_cmds sre_on_cmds;
+	struct dsi_panel_cmds sre_off_cmds;
 
-	int brt_dim;	
-	int brt_min;
-	int brt_def;
-	int brt_high;
-	int brt_extra;
-	int brt_max;
-
-	
-	u16 *brt_code_table;
+	u32 sre_ebi_value;
 };
 
 struct dsi_status_data {
@@ -482,6 +500,7 @@ void mdss_dsi_irq_handler_config(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 void mdss_dsi_set_tx_power_mode(int mode, struct mdss_panel_data *pdata);
 int mdss_dsi_clk_div_config(struct mdss_panel_info *panel_info,
 			    int frame_rate);
+int mdss_dsi_clk_refresh(struct mdss_panel_data *pdata);
 int mdss_dsi_clk_init(struct platform_device *pdev,
 		      struct mdss_dsi_ctrl_pdata *ctrl_pdata);
 int mdss_dsi_shadow_clk_init(struct platform_device *pdev,
@@ -519,6 +538,9 @@ u32 mdss_dsi_panel_cmd_read(struct mdss_dsi_ctrl_pdata *ctrl, char cmd0,
 int mdss_dsi_panel_init(struct device_node *node,
 		struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 		bool cmd_cfg_cont_splash);
+int mdss_dsi_panel_timing_switch(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
+			struct mdss_panel_timing *timing);
+
 int mdss_panel_get_dst_fmt(u32 bpp, char mipi_mode, u32 pixel_packing,
 				char *dst_format);
 

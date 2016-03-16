@@ -697,6 +697,7 @@ static bool (*execute[MSM_PM_SLEEP_MODE_NR])(bool idle) = {
 
 bool msm_cpu_pm_enter_sleep(enum msm_pm_sleep_mode mode, bool from_idle)
 {
+	int64_t time;
 	bool exit_stat = false;
 	unsigned int cpu = smp_processor_id();
 
@@ -705,8 +706,24 @@ bool msm_cpu_pm_enter_sleep(enum msm_pm_sleep_mode mode, bool from_idle)
 		pr_info("CPU%u:%s mode:%d during %s\n", cpu, __func__,
 				mode, from_idle ? "idle" : "suspend");
 
+	time = sched_clock();
 	if (execute[mode])
 		exit_stat = execute[mode](from_idle);
+
+        time = sched_clock() - time;
+        if (!from_idle)
+                exit_stat = MSM_PM_STAT_SUSPEND;
+        if (exit_stat >= 0)
+                msm_pm_add_stat(exit_stat, time);
+        do_div(time, 1000);
+
+#ifdef CONFIG_HTC_POWER_DEBUG
+        if(from_idle){
+                
+                        htc_idle_stat_add(mode, (u32)time);
+                
+        }
+#endif
 
 	return exit_stat;
 }

@@ -36,21 +36,36 @@ struct android_usb_platform_data {
 	u8 usb_core_id;
 	char streaming_func[MAX_STREAMING_FUNCS][FUNC_NAME_LEN];
 	int  streaming_func_count;
+/*++ 2014/09/23 USB Team, PCN00010 ++*/
+	/* For multiple serial function support
+	 * Ex: "tty:serial[,sdio:modem_mdm][,smd:modem]"
+	 */
 	const char *fserial_init_string;
+/*-- 2014/09/23 USB Team, PCN00010 --*/
+/*++ 2014/10/21 USB Team, PCN00020 ++*/
 	const char *diag_client_interface;
 	const char *rmnet_transports_interface;
+/*-- 2014/10/21 USB Team, PCN00020 --*/
 
 	u8 uicc_nluns;
+/*++ 2014/10/29, USB Team, PCN00028 ++*/
 	u32 nluns;
+/*-- 2014/10/29, USB Team, PCN00028 --*/
 	bool cdrom;
 
+/*++ 2014/11/14, USB Team, PCN00043 ++*/
 	char *product_name;
 	char *manufacturer_name;
+/*-- 2014/11/14, USB Team, PCN00043 --*/
 };
 
 #ifndef CONFIG_TARGET_CORE
 static inline int f_tcm_init(int (*connect_cb)(bool connect))
 {
+	/*
+	 * Fail bind() not init(). If a function init() returns error
+	 * android composite registration would fail.
+	 */
 	return 0;
 }
 static inline void f_tcm_exit(void)
@@ -76,4 +91,4 @@ int acm_port_setup(struct usb_configuration *c);
 void acm_port_cleanup(void);
 int acm_init_port(int port_num, const char *name);
 
-#endif	
+#endif	/* __LINUX_USB_ANDROID_H */

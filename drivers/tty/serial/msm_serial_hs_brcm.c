@@ -1880,6 +1880,11 @@ static int msm_hs_check_clock_off(struct uart_port *uport)
 		msm_uport->wakeup.ignore = 1;
 		enable_irq(msm_uport->wakeup.irq);
 		disable_irq(uport->irq);
+	
+	} else {
+		
+		disable_irq(uport->irq);
+	
 	}
 	wake_unlock(&msm_uport->dma_wake_lock);
 
@@ -2058,6 +2063,11 @@ void msm_hs_request_clock_on_brcm(struct uart_port *uport)
 			disable_irq_nosync(msm_uport->wakeup.irq);
 			
 			enable_irq(uport->irq);
+		
+		} else {
+			
+			enable_irq(uport->irq);
+		
 		}
 		spin_unlock_irqrestore(&uport->lock, flags);
 		mutex_unlock(&msm_uport->clk_mutex);

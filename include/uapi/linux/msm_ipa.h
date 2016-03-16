@@ -306,7 +306,14 @@ enum ipa_wan_event {
 enum ipa_ecm_event {
 	ECM_CONNECT = IPA_WAN_EVENT_MAX,
 	ECM_DISCONNECT,
-	IPA_EVENT_MAX_NUM
+	IPA_ECM_EVENT_MAX,
+};
+
+enum ipa_tethering_stats_event {
+	IPA_TETHERING_STATS_UPDATE_STATS = IPA_ECM_EVENT_MAX,
+	IPA_TETHERING_STATS_UPDATE_NETWORK_STATS,
+	IPA_TETHERING_STATS_EVENT_MAX,
+	IPA_EVENT_MAX_NUM = IPA_TETHERING_STATS_EVENT_MAX
 };
 
 #define IPA_EVENT_MAX ((int)IPA_EVENT_MAX_NUM)
@@ -1304,7 +1311,11 @@ struct ipa_ioc_write_qmapid {
 	uint8_t qmap_id;
 };
 
-
+enum ipacm_client_enum {
+	IPACM_CLIENT_USB = 1,
+	IPACM_CLIENT_WLAN,
+	IPACM_CLIENT_MAX
+};
 /**
  *   actual IOCTLs supported by IPA driver
  */

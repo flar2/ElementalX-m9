@@ -19,6 +19,12 @@
 #include <asm/spinlock_types.h>
 #include <asm/processor.h>
 
+/*
+ * Spinlock implementation.
+ *
+ * The memory barriers are implicit with the load-acquire and store-release
+ * instructions.
+ */
 
 #define arch_spin_unlock_wait(lock) \
 	do { while (arch_spin_is_locked(lock)) cpu_relax(); } while (0)
@@ -31,15 +37,19 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
 	arch_spinlock_t lockval, newval;
 
 	asm volatile(
-	
+	/* Atomically increment the next ticket. */
 "	prfm	pstl1strm, %3\n"
 "1:	ldaxr	%w0, %3\n"
 "	add	%w1, %w0, %w5\n"
 "	stxr	%w2, %w1, %3\n"
 "	cbnz	%w2, 1b\n"
-	
+	/* Did we get the lock? */
 "	eor	%w1, %w0, %w0, ror #16\n"
 "	cbz	%w1, 3f\n"
+	/*
+	 * No: spin on the owner. Send a local event to avoid missing an
+	 * unlock before the exclusive load.
+	 */
 #ifndef CONFIG_HTC_WFE_DISABLE
 "	sevl\n"
 "2:	wfe\n"
@@ -49,7 +59,7 @@ static inline void arch_spin_lock(arch_spinlock_t *lock)
 "	ldaxrh	%w2, %4\n"
 "	eor	%w1, %w2, %w0, lsr #16\n"
 "	cbnz	%w1, 2b\n"
-	
+	/* We got the lock. Critical section starts here. */
 "3:"
 	: "=&r" (lockval), "=&r" (newval), "=&r" (tmp), "+Q" (*lock)
 	: "Q" (lock->owner), "I" (1 << TICKET_SHIFT)
@@ -106,6 +116,15 @@ static inline int arch_spin_is_contended(arch_spinlock_t *lock)
 }
 #define arch_spin_is_contended	arch_spin_is_contended
 
+/*
+ * Write lock implementation.
+ *
+ * Write locks set bit 31. Unlocking, is done by writing 0 since the lock is
+ * exclusively held.
+ *
+ * The memory barriers are implicit with the load-acquire and store-release
+ * instructions.
+ */
 
 static inline void arch_write_lock(arch_rwlock_t *rw)
 {
@@ -155,8 +174,21 @@ static inline void arch_write_unlock(arch_rwlock_t *rw)
 	: "=Q" (rw->lock) : "r" (0) : "memory");
 }
 
+/* write_can_lock - would write_trylock() succeed? */
 #define arch_write_can_lock(x)		((x)->lock == 0)
 
+/*
+ * Read lock implementation.
+ *
+ * It exclusively loads the lock value, increments it and stores the new value
+ * back if positive and the CPU still exclusively owns the location. If the
+ * value is negative, the lock is already held.
+ *
+ * During unlocking there may be multiple active read locks but no write lock.
+ *
+ * The memory barriers are implicit with the load-acquire and store-release
+ * instructions.
+ */
 static inline void arch_read_lock(arch_rwlock_t *rw)
 {
 	unsigned int tmp, tmp2;
@@ -214,6 +246,7 @@ static inline int arch_read_trylock(arch_rwlock_t *rw)
 	return !tmp2;
 }
 
+/* read_can_lock - would read_trylock() succeed? */
 #define arch_read_can_lock(x)		((x)->lock < 0x80000000)
 
 #define arch_read_lock_flags(lock, flags) arch_read_lock(lock)
@@ -223,4 +256,4 @@ static inline int arch_read_trylock(arch_rwlock_t *rw)
 #define arch_read_relax(lock)	cpu_relax()
 #define arch_write_relax(lock)	cpu_relax()
 
-#endif 
+#endif /* __ASM_SPINLOCK_H */

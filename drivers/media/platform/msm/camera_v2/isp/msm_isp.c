@@ -448,7 +448,7 @@ static struct v4l2_file_operations msm_isp_v4l2_subdev_fops = {
 static int vfe_probe(struct platform_device *pdev)
 {
 	struct vfe_device *vfe_dev;
-	/*struct msm_cam_subdev_info sd_info;*/
+	
 	const struct of_device_id *match_dev;
 	int rc = 0;
 
@@ -561,9 +561,9 @@ static int vfe_probe(struct platform_device *pdev)
 		rc = -EINVAL;
 		goto probe_fail3;
 	}
-	/* create secure context banks*/
+	
 	if (vfe_dev->hw_info->num_iommu_secure_ctx) {
-		/*secure vfe layout*/
+		
 		struct msm_iova_layout vfe_secure_layout = {
 			.partitions = &vfe_partition,
 			.npartitions = 1,

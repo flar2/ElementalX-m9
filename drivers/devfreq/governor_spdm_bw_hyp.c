@@ -82,7 +82,7 @@ static irqreturn_t threaded_isr(int irq, void *dev_id)
 	while (time_before_eq(jiffies, spdm_hyp_timeout))
 		msleep(10);
 
-	
+	/* call hyp to get bw_vote */
 	desc.arg[0] = SPDM_CMD_GET_BW_ALL;
 	ext_status = spdm_ext_call(&desc, 1);
 	if (ext_status)
@@ -132,6 +132,8 @@ static int gov_spdm_hyp_target_bw(struct devfreq *devfreq, unsigned long *freq,
 	usage = (status.busy_time * 100) / status.total_time;
 
 	if (usage > 0) {
+		/* up was already called as part of hyp, so just use the
+		 * already stored values */
 		*freq = ((struct spdm_data *)devfreq->data)->new_bw;
 	} else {
 		desc.arg[0] = SPDM_CMD_GET_BW_SPECIFIC;
@@ -159,7 +161,7 @@ static int gov_spdm_hyp_eh(struct devfreq *devfreq, unsigned int event,
 		mutex_lock(&devfreqs_lock);
 		list_add(&spdm_data->list, &devfreqs);
 		mutex_unlock(&devfreqs_lock);
-		
+		/* call hyp with config data */
 		desc.arg[0] = SPDM_CMD_CFG_PORTS;
 		desc.arg[1] = spdm_data->spdm_client;
 		desc.arg[2] = spdm_data->config_data.num_ports;
@@ -284,7 +286,7 @@ static int gov_spdm_hyp_eh(struct devfreq *devfreq, unsigned int event,
 			pr_err("External command %u failed with error %u",
 				(int)desc.arg[0], ext_status);
 
-		
+		/* call hyp enable/commit */
 		desc.arg[0] = SPDM_CMD_ENABLE;
 		desc.arg[1] = spdm_data->spdm_client;
 		desc.arg[2] = 0;
@@ -293,27 +295,34 @@ static int gov_spdm_hyp_eh(struct devfreq *devfreq, unsigned int event,
 			pr_err("External command %u failed with error %u",
 				(int)desc.arg[0], ext_status);
 			mutex_lock(&devfreqs_lock);
+			/*
+			 * the spdm device probe will fail so remove it from
+			 * the list  to prevent accessing a deleted pointer in
+			 * the future
+			 * */
 			list_del(&spdm_data->list);
 			mutex_unlock(&devfreqs_lock);
 			return -EINVAL;
 		}
+		spdm_data->enabled = true;
 		devfreq_monitor_start(devfreq);
 		break;
 
 	case DEVFREQ_GOV_STOP:
 		devfreq_monitor_stop(devfreq);
-		
+		/* find devfreq in list and remove it */
 		mutex_lock(&devfreqs_lock);
 		list_del(&spdm_data->list);
 		mutex_unlock(&devfreqs_lock);
 
-		
+		/* call hypvervisor to disable */
 		desc.arg[0] = SPDM_CMD_DISABLE;
 		desc.arg[1] = spdm_data->spdm_client;
 		ext_status = spdm_ext_call(&desc, 2);
 		if (ext_status)
 			pr_err("External command %u failed with error %u",
 				(int)desc.arg[0], ext_status);
+		spdm_data->enabled = false;
 		break;
 
 	case DEVFREQ_GOV_INTERVAL:

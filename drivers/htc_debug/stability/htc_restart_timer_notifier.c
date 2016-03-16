@@ -11,6 +11,8 @@ static void restart_timeout(unsigned long data)
 {
 	pr_emerg("--------------Restart timer timeout----------------\n");
 	show_stack((void *) data,NULL);
+	pr_emerg("### Show All Blocked State ###\n");
+	show_state_filter(TASK_UNINTERRUPTIBLE);
 	BUG();
 }
 int restart_timer_add(struct notifier_block *this,unsigned long code,void *data)

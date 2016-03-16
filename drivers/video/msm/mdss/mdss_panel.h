@@ -30,6 +30,11 @@ struct panel_id {
 #define MDSS_DSI_RST_SEQ_LEN	10
 #define MDSS_MDP_MAX_PREFILL_FETCH 25
 
+#define OVERRIDE_CFG	"override"
+#define SIM_PANEL	"sim"
+#define SIM_SW_TE_PANEL	"sim-swte"
+#define SIM_HW_TE_PANEL	"sim-hwte"
+
 #define NO_PANEL		0xffff	
 #define MDDI_PANEL		1	
 #define EBI2_PANEL		2	
@@ -104,6 +109,12 @@ enum {
 	MODE_GPIO_LOW,
 };
 
+enum {
+	SIM_MODE = 1,
+	SIM_SW_TE_MODE,
+	SIM_HW_TE_MODE,
+};
+
 struct mdss_rect {
 	u16 x;
 	u16 y;
@@ -157,6 +168,8 @@ enum mdss_intf_events {
 	MDSS_EVENT_DSI_PANEL_STATUS,
 	MDSS_EVENT_DSI_DYNAMIC_SWITCH,
 	MDSS_EVENT_DSI_RECONFIG_CMD,
+	MDSS_EVENT_DSI_RESET_WRITE_PTR,
+	MDSS_EVENT_PANEL_TIMING_SWITCH,
 };
 
 struct lcd_panel_info {
@@ -177,6 +190,8 @@ struct lcd_panel_info {
 	u32 xres_pad;
 	
 	u32 yres_pad;
+	u32 h_polarity;
+	u32 v_polarity;
 };
 
 
@@ -195,6 +210,14 @@ enum dynamic_mode_switch {
 	DYNAMIC_MODE_SWITCH_DISABLED = 0,
 	DYNAMIC_MODE_SWITCH_SUSPEND_RESUME,
 	DYNAMIC_MODE_SWITCH_IMMEDIATE,
+	DYNAMIC_MODE_RESOLUTION_SWITCH_IMMEDIATE,
+};
+
+enum dynamic_switch_modes {
+	SWITCH_MODE_UNKNOWN = 0,
+	SWITCH_TO_CMD_MODE,
+	SWITCH_TO_VIDEO_MODE,
+	SWITCH_RESOLUTION,
 };
 
 struct mipi_panel_info {
@@ -314,6 +337,19 @@ struct mdss_mdp_pp_tear_check {
 	u32 refx100;
 };
 
+struct htc_backlight1_table {
+	int size;
+	u16 *brt_data;
+	u16 *bl_data;
+};
+
+struct htc_backlight2_table {
+	int size;
+	int scale;
+	int max_nits;
+	u16 *data;
+};
+
 struct mdss_panel_info {
 	u32 xres;
 	u32 yres;
@@ -330,6 +366,7 @@ struct mdss_panel_info {
 	u32 clk_rate;
 	u32 clk_min;
 	u32 clk_max;
+	u32 mdp_transfer_time_us;
 	u32 frame_count;
 	u32 is_3d_panel;
 	u32 out_format;
@@ -378,6 +415,9 @@ struct mdss_panel_info {
 
 	bool is_prim_panel;
 
+	
+	u8 sim_panel_mode;
+
 	char panel_name[MDSS_MAX_PANEL_LEN];
 	struct mdss_mdp_pp_tear_check te;
 
@@ -399,14 +439,41 @@ struct mdss_panel_info {
 	uint32_t pcc_g;
 	uint32_t pcc_b;
 
-	int max_brt;
-	int act_max_brt;
-	bool act_brt;
+	struct htc_backlight1_table brt_bl_table;
+	struct htc_backlight2_table nits_bl_table;
+
 	bool even_roi;
 	bool skip_first_pinctl;
 
 	
 	struct mdss_panel_debugfs_info *debugfs_info;
+};
+
+struct mdss_panel_timing {
+	struct list_head list;
+	const char *name;
+
+	u32 xres;
+	u32 yres;
+
+	u32 h_back_porch;
+	u32 h_front_porch;
+	u32 h_pulse_width;
+	u32 hsync_skew;
+	u32 v_back_porch;
+	u32 v_front_porch;
+	u32 v_pulse_width;
+
+	u32 border_top;
+	u32 border_bottom;
+	u32 border_left;
+	u32 border_right;
+
+	u32 clk_rate;
+	char frame_rate;
+
+	struct fbc_panel_info fbc;
+	struct mdss_mdp_pp_tear_check te;
 };
 
 struct mdss_panel_data {
@@ -416,17 +483,17 @@ struct mdss_panel_data {
 
 	int (*event_handler) (struct mdss_panel_data *pdata, int e, void *arg);
 
+	struct list_head timings_list;
+	struct mdss_panel_timing *current_timing;
+	bool active;
+
 	struct mdss_panel_data *next;
 };
 
 struct mdss_panel_debugfs_info {
 	struct dentry *root;
-	u32 xres;
-	u32 yres;
-	struct lcd_panel_info lcdc;
-	struct fbc_panel_info fbc;
+	struct mdss_panel_info panel_info;
 	u32 override_flag;
-	char frame_rate;
 	struct mdss_panel_debugfs_info *next;
 };
 
@@ -520,16 +587,27 @@ static inline bool mdss_panel_is_power_on_ulp(int panel_power_state)
 	return panel_power_state == MDSS_PANEL_POWER_LP2;
 }
 
+
 struct mdss_panel_cfg *mdss_panel_intf_type(int intf_val);
 
 int mdss_panel_get_boot_cfg(void);
 
 bool mdss_is_ready(void);
 int mdss_rect_cmp(struct mdss_rect *rect1, struct mdss_rect *rect2);
+
+void mdss_panel_override_te_params(struct mdss_panel_info *pinfo);
+
 #ifdef CONFIG_FB_MSM_MDSS
 int mdss_panel_debugfs_init(struct mdss_panel_info *panel_info);
 void mdss_panel_debugfs_cleanup(struct mdss_panel_info *panel_info);
 void mdss_panel_debugfsinfo_to_panelinfo(struct mdss_panel_info *panel_info);
+
+void mdss_panel_info_from_timing(struct mdss_panel_timing *pt,
+		struct mdss_panel_info *pinfo);
+
+struct mdss_panel_timing *mdss_panel_get_timing_by_name(
+		struct mdss_panel_data *pdata,
+		const char *name);
 #else
 static inline int mdss_panel_debugfs_init(
 			struct mdss_panel_info *panel_info) { return 0; };
@@ -537,5 +615,10 @@ static inline void mdss_panel_debugfs_cleanup(
 			struct mdss_panel_info *panel_info) { };
 static inline void mdss_panel_debugfsinfo_to_panelinfo(
 			struct mdss_panel_info *panel_info) { };
+static inline void mdss_panel_info_from_timing(struct mdss_panel_timing *pt,
+		struct mdss_panel_info *pinfo) { };
+static inline struct mdss_panel_timing *mdss_panel_get_timing_by_name(
+		struct mdss_panel_data *pdata,
+		const char *name) { return NULL; };
 #endif
 #endif 

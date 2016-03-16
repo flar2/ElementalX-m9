@@ -48,6 +48,10 @@ Sub LAB node optional structure:
 - qcom,qpnp-lab-pull-down-enable:	If this property is present, pull down is enabled for LAB regulator. Otherwise, pull down is disabled for LAB regulator.
 - qcom,qpnp-lab-limit-max-current-enable:	If this property is present, maximum inductor current constraint is put for LAB regulator. Otherwise, There is no maximum current constraint.
 - qcom,qpnp-lab-use-default-voltage:		When bootloader does not turn on LAB regulator and this property is present, value specified in qcom,qpnp-lab-init-voltage is the default init voltage when the voltage output register is of value 0. Otherwise, we need to enable the output override bit in voltage output register.
+- qpnp,qpnp-lab-current-sense:	If this property is present, the LAB current sense gain will be programmed for LAB regulator.
+				Otherwise, LAB current sense gain will be default to "1x". A string uses to specify the LAB current sense gain.
+				Could be "0.5x" or "1x" or "1.5x" or "2x". For ex: "0.5x" means current sense gain is 0.5.
+
 
 Sub IBB node required structure:
 - reg:				Specifies the SPMI address and size for this peripheral
@@ -66,8 +70,8 @@ Sub IBB node required structure:
 - qcom,qpnp-lab-init-lcd-voltage: The default voltage when IBB regulator working in lcd mode and the output voltage register of value 0
 
 - qcom,qpnp-ibb-discharge-resistor:	The discharge resistor in Kilo Ohm who controls the soft start time. Supported values are 300, 64, 32 and 16.
-- qcom,qpnp-ibb-lab-pwrup-delay:	The delay in us of IBB regulator during power up. Supported value are 1250, 2500, 5000 and 10000.
-- qcom,qpnp-ibb-lab-pwrdn-delay:	The delay in us of IBB regulator during power down. Supported value are 1250, 2500, 5000 and 10000.
+- qcom,qpnp-ibb-lab-pwrup-delay:	Power up delay (in us) for IBB regulator when it is enabled or turned on. Supported value are 1000, 2000, 4000 and 8000.
+- qcom,qpnp-ibb-lab-pwrdn-delay:	Power down delay (in us) for IBB regulator when it is disabled or turned off. Supported value are 1000, 2000, 4000 and 8000.
 
 - qcom,qpnp-ibb-switching-clock-frequency:	The PWM switching clock frequency in kHz of IBB regulator, supported value are
 						3200, 	2740, 	2400,  	2130, 	1920, 	1750,	1600,	1480,	1370,	1280,
@@ -145,8 +149,8 @@ Example:
 				qcom,qpnp-ibb-soft-start = <400>;
 
 				qcom,qpnp-ibb-discharge-resistor = <300>;
-				qcom,qpnp-ibb-lab-pwrup-delay = <10000>;
-				qcom,qpnp-ibb-lab-pwrdn-delay = <10000>;
+				qcom,qpnp-ibb-lab-pwrup-delay = <8000>;
+				qcom,qpnp-ibb-lab-pwrdn-delay = <8000>;
 				qcom,qpnp-ibb-en-discharge;
 
 				qcom,qpnp-ibb-full-pull-down;

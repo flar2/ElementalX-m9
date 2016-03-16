@@ -18,10 +18,8 @@
 #include <uapi/linux/msm_rmnet.h>
 #include <soc/qcom/msm_qmi_interface.h>
 #include "ipa_i.h"
+#include <linux/rmnet_ipa_fd_ioctl.h>
 
-/**
- * name of the DL wwan default routing tables for v4 and v6
- */
 #define IPA_A7_QMAP_HDR_NAME "ipa_qmap_hdr"
 #define IPA_DFLT_WAN_RT_TBL_NAME "ipa_dflt_wan_rt"
 #define MAX_NUM_Q6_RULE 35
@@ -59,10 +57,8 @@ struct rmnet_mux_val {
 int ipa_qmi_service_init(bool load_uc, uint32_t wan_platform_type);
 void ipa_qmi_service_exit(void);
 
-/* sending filter-install-request to modem*/
 int qmi_filter_request_send(struct ipa_install_fltr_rule_req_msg_v01 *req);
 
-/* sending filter-installed-notify-request to modem*/
 int qmi_filter_notify_send(struct ipa_fltr_installed_notif_req_msg_v01 *req);
 
 int qmi_enable_force_clear_datapath_send(
@@ -85,6 +81,18 @@ void wan_ioctl_deinit(void);
 
 void ipa_qmi_stop_workqueues(void);
 
+int rmnet_ipa_poll_tethering_stats(struct wan_ioctl_poll_tethering_stats *data);
+int rmnet_ipa_set_data_quota(struct wan_ioctl_set_data_quota *data);
+void ipa_broadcast_quota_reach_ind(uint32_t mux_id);
+
+int ipa_qmi_get_data_stats(struct ipa_get_data_stats_req_msg_v01 *req,
+	struct ipa_get_data_stats_resp_msg_v01 *resp);
+int ipa_qmi_get_network_stats(struct ipa_get_apn_data_stats_req_msg_v01 *req,
+	struct ipa_get_apn_data_stats_resp_msg_v01 *resp);
+int ipa_qmi_set_data_quota(struct ipa_set_data_usage_quota_req_msg_v01 *req);
+int ipa_qmi_stop_data_qouta(void);
+void ipa_q6_handshake_complete(bool);
+
 extern struct elem_info ipa_init_modem_driver_req_msg_data_v01_ei[];
 extern struct elem_info ipa_init_modem_driver_resp_msg_data_v01_ei[];
 extern struct elem_info ipa_indication_reg_req_msg_data_v01_ei[];
@@ -100,14 +108,21 @@ extern struct elem_info ipa_disable_force_clear_datapath_req_msg_data_v01_ei[];
 extern struct elem_info ipa_disable_force_clear_datapath_resp_msg_data_v01_ei[];
 extern struct elem_info ipa_config_req_msg_data_v01_ei[];
 extern struct elem_info ipa_config_resp_msg_data_v01_ei[];
+extern struct elem_info ipa_get_data_stats_req_msg_data_v01_ei[];
+extern struct elem_info ipa_get_data_stats_resp_msg_data_v01_ei[];
+extern struct elem_info ipa_get_apn_data_stats_req_msg_data_v01_ei[];
+extern struct elem_info ipa_get_apn_data_stats_resp_msg_data_v01_ei[];
+extern struct elem_info ipa_set_data_usage_quota_req_msg_data_v01_ei[];
+extern struct elem_info ipa_set_data_usage_quota_resp_msg_data_v01_ei[];
+extern struct elem_info ipa_data_usage_quota_reached_ind_msg_data_v01_ei[];
+extern struct elem_info ipa_stop_data_usage_quota_req_msg_data_v01_ei[];
+extern struct elem_info ipa_stop_data_usage_quota_resp_msg_data_v01_ei[];
 
-/**
- * struct ipa_rmnet_context - IPA rmnet context
- * @ipa_rmnet_ssr: support modem SSR
- */
 struct ipa_rmnet_context {
 	bool ipa_rmnet_ssr;
+	u64 polling_interval;
+	uint32_t metered_mux_id;
 };
 
 extern struct ipa_rmnet_context ipa_rmnet_ctx;
-#endif /* IPA_QMI_SERVICE_H */
+#endif 

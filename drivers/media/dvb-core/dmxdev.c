@@ -2529,7 +2529,7 @@ static int dvb_dmxdev_ts_callback(const u8 *buffer1, size_t buffer1_len,
 	ssize_t free;
 
 	if (!dmxdevfilter) {
-		pr_err("%s: null filter (feed->is_filterng=%d) status=%d\n",
+		pr_err("%s: null filter (feed->is_filtering=%d) status=%d\n",
 			__func__, feed->is_filtering, success);
 		return -EINVAL;
 	}
@@ -2726,7 +2726,7 @@ static int dvb_dmxdev_ts_event_cb(struct dmx_ts_feed *feed,
 	ssize_t free;
 
 	if (!dmxdevfilter) {
-		pr_err("%s: null filter (feed->is_filterng=%d) event type=%d (length=%d) will be discarded\n",
+		pr_err("%s: null filter (feed->is_filtering=%d) event type=%d (length=%d) will be discarded\n",
 			__func__, feed->is_filtering,
 			dmx_data_ready->status,
 			dmx_data_ready->data_length);

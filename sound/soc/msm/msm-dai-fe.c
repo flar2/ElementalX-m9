@@ -22,6 +22,7 @@
 
 static struct snd_soc_dai_ops msm_fe_dai_ops = {};
 
+/* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
 	88200, 96000, 176400, 192000
@@ -205,6 +206,18 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 			.rate_min =	8000,
 			.rate_max = 192000,
 		},
+		.capture = {
+			.stream_name = "MultiMedia3 Capture",
+			.aif_name = "MM_UL3",
+			.rates = (SNDRV_PCM_RATE_8000_48000|
+					SNDRV_PCM_RATE_KNOT),
+			.formats = (SNDRV_PCM_FMTBIT_S16_LE |
+				    SNDRV_PCM_FMTBIT_S24_LE),
+			.channels_min = 1,
+			.channels_max = 8,
+			.rate_min =     8000,
+			.rate_max =	48000,
+		},
 		.ops = &msm_fe_Multimedia_dai_ops,
 		.name = "MultiMedia3",
 		.probe = fe_dai_probe,
@@ -344,7 +357,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "MultiMedia8",
 		.probe = fe_dai_probe,
 	},
-	
+	/* FE DAIs created for hostless operation purpose */
 	{
 		.playback = {
 			.stream_name = "SLIMBUS0_HOSTLESS Playback",
@@ -961,6 +974,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "QCHAT",
 		.probe = fe_dai_probe,
 	},
+//htc audio ++: add for open_dummy_stream() at AHAL
 	{
 		.playback = {
 			.stream_name = "MM_STUB Playback",
@@ -976,6 +990,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "MM_STUB",
 		.probe = fe_dai_probe,
 	},
+//htc audio --
 	{
 		.capture = {
 			.stream_name = "Listen 1 Audio Service Capture",
@@ -1121,7 +1136,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "VoWLAN",
 		.probe = fe_dai_probe,
 	},
-	
+	/* FE DAIs created for multiple instances of offload playback */
 	{
 		.playback = {
 			.stream_name = "MultiMedia10 Playback",
@@ -1292,5 +1307,6 @@ static void __exit msm_fe_dai_exit(void)
 }
 module_exit(msm_fe_dai_exit);
 
+/* Module information */
 MODULE_DESCRIPTION("MSM Frontend DAI driver");
 MODULE_LICENSE("GPL v2");

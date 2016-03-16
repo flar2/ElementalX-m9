@@ -97,6 +97,11 @@ void diag_md_close_all()
 
 	for (i = 0; i < NUM_DIAG_MD_DEV; i++) {
 		ch = &diag_md[i];
+		/*
+		 * When we close the Memory device mode, make sure we flush the
+		 * internal buffers in the table so that there are no stale
+		 * entries.
+		 */
 		for (j = 0; j < ch->num_tbl_entries; j++) {
 			entry = &ch->tbl[j];
 			if (entry->len <= 0)
@@ -168,7 +173,9 @@ int diag_md_write(int id, unsigned char *buf, int len, int ctx)
 		if (driver->client_map[i].pid != driver->logging_process_id)
 			continue;
 		found = 1;
+/*++ 2014/10/22, USB Team, PCN00022 ++*/
 		driver->data_ready[i] |= USERMODE_DIAGFWD;
+/*-- 2014/10/22, USB Team, PCN00022--*/
 		pr_debug("diag: wake up logging process\n");
 		wake_up_interruptible(&driver->wait_q);
 	}
@@ -197,6 +204,10 @@ int diag_md_copy_to_user(char __user *buf, int *pret)
 			entry = &ch->tbl[j];
 			if (!entry || entry->len <= 0 || entry->buf == NULL)
 				continue;
+			/*
+			 * If the data is from remote processor, copy the remote
+			 * token first
+			 */
 			if (i > 0) {
 				remote_token = diag_get_remote(i);
 				err = copy_to_user(buf + ret, &remote_token,
@@ -206,20 +217,25 @@ int diag_md_copy_to_user(char __user *buf, int *pret)
 				ret += sizeof(int);
 			}
 
-			
+			/* Copy the length of data being passed */
 			err = copy_to_user(buf + ret, (void *)&(entry->len),
 					   sizeof(int));
 			if (err)
 				goto drop_data;
 			ret += sizeof(int);
 
-			
+			/* Copy the actual data being passed */
 			err = copy_to_user(buf + ret, (void *)entry->buf,
 					   entry->len);
 			if (err)
 				goto drop_data;
 			ret += entry->len;
 
+			/*
+			 * The data is now copied to the user space client,
+			 * Notify that the write is complete and delete its
+			 * entry from the table
+			 */
 			num_data++;
 drop_data:
 			spin_lock_irqsave(&ch->lock, flags);

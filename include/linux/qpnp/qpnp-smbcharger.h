@@ -92,6 +92,8 @@ int pmi8994_gauge_get_attr_text(char *buf, int size);
 int pmi8994_is_batt_temp_fault_disable_chg(int *result);
 int pmi8994_is_batt_temperature_fault(int *result);
 int pmi8994_get_batt_voltage(int *result);
+int pmi8994_is_bad_cable_used(int *result);
+int pmi8994_set_aicl_deglitch_wa_check(void);
 int pmi8994_dump_all(void);
 int pmi8994_get_charge_type(void);
 int pmi8994_calc_max_flash_current(void);
@@ -99,6 +101,7 @@ int pmi8994_set_ftm_charge_enable_type(enum htc_ftm_power_source_type ftm_src);
 int pmi8994_set_safety_timer_disable(int disable);
 int pmi8994_is_charger_error_handle(void);
 int pmi8994_usbin_mode_charge(void);
+int pmi8994_reset_chg_en_when_chg_error(void);
 int pmi8994_set_pwrsrc_and_charger_enable(enum htc_power_source_type src,
 			bool chg_enable, bool pwrsrc_enable);
 int pmi8994_fake_src_detect_irq_handler(void);
@@ -120,6 +123,7 @@ int pmi8994_prepare_suspend(void);
 int pmi8994_complete_resume(void);
 int pm8994_set_hsml_target_ma(int target_ma);
 int pmi8994_limit_input_current(bool enable, int reason);
+bool pmi8994_is_HVDCP_9V_done(void);
 
 #endif
 #else 
@@ -278,6 +282,15 @@ static inline int pmi8994_get_batt_voltage(int *result)
 {
 	return -ENXIO;
 }
+static inline int pmi8994_is_bad_cable_used(int *result)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8994_set_aicl_deglitch_wa_check(void)
+{
+	return -ENXIO;
+}
 
 static inline int pmi8994_dump_all(void)
 {
@@ -320,6 +333,11 @@ static inline int pmi8994_is_charger_error_handle(void)
 }
 
 static inline int pmi8994_usbin_mode_charge(void)
+{
+	return -ENXIO;
+}
+
+static inline int pmi8994_reset_chg_en_when_chg_error(void)
 {
 	return -ENXIO;
 }
@@ -393,6 +411,10 @@ static inline int pm8994_set_hsml_target_ma(int target_ma)
 		return -ENXIO;
 }
 
+static inline bool pmi8994_is_HVDCP_9V_done(void)
+{
+		return -ENXIO;
+}
 #endif 
 #endif 
 #endif 

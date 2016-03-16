@@ -38,10 +38,12 @@
 #include "msm-pcm-q6-v2.h"
 #include "msm-pcm-routing-v2.h"
 
+//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//htc audio --
 
 enum stream_state {
 	IDLE = 0,
@@ -115,6 +117,7 @@ static struct snd_pcm_hardware msm_pcm_hardware_playback = {
 	.fifo_size =            0,
 };
 
+/* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
 	88200, 96000, 176400, 192000
@@ -189,7 +192,7 @@ static void event_handler(uint32_t opcode,
 		pr_debug("token = 0x%08x\n", token);
 		in_frame_info[token][0] = payload[4];
 		in_frame_info[token][1] = payload[5];
-		
+		/* assume data size = 0 during flushing */
 		if (in_frame_info[token][0]) {
 			prtd->pcm_irq_pos += in_frame_info[token][0];
 			pr_debug("pcm_irq_pos=%d\n", prtd->pcm_irq_pos);
@@ -304,7 +307,7 @@ static int msm_pcm_playback_prepare(struct snd_pcm_substream *substream)
 	prtd->pcm_size = snd_pcm_lib_buffer_bytes(substream);
 	prtd->pcm_count = snd_pcm_lib_period_bytes(substream);
 	prtd->pcm_irq_pos = 0;
-	
+	/* rate and channels are sent to audio driver */
 	prtd->samp_rate = runtime->rate;
 	prtd->channel_mode = runtime->channels;
 	if (prtd->enabled)
@@ -372,6 +375,7 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 	int ret = 0;
 	int i = 0;
 	uint16_t bits_per_sample = 16;
+	unsigned int be_id = soc_prtd->dai_link->be_id;
 
 	pdata = (struct msm_plat_data *)
 		dev_get_drvdata(soc_prtd->platform->dev);
@@ -386,7 +390,7 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 		if (params_format(params) == SNDRV_PCM_FORMAT_S24_LE)
 			bits_per_sample = 24;
 
-		
+		/* ULL mode is not supported in capture path */
 		if (pdata->perf_mode == LEGACY_PCM_MODE)
 			prtd->audio_client->perf_mode = LEGACY_PCM_MODE;
 		else
@@ -424,7 +428,7 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 	prtd->pcm_size = snd_pcm_lib_buffer_bytes(substream);
 	prtd->pcm_count = snd_pcm_lib_period_bytes(substream);
 	prtd->pcm_irq_pos = 0;
-	
+	/* rate and channels are sent to audio driver */
 	prtd->samp_rate = runtime->rate;
 	prtd->channel_mode = runtime->channels;
 
@@ -455,6 +459,12 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 
 	prtd->enabled = RUNNING;
 
+	if (prtd->ch_mixer)
+		msm_pcm_routing_channel_mixer(
+			soc_prtd->dai_link->be_id,
+			prtd->audio_client->perf_mode,
+			prtd->session_id, substream->stream, be_id);
+
 	return ret;
 }
 
@@ -479,7 +489,7 @@ static int msm_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 			ret = q6asm_cmd_nowait(prtd->audio_client, CMD_PAUSE);
 			break;
 		}
-		
+		/* pending CMD_EOS isn't expected */
 		WARN_ON_ONCE(test_bit(CMD_EOS, &prtd->cmd_pending));
 		set_bit(CMD_EOS, &prtd->cmd_pending);
 		ret = q6asm_cmd_nowait(prtd->audio_client, CMD_EOS);
@@ -505,6 +515,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
 	struct msm_audio *prtd;
+	unsigned int be_id = soc_prtd->dai_link->be_id;
 	int ret = 0;
 
 	prtd = kzalloc(sizeof(struct msm_audio), GFP_KERNEL);
@@ -526,7 +537,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 		runtime->hw = msm_pcm_hardware_playback;
 
-	
+	/* Capture path */
 	else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
 		runtime->hw = msm_pcm_hardware_capture;
 	else {
@@ -539,7 +550,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 				&constraints_sample_rates);
 	if (ret < 0)
 		pr_info("snd_pcm_hw_constraint_list failed\n");
-	
+	/* Ensure that buffer size is a multiple of period size */
 	ret = snd_pcm_hw_constraint_integer(runtime,
 					    SNDRV_PCM_HW_PARAM_PERIODS);
 	if (ret < 0)
@@ -584,6 +595,8 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	prtd->set_channel_map = false;
 	prtd->reset_event = false;
 	runtime->private_data = prtd;
+	if (be_id == MSM_FRONTEND_DAI_MULTIMEDIA3)
+		prtd->ch_mixer = true;
 
 	return 0;
 }
@@ -675,7 +688,7 @@ static int msm_pcm_playback_close(struct snd_pcm_substream *substream)
 	if (prtd->audio_client) {
 		dir = IN;
 
-		
+		/* determine timeout length */
 		if (runtime->frame_bits == 0 || runtime->rate == 0) {
 			timeout = CMD_EOS_MIN_TIMEOUT_LENGTH;
 		} else {
@@ -1059,7 +1072,7 @@ static int msm_pcm_chmap_ctl_get(struct snd_kcontrol *kcontrol,
 	memset(ucontrol->value.integer.value, 0,
 		sizeof(ucontrol->value.integer.value));
 	if (!substream->runtime)
-		return 0; 
+		return 0; /* no channels set */
 
 	prtd = substream->runtime->private_data;
 
@@ -1158,7 +1171,7 @@ static int msm_pcm_add_app_type_controls(struct snd_soc_pcm_runtime *rtd)
 		return ret;
 	}
 	kctl = app_type_info->kctl;
-	snprintf(kctl->id.name, sizeof(kctl->id.name), "%s %d %s", mixer_ctl_name, 
+	snprintf(kctl->id.name, sizeof(kctl->id.name), "%s %d %s", mixer_ctl_name, //HTC_AUD_MOD
 		 rtd->pcm->device, suffix);
 	kctl = app_type_info->kctl;
 	kctl->put = msm_pcm_app_type_cfg_ctl_put;

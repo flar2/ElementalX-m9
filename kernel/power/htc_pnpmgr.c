@@ -181,6 +181,8 @@ static int thermal_bcpu_notify_diff_value = 20;
 static int thermal_lcpu_notify_diff_value = 10;
 static int thermal_ktm_freq_limit_value = MAX_VALUE;
 static int thermal_bcl_freq_limit_value = MAX_VALUE;
+static int modem_throttling_enabled_value = 0;
+static int cpu_asn_value = 0;
 
 
 define_int_show(thermal_temp_cpu0, thermal_temp_cpu[0]);
@@ -231,6 +233,10 @@ define_int_show(thermal_lcpu_notify_diff, thermal_lcpu_notify_diff_value);
 define_int_store(thermal_lcpu_notify_diff, thermal_lcpu_notify_diff_value, null_cb);
 power_attr(thermal_lcpu_notify_diff);
 
+define_int_show(cpu_asn, cpu_asn_value);
+define_int_store(cpu_asn, cpu_asn_value, null_cb);
+power_attr(cpu_asn);
+
 
 static const unsigned long big_cluster_mask = CONFIG_PERFORMANCE_CLUSTER_CPU_MASK;
 static const unsigned long little_cluster_mask = CONFIG_POWER_CLUSTER_CPU_MASK;
@@ -276,6 +282,10 @@ int pnpmgr_cpu_temp_notify(int cpu, int temp)
 define_int_show(thermal_temp_emmc, thermal_temp_emmc_value);
 define_int_store(thermal_temp_emmc, thermal_temp_emmc_value, null_cb);
 power_attr(thermal_temp_emmc);
+
+define_int_show(modem_throttling_enabled, modem_throttling_enabled_value);
+define_int_store(modem_throttling_enabled, modem_throttling_enabled_value, null_cb);
+power_attr(modem_throttling_enabled);
 
 
 define_int_show(thermal_g0, thermal_g0_value);
@@ -455,6 +465,11 @@ define_string_store(mp_util_low_or, mp_util_low_or_arg, null_cb);
 power_attr(mp_util_low_or);
 #endif 
 
+static int trace_trigger_value = 0;
+define_int_show(trace_trigger, trace_trigger_value);
+define_int_store(trace_trigger, trace_trigger_value, null_cb);
+power_attr(trace_trigger);
+
 
 define_int_show(touch_boost_duration, touch_boost_duration_value);
 define_int_store(touch_boost_duration, touch_boost_duration_value, null_cb);
@@ -483,10 +498,13 @@ touch_boost_store(struct kobject *kobj, struct kobj_attribute *attr,
 			is_touch_boosted = 0;
 			sysfs_notify(pnpmgr_kobj, NULL, "touch_boost");
 		}
-		else if (val && !is_touch_boosted){
+		else if (val) {
+			if (!is_touch_boosted) {
+				is_touch_boosted = 1;
+				sysfs_notify(pnpmgr_kobj, NULL, "touch_boost");
+			}
+			mod_delayed_work(system_wq, &touch_boost_work, msecs_to_jiffies(touch_boost_duration_value));
 			is_touch_boosted = 1;
-			sysfs_notify(pnpmgr_kobj, NULL, "touch_boost");
-			schedule_delayed_work(&touch_boost_work,msecs_to_jiffies(touch_boost_duration_value));
 		}
 		return n;
 	}
@@ -521,10 +539,13 @@ long_duration_touch_boost_store(struct kobject *kobj, struct kobj_attribute *att
 			is_long_duration_touch_boosted = 0;
 			sysfs_notify(pnpmgr_kobj, NULL, "long_duration_touch_boost");
 		}
-		else if (val && !is_long_duration_touch_boosted){
+		else if (val) {
+			if (!is_long_duration_touch_boosted) {
+				is_long_duration_touch_boosted = 1;
+				sysfs_notify(pnpmgr_kobj, NULL, "long_duration_touch_boost");
+			}
+			mod_delayed_work(system_wq, &long_duration_touch_boost_work, msecs_to_jiffies(long_duration_touch_boost_duration_value));
 			is_long_duration_touch_boosted = 1;
-			sysfs_notify(pnpmgr_kobj, NULL, "long_duration_touch_boost");
-			schedule_delayed_work(&long_duration_touch_boost_work,msecs_to_jiffies(long_duration_touch_boost_duration_value));
 		}
 		return n;
 	}
@@ -1131,6 +1152,8 @@ static struct attribute *thermal_g[] = {
 	&pause_dt_attr.attr,
 	&thermal_ktm_freq_limit_attr.attr,
 	&thermal_bcl_freq_limit_attr.attr,
+	&modem_throttling_enabled_attr.attr,
+        &cpu_asn_attr.attr,
 	NULL,
 };
 
@@ -1140,6 +1163,7 @@ static struct attribute *apps_g[] = {
 	&media_mode_attr.attr,
 	&app_timeout_attr.attr,
 	&call_sync_attr.attr,
+	&trace_trigger_attr.attr,
 	NULL,
 };
 

@@ -255,6 +255,10 @@ static void cpufreq_stats_create_table(unsigned int cpu)
 	struct cpufreq_policy *policy;
 	struct cpufreq_frequency_table *table;
 
+	/*
+	 * "likely(!policy)" because normally cpufreq_stats will be registered
+	 * before cpufreq driver
+	 */
 	policy = cpufreq_cpu_get(cpu);
 	if (likely(!policy))
 		return;
@@ -323,7 +327,7 @@ static int cpufreq_stat_notifier_trans(struct notifier_block *nb,
 	old_index = stat->last_index;
 	new_index = freq_table_get_index(stat, freq->new);
 
-	
+	/* We can't do stat->time_in_state[-1]= .. */
 	if (old_index == -1 || new_index == -1)
 		return 0;
 

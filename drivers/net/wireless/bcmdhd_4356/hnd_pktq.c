@@ -29,13 +29,17 @@
 #include <bcmutils.h>
 #include <hnd_pktq.h>
 
+/*
+ * osl multiple-precedence packet queue
+ * hi_prec is always >= the number of the highest non-empty precedence
+ */
 void * BCMFASTPATH
 pktq_penq(struct pktq *pq, int prec, void *p)
 {
 	struct pktq_prec *q;
 
 	ASSERT(prec >= 0 && prec < pq->num_prec);
-	ASSERT(PKTLINK(p) == NULL);         
+	ASSERT(PKTLINK(p) == NULL);         /* queueing chains not allowed */
 
 	ASSERT(!pktq_full(pq));
 	ASSERT(!pktq_pfull(pq, prec));
@@ -64,7 +68,7 @@ pktq_penq_head(struct pktq *pq, int prec, void *p)
 	struct pktq_prec *q;
 
 	ASSERT(prec >= 0 && prec < pq->num_prec);
-	ASSERT(PKTLINK(p) == NULL);         
+	ASSERT(PKTLINK(p) == NULL);         /* queueing chains not allowed */
 
 	ASSERT(!pktq_full(pq));
 	ASSERT(!pktq_pfull(pq, prec));
@@ -86,6 +90,9 @@ pktq_penq_head(struct pktq *pq, int prec, void *p)
 	return p;
 }
 
+/*
+ * Append spktq 'list' to the tail of pktq 'pq'
+ */
 void BCMFASTPATH
 pktq_append(struct pktq *pq, int prec, struct spktq *list)
 {
@@ -94,12 +101,12 @@ pktq_append(struct pktq *pq, int prec, struct spktq *list)
 
 	list_q = &list->q[0];
 
-	
+	/* empty list check */
 	if (list_q->head == NULL)
 		return;
 
 	ASSERT(prec >= 0 && prec < pq->num_prec);
-	ASSERT(PKTLINK(list_q->tail) == NULL);         
+	ASSERT(PKTLINK(list_q->tail) == NULL);         /* terminated list */
 
 	ASSERT(!pktq_full(pq));
 	ASSERT(!pktq_pfull(pq, prec));
@@ -124,6 +131,9 @@ pktq_append(struct pktq *pq, int prec, struct spktq *list)
 	list->len = 0;
 }
 
+/*
+ * Prepend spktq 'list' to the head of pktq 'pq'
+ */
 void BCMFASTPATH
 pktq_prepend(struct pktq *pq, int prec, struct spktq *list)
 {
@@ -132,23 +142,26 @@ pktq_prepend(struct pktq *pq, int prec, struct spktq *list)
 
 	list_q = &list->q[0];
 
-	
+	/* empty list check */
 	if (list_q->head == NULL)
 		return;
 
 	ASSERT(prec >= 0 && prec < pq->num_prec);
-	ASSERT(PKTLINK(list_q->tail) == NULL);         
+	ASSERT(PKTLINK(list_q->tail) == NULL);         /* terminated list */
 
 	ASSERT(!pktq_full(pq));
 	ASSERT(!pktq_pfull(pq, prec));
 
 	q = &pq->q[prec];
 
-	
+	/* set the tail packet of list to point at the former pq head */
 	PKTSETLINK(list_q->tail, q->head);
-	
+	/* the new q head is the head of list */
 	q->head = list_q->head;
 
+	/* If the q tail was non-null, then it stays as is.
+	 * If the q tail was null, it is now the tail of list
+	 */
 	if (q->tail == NULL) {
 		q->tail = list_q->tail;
 	}
@@ -334,7 +347,7 @@ pktq_pdel(struct pktq *pq, void *pktbuf, int prec)
 
 	ASSERT(prec >= 0 && prec < pq->num_prec);
 
-	
+	/* Should this just assert pktbuf? */
 	if (!pktbuf)
 		return FALSE;
 
@@ -367,7 +380,7 @@ pktq_init(struct pktq *pq, int num_prec, int max_len)
 
 	ASSERT(num_prec > 0 && num_prec <= PKTQ_MAX_PREC);
 
-	
+	/* pq is variable size; only zero out what's requested */
 	bzero(pq, OFFSETOF(struct pktq, q) + (sizeof(struct pktq_prec) * num_prec));
 
 	pq->num_prec = (uint16)num_prec;
@@ -500,6 +513,9 @@ pktq_flush(osl_t *osh, struct pktq *pq, bool dir, ifpkt_cb_t fn, int arg)
 {
 	int prec;
 
+	/* Optimize flush, if pktq len = 0, just return.
+	 * pktq len of 0 means pktq's prec q's are all empty.
+	 */
 	if (pq->len == 0) {
 		return;
 	}
@@ -510,6 +526,7 @@ pktq_flush(osl_t *osh, struct pktq *pq, bool dir, ifpkt_cb_t fn, int arg)
 		ASSERT(pq->len == 0);
 }
 
+/* Return sum of lengths of a specific set of precedences */
 int
 pktq_mlen(struct pktq *pq, uint prec_bmp)
 {
@@ -524,6 +541,7 @@ pktq_mlen(struct pktq *pq, uint prec_bmp)
 	return len;
 }
 
+/* Priority peek from a specific set of precedences */
 void * BCMFASTPATH
 pktq_mpeek(struct pktq *pq, uint prec_bmp, int *prec_out)
 {
@@ -552,6 +570,7 @@ pktq_mpeek(struct pktq *pq, uint prec_bmp, int *prec_out)
 
 	return p;
 }
+/* Priority dequeue from a specific set of precedences */
 void * BCMFASTPATH
 pktq_mdeq(struct pktq *pq, uint prec_bmp, int *prec_out)
 {

@@ -1505,8 +1505,9 @@ static int qseecom_unload_app(struct qseecom_dev_handle *data,
 	bool found_app = false;
 	bool found_dead_app = false;
 
-	if (!memcmp(data->client.app_name, "keymaste", strlen("keymaste"))) {
-		pr_debug("Do not unload keymaster app from tz\n");
+	if ((!memcmp(data->client.app_name, "keymaste", strlen("keymaste")))
+		|| (!memcmp(data->client.app_name, "kmota", strlen("kmota")))) {
+		pr_debug("Do not unload keymaster or kmota app from tz\n");
 		goto unload_exit;
 	}
 
@@ -2718,7 +2719,11 @@ int qseecom_start_app(struct qseecom_handle **handle,
 	size_t len;
 	ion_phys_addr_t pa;
 
-	if (!app_name || strlen(app_name) >= MAX_APP_NAME_SIZE) {
+	if (!app_name) {
+		pr_err("failed to get the app name\n");
+		return -EINVAL;
+	}
+	if (strlen(app_name) >= MAX_APP_NAME_SIZE) {
 		pr_err("The app_name (%s) with length %zu is not valid\n",
 			app_name, strlen(app_name));
 		return -EINVAL;

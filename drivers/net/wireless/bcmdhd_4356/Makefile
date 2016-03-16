@@ -6,13 +6,13 @@
 #
 
 DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DBCMDRIVER               \
-	-DCUSTOMER_HW_ONE                                                     \
+	-DCUSTOMER_HW_ONE -DGSCAN_SUPPORT                                                    \
 	-DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE            \
 	-DDHDTHREAD -DDHD_DEBUG -DSHOW_EVENTS -DBCMDBG -DCUSTOMER_HW2 -DWLP2P \
 	-DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT                                \
 	-DKEEP_ALIVE -DGET_CUSTOM_MAC_ENABLE -DPKT_FILTER_SUPPORT             \
 	-DEMBEDDED_PLATFORM -DPNO_SUPPORT          \
-	-DDHD_USE_IDLECOUNT -DSET_RANDOM_MAC_SOFTAP -DROAM_ENABLE -DVSDB      \
+	-DSET_RANDOM_MAC_SOFTAP -DROAM_ENABLE -DVSDB      \
 	-DWL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST                            \
 	-DESCAN_RESULT_PATCH -DSUPPORT_PM2_ONLY -DWLTDLS                      \
 	-DDHD_DONOT_FORWARD_BCMEVENT_AS_NETWORK_PKT -DRXFRAME_THREAD       \
@@ -26,7 +26,7 @@ DHDOFILES = aiutils.o siutils.o sbutils.o bcmutils.o bcmwifi_channels.o \
 	dhd_linux.o dhd_linux_platdev.o dhd_linux_sched.o dhd_pno.o \
 	dhd_common.o dhd_ip.o dhd_linux_wq.o dhd_custom_gpio.o \
 	bcmevent.o hndpmu.o linux_osl.o wldev_common.o wl_android.o \
-	hnd_pktq.o hnd_pktpool.o
+	hnd_pktq.o hnd_pktpool.o dhd_debug.o dhd_debug_linux.o
 
 obj-$(CONFIG_BCMDHD) += bcmdhd.o
 bcmdhd-objs += $(DHDOFILES)
@@ -80,13 +80,14 @@ endif
 
 ifneq ($(CONFIG_BCM4356),)
 DHDCFLAGS += -DDONGLE_ENABLE_ISOLATION
-DHDCFLAGS += -DCUSTOM_DHD_WATCHDOG_MS=0
+DHDCFLAGS += -DCUSTOM_DHD_WATCHDOG_MS=125
 DHDCFLAGS += -DUSE_WL_TXBF
 DHDCFLAGS += -DUSE_WL_FRAMEBURST
 #DHDCFLAGS += -DDHDTCPACK_SUPPRESS
 DHDCFLAGS += -DCUSTOM_AMPDU_BA_WSIZE=64
 DHDCFLAGS += -DDISABLE_FRAMEBURST_VSDB
 DHDCFLAGS += -DDHD_TXBOUND=32
+DHDCFLAGS += -DEAPOL_PKT_PRIO
 DHDCFLAGS += -Idrivers/net/wireless/bcmdhd_4356 -Idrivers/net/wireless/bcmdhd_4356/include   \
 	-Idrivers/net/wireless/bcmdhd_4356/common/include
 endif
@@ -124,6 +125,13 @@ ifeq (TMOUS, $(findstring TMOUS, $(PRIVATE_RCMS_SKU)))
 $(warning set WLFBT for HIMA TMUS)
 DHDCFLAGS += -DWLFBT
 endif
+
+# HTC_WIFI_START
+# Pop up message for OTP empty
+ifeq ($(CONFIG_DEBUG_OBJECTS), y)
+DHDCFLAGS += -DOTPDIALOG
+endif
+# HTC_WIFI_END
 endif
 
 ## Enable WAPI support
@@ -133,6 +141,9 @@ DHDCFLAGS += -DBCMWAPI_WPI -DBCMWAPI_WAI
 
 DHDCFLAGS += -DREPORT_ROAM_DONE_EARLY
 DHDCFLAGS += -DCUSTOM_WL_EVT_PRIO_SETTING=98
-#DHDCFLAGS += -DPACKET_FILTER2
+DHDCFLAGS += -DPACKET_FILTER2
+#DHDCFLAGS += -DDHD_USE_IDLECOUNT -DMAX_IDLE_COUNT=16 -DMAX_RESUME_WAIT=100 -DDHD_USE_IDLEACTIVE
 #DHDCFLAGS += -DDISABLE_LDPC
 #DHDCFLAGS += -DDHD_L2_FILTER
+#DHDCFLAGS += -DSHOW_LOGTRACE
+DHDCFLAGS += -DLINKSTAT_SUPPORT

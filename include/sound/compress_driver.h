@@ -34,6 +34,22 @@
 struct snd_compr_ops;
 struct snd_pcm_substream;
 
+/**
+ * struct snd_compr_runtime: runtime stream description
+ * @state: stream state
+ * @ops: pointer to DSP callbacks
+ * @buffer: pointer to kernel buffer, valid only when not in mmap mode or
+ *	DSP doesn't implement copy
+ * @buffer_size: size of the above buffer
+ * @fragment_size: size of buffer fragment in bytes
+ * @fragments: number of such fragments
+ * @hw_pointer: offset of last location in buffer where DSP copied data
+ * @app_pointer: offset of last location in buffer where app wrote data
+ * @total_bytes_available: cumulative number of bytes made available in
+ *	the ring buffer
+ * @total_bytes_transferred: cumulative bytes transferred by offload DSP
+ * @sleep: poll sleep
+ */
 struct snd_compr_runtime {
 	snd_pcm_state_t state;
 	struct snd_compr_ops *ops;
@@ -48,6 +64,17 @@ struct snd_compr_runtime {
 	void *private_data;
 };
 
+/**
+ * struct snd_compr_stream: compressed stream
+ * @name: device name
+ * @ops: pointer to DSP callbacks
+ * @runtime: pointer to runtime structure
+ * @device: device pointer
+ * @direction: stream direction, playback/recording
+ * @metadata_set: metadata set flag, true when set
+ * @next_track: has userspace signall next track transistion, true when set
+ * @private_data: pointer to DSP private data
+ */
 struct snd_compr_stream {
 	const char *name;
 	struct snd_compr_ops *ops;
@@ -92,6 +119,8 @@ struct snd_compr_ops {
 			struct snd_compr_metadata *metadata);
 	int (*get_metadata)(struct snd_compr_stream *stream,
 			struct snd_compr_metadata *metadata);
+	int (*set_next_track_param)(struct snd_compr_stream *stream,
+			union snd_codec_options *codec_options);
 	int (*trigger)(struct snd_compr_stream *stream, int cmd);
 	int (*pointer)(struct snd_compr_stream *stream,
 			struct snd_compr_tstamp *tstamp);
@@ -104,10 +133,23 @@ struct snd_compr_ops {
 			struct snd_compr_caps *caps);
 	int (*get_codec_caps) (struct snd_compr_stream *stream,
 			struct snd_compr_codec_caps *codec);
+// htc audio ++
 	int (*config_effect)(struct snd_compr_stream *stream, void *data,
 			void *payload);
+// htc audio --
 };
 
+/**
+ * struct snd_compr: Compressed device
+ * @name: DSP device name
+ * @dev: Device pointer
+ * @ops: pointer to DSP callbacks
+ * @private_data: pointer to DSP pvt data
+ * @card: sound card pointer
+ * @direction: Playback or capture direction
+ * @lock: device lock
+ * @device: device id
+ */
 struct snd_compr {
 	const char *name;
 	struct device *dev;
@@ -119,12 +161,21 @@ struct snd_compr {
 	int device;
 };
 
+/* compress device register APIs */
 int snd_compress_register(struct snd_compr *device);
 int snd_compress_deregister(struct snd_compr *device);
 int snd_compress_new(struct snd_card *card, int device,
 			int type, struct snd_compr *compr);
 void snd_compress_free(struct snd_card *card, struct snd_compr *compr);
 
+/* dsp driver callback apis
+ * For playback: driver should call snd_compress_fragment_elapsed() to let the
+ * framework know that a fragment has been consumed from the ring buffer
+ *
+ * For recording: we want to know when a frame is available or when
+ * at least one frame is available so snd_compress_frame_elapsed()
+ * callback should be called when a encodeded frame is available
+ */
 static inline void snd_compr_fragment_elapsed(struct snd_compr_stream *stream)
 {
 	wake_up(&stream->runtime->sleep);

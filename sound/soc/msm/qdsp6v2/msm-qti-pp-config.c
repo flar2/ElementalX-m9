@@ -25,6 +25,8 @@
 #include "msm-qti-pp-config.h"
 #include "msm-pcm-routing-v2.h"
 
+/* EQUALIZER */
+/* Equal to Frontend after last of the MULTIMEDIA SESSIONS */
 #define MAX_EQ_SESSIONS		MSM_FRONTEND_DAI_CS_VOICE
 
 enum {
@@ -44,16 +46,16 @@ enum {
 };
 
 struct msm_audio_eq_band {
-	uint16_t     band_idx; 
-	uint32_t     filter_type; 
-	uint32_t     center_freq_hz; 
-	uint32_t     filter_gain; 
-			
+	uint16_t     band_idx; /* The band index, 0 .. 11 */
+	uint32_t     filter_type; /* Filter band type */
+	uint32_t     center_freq_hz; /* Filter band center frequency */
+	uint32_t     filter_gain; /* Filter band initial gain (dB) */
+			/* Range is +12 dB to -12 dB with 1dB increments. */
 	uint32_t     q_factor;
 } __packed;
 
 struct msm_audio_eq_stream_config {
-	uint32_t	enable; 
+	uint32_t	enable; /* Number of consequtive bands specified */
 	uint32_t	num_bands;
 	struct msm_audio_eq_band	eq_bands[EQ_BAND_MAX];
 } __packed;
@@ -226,6 +228,7 @@ void msm_qti_pp_send_eq_values(int fedai_id)
 		msm_qti_pp_send_eq_values_(fedai_id);
 }
 
+/* CUSTOM MIXING */
 int msm_qti_pp_send_stereo_to_custom_stereo_cmd(int port_id, int copp_idx,
 						unsigned int session_id,
 						uint16_t op_FL_ip_FL_weight,
@@ -256,24 +259,26 @@ int msm_qti_pp_send_stereo_to_custom_stereo_cmd(int port_id, int copp_idx,
 	if (avail_length < 10 * sizeof(uint16_t))
 		goto skip_send_cmd;
 	*update_params_value16++ = CUSTOM_STEREO_CMD_PARAM_SIZE;
-	
+	/*for alignment only*/
 	*update_params_value16++ = 0;
-	
+	/*index is 32-bit param in little endian*/
 	*update_params_value16++ = CUSTOM_STEREO_INDEX_PARAM;
 	*update_params_value16++ = 0;
-	
+	/*for stereo mixing num out ch*/
 	*update_params_value16++ = CUSTOM_STEREO_NUM_OUT_CH;
-	
+	/*for stereo mixing num in ch*/
 	*update_params_value16++ = CUSTOM_STEREO_NUM_IN_CH;
 
-	
+	/* Out ch map FL/FR*/
 	*update_params_value16++ = PCM_CHANNEL_FL;
 	*update_params_value16++ = PCM_CHANNEL_FR;
 
-	
+	/* In ch map FL/FR*/
 	*update_params_value16++ = PCM_CHANNEL_FL;
 	*update_params_value16++ = PCM_CHANNEL_FR;
 	avail_length = avail_length - (10 * sizeof(uint16_t));
+	/* weighting coefficients as name suggests,
+	mixing will be done according to these coefficients*/
 	if (avail_length < 4 * sizeof(uint16_t))
 		goto skip_send_cmd;
 	*update_params_value16++ = op_FL_ip_FL_weight;
@@ -302,6 +307,7 @@ skip_send_cmd:
 		return -ENOMEM;
 }
 
+/* RMS */
 static int msm_qti_pp_get_rms_value_control(struct snd_kcontrol *kcontrol,
 					    struct snd_ctl_elem_value *ucontrol)
 {
@@ -360,10 +366,11 @@ get_rms_value_err:
 static int msm_qti_pp_put_rms_value_control(struct snd_kcontrol *kcontrol,
 					    struct snd_ctl_elem_value *ucontrol)
 {
-	
+	/* not used */
 	return 0;
 }
 
+/* VOLUME */
 static int msm_route_fm_vol_control;
 static int msm_afe_lb_vol_ctrl;
 static const DECLARE_TLV_DB_LINEAR(fm_rx_vol_gain, 0, INT_RX_VOL_MAX_STEPS);
@@ -404,6 +411,7 @@ static int msm_qti_pp_set_pri_mi2s_lb_vol_mixer(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+// HTC_AUD ++
 static int msm_qti_pp_get_prim_mi2s_fm_vol_mixer(struct snd_kcontrol *kcontrol,
 				       struct snd_ctl_elem_value *ucontrol)
 {
@@ -421,6 +429,7 @@ static int msm_qti_pp_set_prim_mi2s_fm_vol_mixer(struct snd_kcontrol *kcontrol,
 
 	return 0;
 }
+// HTC_AUD --
 
 static int msm_qti_pp_get_quat_mi2s_fm_vol_mixer(struct snd_kcontrol *kcontrol,
 				       struct snd_ctl_elem_value *ucontrol)
@@ -509,9 +518,11 @@ static const struct snd_kcontrol_new int_fm_vol_mixer_controls[] = {
 	SOC_SINGLE_EXT_TLV("Quat MI2S FM RX Volume", SND_SOC_NOPM, 0,
 	INT_RX_VOL_GAIN, 0, msm_qti_pp_get_quat_mi2s_fm_vol_mixer,
 	msm_qti_pp_set_quat_mi2s_fm_vol_mixer, fm_rx_vol_gain),
+// HTC_AUD ++
 	SOC_SINGLE_EXT_TLV("Prim MI2S FM RX Volume", SND_SOC_NOPM, 0,
 	INT_RX_VOL_GAIN, 0, msm_qti_pp_get_prim_mi2s_fm_vol_mixer,
 	msm_qti_pp_set_prim_mi2s_fm_vol_mixer, fm_rx_vol_gain),
+// HTC_AUD --
 };
 
 static const struct snd_kcontrol_new pri_mi2s_lb_vol_mixer_controls[] = {

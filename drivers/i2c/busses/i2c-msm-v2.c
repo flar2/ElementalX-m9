@@ -1719,8 +1719,11 @@ static int i2c_msm_qup_post_xfer(struct i2c_msm_ctrl *ctrl, int err)
 				qup_i2c_recover_bus_busy(ctrl);
 
 			
-			if (!err)
-				err = -EIO;
+			if (!err) {
+				dev_info(ctrl->dev, "Assign rc to %d\n",
+					 (-EPROTO));
+				err = -EPROTO;
+			}
 		}
 	}
 

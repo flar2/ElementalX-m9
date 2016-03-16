@@ -34,6 +34,8 @@
 #include <soc/qcom/watchdog.h>
 
 #include "htc_restart_handler.h"
+#include <linux/qpnp/power-on.h>
+#include <linux/qpnp/qpnp-smbcharger.h>
 
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
@@ -238,6 +240,40 @@ static void halt_spmi_pmic_arbiter(void)
 static bool hard_reset = 0;
 module_param(hard_reset, bool, 0600);
 
+static enum pon_power_off_type htc_restart_cmd_to_type(const char* cmd)
+{
+	int i;
+
+	struct {
+		const char* cmd;
+		enum pon_power_off_type type;
+	} cmd_type[] = {
+		{"power-key-force-hard", PON_POWER_OFF_WARM_RESET},
+		{"force-dog-bark", PON_POWER_OFF_WARM_RESET},
+			
+		{"oem-61", PON_POWER_OFF_WARM_RESET},
+		{"oem-62", PON_POWER_OFF_WARM_RESET},
+		{"oem-63", PON_POWER_OFF_WARM_RESET},
+		{"oem-93", PON_POWER_OFF_WARM_RESET},
+		{"oem-94", PON_POWER_OFF_WARM_RESET},
+		{"oem-95", PON_POWER_OFF_WARM_RESET},
+		{"oem-96", PON_POWER_OFF_WARM_RESET},
+		{"oem-97", PON_POWER_OFF_WARM_RESET},
+		{"oem-98", PON_POWER_OFF_WARM_RESET},
+		{"oem-99", PON_POWER_OFF_WARM_RESET},
+	};
+
+	if (in_panic)
+		return PON_POWER_OFF_WARM_RESET;
+
+	cmd = cmd ? : "";
+	for (i = 0; i < ARRAY_SIZE(cmd_type); i++)
+		if (!strncmp(cmd, cmd_type[i].cmd, strlen(cmd_type[i].cmd)))
+			return cmd_type[i].type;
+
+	return PON_POWER_OFF_HARD_RESET; 
+}
+
 static void msm_restart_prepare(char mode, const char *cmd)
 {
 	bool need_warm_reset = false;
@@ -257,7 +293,10 @@ static void msm_restart_prepare(char mode, const char *cmd)
 			((cmd != NULL && cmd[0] != '\0') &&
 			strcmp(cmd, "recovery") &&
 			strcmp(cmd, "bootloader") &&
-			strcmp(cmd, "rtc")))
+			strcmp(cmd, "rtc") &&
+			strcmp(cmd, "dm-verity device corrupted") &&
+			strcmp(cmd, "dm-verity enforcing") &&
+			strcmp(cmd, "keys clear")))
 			need_warm_reset = true;
 	}
 
@@ -270,8 +309,12 @@ static void msm_restart_prepare(char mode, const char *cmd)
 
 	if(hard_reset)
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_DVDD_HARD_RESET);
-	else
+	else if(pmi8994_is_HVDCP_9V_done()) {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+		pr_info("%s: Set WARM RESET due to reset with QC2.0: %d\r\n",
+				__func__, pmi8994_is_HVDCP_9V_done());
+	} else
+		qpnp_pon_system_pwr_off(htc_restart_cmd_to_type(cmd));
 
 	pr_info("%s: restart by command: [%s]\r\n", __func__, (cmd) ? cmd : "");
 
@@ -289,7 +332,20 @@ static void msm_restart_prepare(char mode, const char *cmd)
 		} else if (!strcmp(cmd, "eraseflash")) {
 			set_restart_action(RESTART_REASON_ERASE_FLASH, NULL);
 		} else if (!strcmp(cmd, "power-key-force-hard")) {
-			set_restart_action(RESTART_REASON_RAMDUMP, "Powerkey Hard Reset - SW");
+			if(pmi8994_is_HVDCP_9V_done())
+				set_restart_action(RESTART_REASON_REBOOT, "Powerkey Hard Reset with QC2.0");
+			else
+				set_restart_action(RESTART_REASON_RAMDUMP, "Powerkey Hard Reset - SW");
+		} else if (!strcmp(cmd, "rtc")) {
+			qpnp_pon_set_restart_reason(
+				PON_RESTART_REASON_RTC);
+			set_restart_action(RESTART_REASON_ALARM, "Alarm");
+		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
+			set_restart_action(RESTART_REASON_DM_VERITY_DEVICE_CORRUPTED, "DM verity device corrupted");
+		} else if (!strcmp(cmd, "dm-verity enforcing")) {
+			set_restart_action(RESTART_REASON_DM_VERITY_ENFORCING, "DM verity enforcing");
+		} else if (!strcmp(cmd, "keys clear")) {
+			set_restart_action(RESTART_REASON_KEYS_CLEAR, "Keys clear");
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			code = simple_strtoul(cmd + 4, NULL, 16) & 0xff;
@@ -397,6 +453,11 @@ static void do_msm_poweroff(void)
 	qpnp_pon_set_s3_timer(2); 
 
 	if (cable_source > 0) {
+		if (pmi8994_is_HVDCP_9V_done()) {
+			ret = downgrade_hvdcp_9v_to_5v();
+			if (ret)
+				pr_err("Failed to downgrade hvdcp before shutdown, ret: %d\n", ret);
+		}
 		set_restart_action(RESTART_REASON_OFFMODE_CHARGE, NULL);
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
 	} else {

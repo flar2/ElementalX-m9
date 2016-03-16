@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd.h 556045 2015-05-12 08:30:49Z $
+ * $Id: dhd.h 593304 2015-10-16 04:17:03Z $
  */
 
 
@@ -73,6 +73,7 @@ struct dhd_bus;
 struct dhd_prot;
 struct dhd_info;
 struct dhd_ioctl;
+struct dhd_dbg;
 
 enum dhd_bus_state {
 	DHD_BUS_DOWN,		
@@ -174,7 +175,6 @@ enum dhd_prealloc_index {
 	DHD_PREALLOC_MEMDUMP_RAM = 11
 };
 
-#if defined(USE_STATIC_MEMDUMP)
 enum dhd_dongledump_mode {
 	DUMP_DISABLED = 0,
 	DUMP_MEMONLY,
@@ -185,7 +185,6 @@ enum dhd_dongledump_mode {
 	DUMP_MEMFILE_HANG
 #endif 
 };
-#endif 
 
 #ifndef DHD_SDALIGN
 #ifdef CUSTOMER_HW_ONE
@@ -244,6 +243,7 @@ typedef struct dhd_pub {
 	struct dhd_bus *bus;	
 	struct dhd_prot *prot;	
 	struct dhd_info  *info; 
+	struct dhd_dbg *dbg;	
 
 
 
@@ -427,11 +427,9 @@ typedef struct dhd_pub {
 #if defined(WLTDLS) && defined(PCIE_FULL_DONGLE)
 	tdls_peer_tbl_t peer_tbl;
 #endif 
-#if defined(USE_STATIC_MEMDUMP)
 	uint8 *soc_ram;
 	uint32 soc_ram_length;
 	uint32 memdump_enabled;
-#endif 
 	bool tx_in_progress;
 #ifdef CUSTOMER_HW_ONE
 	bool os_stopped;
@@ -513,6 +511,28 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(dhd_workitem_context_t, dhd_get_dhd_workitem_
 #ifdef PNO_SUPPORT
 int dhd_pno_clean(dhd_pub_t *dhd);
 #endif 
+
+inline static void MUTEX_LOCK_START_STOP_SET_INIT(dhd_pub_t * dhdp)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && 1
+	mutex_init(&dhdp->wl_start_stop_lock);
+#endif 
+}
+
+inline static void MUTEX_LOCK_START_STOP_SET(dhd_pub_t * dhdp)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && 1
+	mutex_lock(&dhdp->wl_start_stop_lock);
+#endif 
+}
+
+inline static void MUTEX_UNLOCK_START_STOP_SET(dhd_pub_t * dhdp)
+{
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 25)) && 1
+	mutex_unlock(&dhdp->wl_start_stop_lock);
+#endif 
+}
+
 extern int dhd_os_wake_lock(dhd_pub_t *pub);
 extern int dhd_os_wake_unlock(dhd_pub_t *pub);
 extern int dhd_os_wake_lock_timeout(dhd_pub_t *pub);
@@ -670,10 +690,6 @@ extern void dhd_set_cpucore(dhd_pub_t *dhd, int set);
 extern int dhd_keep_alive_onoff(dhd_pub_t *dhd);
 #endif 
 
-#if defined(USE_STATIC_MEMDUMP)
-void dhd_schedule_memdump(dhd_pub_t *dhdp, uint8 *buf, uint32 size);
-#endif 
-
 #ifdef SUPPORT_AP_POWERSAVE
 extern int dhd_set_ap_powersave(dhd_pub_t *dhdp, int ifidx, int enable);
 #endif
@@ -727,6 +743,14 @@ typedef struct {
 	int  num_fmts;
 	char **fmts;
 	char *raw_fmts;
+	char *raw_sstr;
+	uint32 ramstart;
+	uint32 rodata_start;
+	uint32 rodata_end;
+	char *rom_raw_sstr;
+	uint32 rom_ramstart;
+	uint32 rom_rodata_start;
+	uint32 rom_rodata_end;
 } dhd_event_log_t;
 #endif 
 
@@ -745,6 +769,10 @@ extern void wl_event_to_host_order(wl_event_msg_t * evt);
 extern int dhd_wl_ioctl(dhd_pub_t *dhd_pub, int ifindex, wl_ioctl_t *ioc, void *buf, int len);
 extern int dhd_wl_ioctl_cmd(dhd_pub_t *dhd_pub, int cmd, void *arg, int len, uint8 set,
                             int ifindex);
+extern int dhd_wl_ioctl_get_intiovar(dhd_pub_t *dhd_pub, char *name, uint *pval,
+	int cmd, uint8 set, int ifidx);
+extern int dhd_wl_ioctl_set_intiovar(dhd_pub_t *dhd_pub, char *name, uint val,
+	int cmd, uint8 set, int ifidx);
 extern void dhd_common_init(osl_t *osh);
 
 extern int dhd_do_driver_init(struct net_device *net);
@@ -798,6 +826,7 @@ extern int dhd_set_ap_isolate(dhd_pub_t *dhdp, uint32 idx, int val);
 extern int dhd_bssidx2idx(dhd_pub_t *dhdp, uint32 bssidx);
 extern int dhd_os_d3ack_wait(dhd_pub_t * pub, uint * condition, bool * pending);
 extern int dhd_os_d3ack_wake(dhd_pub_t * pub);
+extern struct net_device *dhd_linux_get_primary_netdev(dhd_pub_t *dhdp);
 
 extern bool dhd_is_concurrent_mode(dhd_pub_t *dhd);
 extern int dhd_iovar(dhd_pub_t *pub, int ifidx, char *name, char *cmd_buf, uint cmd_len, int set);
@@ -841,6 +870,9 @@ extern uint dhd_radio_up;
 extern int dhd_idletime;
 #ifdef DHD_USE_IDLECOUNT
 #define DHD_IDLETIME_TICKS 5
+#ifdef DHD_USE_IDLEACTIVE
+extern int dhd_bus_idleclock(dhd_pub_t *dhdp, uint32 flag);
+#endif 
 #else
 #define DHD_IDLETIME_TICKS 1
 #endif 
@@ -1003,6 +1035,13 @@ int dhd_os_wlfc_unblock(dhd_pub_t *pub);
 extern const uint8 prio2fifo[];
 #endif 
 
+void dhd_save_fwdump(dhd_pub_t *dhd_pub, void * buffer, uint32 length);
+void dhd_schedule_memdump(dhd_pub_t *dhdp, uint8 *buf, uint32 size);
+int dhd_os_socram_dump(struct net_device *dev, uint32 *dump_size);
+int dhd_os_get_socram_dump(struct net_device *dev, char **buf, uint32 *size);
+int dhd_common_socram_dump(dhd_pub_t *dhdp);
+int dhd_os_get_version(struct net_device *dev, bool dhd_ver, char **buf, uint32 size);
+
 uint8* dhd_os_prealloc(dhd_pub_t *dhdpub, int section, uint size, bool kmalloc_if_fail);
 void dhd_os_prefree(dhd_pub_t *dhdpub, void *addr, uint size);
 
@@ -1107,5 +1146,8 @@ extern bool dhd_APUP;
 extern int block_ap_event;
 extern int dhdcdc_power_active_while_plugin;
 extern char wl_abdroid_gatewaybuf[8+1]; 
+#endif 
+#if defined(DHD_USE_IDLECOUNT) && defined(BCMPCIE)
+extern int dhdpcie_set_suspend_resume(struct pci_dev *dev, bool state);
 #endif 
 #endif 

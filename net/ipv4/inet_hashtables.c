@@ -23,6 +23,9 @@
 #include <net/inet_hashtables.h>
 #include <net/secure_seq.h>
 #include <net/ip.h>
+#include <net/htc_net_debug.h>
+
+extern void net_dumplog(void);
 
 struct inet_bind_bucket *inet_bind_bucket_create(struct kmem_cache *cachep,
 						 struct net *net,
@@ -78,9 +81,13 @@ static void __inet_put_port(struct sock *sk)
 	spin_lock(&head->lock);
 	tb = inet_csk(sk)->icsk_bind_hash;
 	__sk_del_bind_node(sk);
+
+	NET_DEBUG("%s: [0x%p] sk:0x%p, sk_state:%d, pid:%d, process:%s.\n", __func__, current_thread_info()->task, sk, sk->sk_state, current->pid, current->comm);
+	if(!tb)
+		net_dumplog();
+
 	tb->num_owners--;
 	inet_csk(sk)->icsk_bind_hash = NULL;
-
 	inet_sk(sk)->inet_num = 0;
 	inet_bind_bucket_destroy(hashinfo->bind_bucket_cachep, tb);
 	spin_unlock(&head->lock);

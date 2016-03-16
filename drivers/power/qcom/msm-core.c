@@ -43,7 +43,7 @@
 #define TEMP_MAX_POINT 95
 #define CPU_HOTPLUG_LIMIT 80
 #define CPU_BIT_MASK(cpu) BIT(cpu)
-#define DEFAULT_TEMP 38
+#define DEFAULT_TEMP 40
 #define DEFAULT_LOW_HYST_TEMP 10
 #define DEFAULT_HIGH_HYST_TEMP 5
 #define CLUSTER_OFFSET_FOR_MPIDR 8
@@ -322,6 +322,14 @@ static void clear_static_power(struct cpu_static_info *sp)
 	kfree(sp);
 }
 
+static BLOCKING_NOTIFIER_HEAD(msm_core_stats_notifier_list);
+
+int register_cpu_pwr_stats_ready_notifier(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&msm_core_stats_notifier_list,
+						nb);
+}
+
 static int update_userspace_power(struct sched_params __user *argp)
 {
 	int i;
@@ -391,6 +399,9 @@ static int update_userspace_power(struct sched_params __user *argp)
 			}
 			cpu_stats[cpu].ptable = per_cpu(ptable, cpu);
 			repopulate_stats(cpu);
+
+			blocking_notifier_call_chain(
+				&msm_core_stats_notifier_list, cpu, NULL);
 		}
 	}
 	spin_unlock(&update_lock);
@@ -518,6 +529,7 @@ static int msm_core_stats_init(struct device *dev, int cpu)
 		pstate[i].freq = cpu_node->sp->table[i].frequency;
 
 	per_cpu(ptable, cpu) = pstate;
+
 	return 0;
 }
 

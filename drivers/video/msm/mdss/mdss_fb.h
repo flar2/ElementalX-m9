@@ -37,11 +37,14 @@
 #define WAIT_MAX_FENCE_TIMEOUT (WAIT_FENCE_FIRST_TIMEOUT + \
 					WAIT_FENCE_FINAL_TIMEOUT)
 #define WAIT_MIN_FENCE_TIMEOUT  (1)
-/* Display op timeout should be greater than the total timeout but not
- * unreasonably large. Set to 1s more than first wait + final wait which
- * are already quite long and proceed without any further waits. */
+/*
+ * Display op timeout should be greater than total time it can take for
+ * a display thread to commit one frame. One of the largest time consuming
+ * activity performed by display thread is waiting for fences. So keeping
+ * that as a reference and add additional 20s to sustain system holdups.
+ */
 #define WAIT_DISP_OP_TIMEOUT (WAIT_FENCE_FIRST_TIMEOUT + \
-		WAIT_FENCE_FINAL_TIMEOUT + MSEC_PER_SEC)
+		WAIT_FENCE_FINAL_TIMEOUT + (20 * MSEC_PER_SEC))
 
 #ifndef MAX
 #define  MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -202,8 +205,10 @@ struct msm_mdp_interface {
 	int (*lut_update)(struct msm_fb_data_type *mfd, struct fb_cmap *cmap);
 	int (*do_histogram)(struct msm_fb_data_type *mfd,
 				struct mdp_histogram *hist);
+	int (*stop_histogram)(struct msm_fb_data_type *mfd);
 	int (*ad_calc_bl)(struct msm_fb_data_type *mfd, int bl_in,
 		int *bl_out, bool *bl_out_notify);
+	int (*ad_shutdown_cleanup)(struct msm_fb_data_type *mfd);
 	int (*panel_register_done)(struct mdss_panel_data *pdata);
 	u32 (*fb_stride)(u32 fb_index, u32 xres, int bpp);
 	int (*splash_init_fnc)(struct msm_fb_data_type *mfd);
@@ -271,6 +276,7 @@ struct msm_fb_data_type {
 	void *cursor_buf;
 	phys_addr_t cursor_buf_phys;
 	dma_addr_t cursor_buf_iova;
+	size_t cursor_buf_size;
 
 	int ext_ad_ctrl;
 	u32 ext_bl_ctrl;
@@ -404,7 +410,10 @@ static inline bool mdss_fb_is_hdmi_primary(struct msm_fb_data_type *mfd)
 int mdss_fb_get_phys_info(dma_addr_t *start, unsigned long *len, int fb_num);
 void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl);
 void mdss_fb_update_backlight(struct msm_fb_data_type *mfd);
-int mdss_fb_wait_for_fence(struct msm_sync_pt_data *sync_pt_data);
+int mdss_fb_wait_for_fences(struct msm_sync_pt_data *sync_pt_data,
+	struct sync_fence **fences, int fence_cnt);
+void mdss_fb_copy_fence(struct msm_sync_pt_data *sync_pt_data,
+	struct sync_fence **fences, u32 *fence_cnt);
 void mdss_fb_signal_timeline(struct msm_sync_pt_data *sync_pt_data);
 struct sync_fence *mdss_fb_sync_get_fence(struct sw_sync_timeline *timeline,
 				const char *fence_name, int val);
@@ -415,4 +424,5 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		     unsigned long arg);
 int mdss_fb_compat_ioctl(struct fb_info *info, unsigned int cmd,
 			 unsigned long arg);
+void mdss_fb_report_panel_dead(struct msm_fb_data_type *mfd);
 #endif /* MDSS_FB_H */

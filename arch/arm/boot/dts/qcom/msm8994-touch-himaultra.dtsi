@@ -1,0 +1,154 @@
+&pmx_ts {
+	qcom,pins = <&gp 40>;
+	qcom,pin-func = <0>;
+	qcom,num-grp-pins = <1>;
+};
+
+&ts_active {
+	drive-strength = <2>;
+	bias-disable;
+};
+
+&ts_suspend {
+	drive-strength = <2>;
+	bias-disable;
+};
+
+&soc {
+	touch_fw_update {
+		compatible = "htc,touch_fwu";
+	};
+
+	i2c@f9924000 {
+		maxim@48 {
+			compatible = "maxim,max1187x_tsc";
+			reg = <0x48>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <40 0>;
+			gpio_tirq = <&msm_gpio 40 0x00>;
+			gpio_reset = <&msm_gpio 39 0x00>;
+			gpio_switch = <&msm_gpio 92 0x00>;
+			num_fw_mappings = <1>;
+			chip_id = <0x78>;
+			filename = "max11876a.bin";
+			filesize = <0xC000>;
+			file_codesize = <0xC000>;
+			defaults_allow = <1>;
+			default_config_id = <0x6701>;
+			default_chip_id = <0x78>;
+			i2c_words = <123>;
+			coordinate_settings = <0x4>;
+			panel_min_x = <0>;
+			panel_max_x = <1620>;
+			panel_min_y = <0>;
+			panel_max_y = <2880>;
+			lcd_x = <1080>;
+			lcd_y = <1920>;
+			num_rows = <30>;
+			num_cols = <17>;
+			input_protocol = <1>;
+			button_code0 = <0>;
+			button_code1 = <0>;
+			button_code2 = <0>;
+			button_code3 = <0>;
+			update_feature = <2>;
+			tw_mask = <0xF>;
+			report_mode = <2>;
+			pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+			pinctrl-0 = <&ts_active>;
+			pinctrl-1 = <&ts_suspend>;
+
+			config1 {
+				config_id = <0x6701>;
+				chip_id = <0x78>;
+				major_ver = <1>;
+				minor_ver = <30>;
+				protocol_ver = <8>;
+				vendor_pin = <0xC>;
+				eng_id = <1>;
+				config_touch = [
+					6701 111E 0078 001E 0A01 14FF FF16 1715
+					FF1A 181B 1CFF 1D19 130F 100E 120D 0CFF
+					FF11 0BFF 0AFF 0509 FF08 0703 0602 0104
+					FF00 0100 0302 0504 0706 0908 0B0A 0D0C
+					0F0E FF10 FFFF FFFF FFFF FFFF FFFF FFFF
+					FFFF 0B3F 0653 0113 0001 1902 073A 0960
+					0578 04B0 0082 1900 0A08 FFFF FFFF FFFF
+					FFFF 03E8 FFFF FFFF FFFF FFFF FFFF FFFF
+					1592
+				];
+				config_cal = [
+					FFF5 FFEA FFDF 001C 001C 001C 001C 001C
+					001C 001C 001C 001C 001C 001C 001C 001C
+					001C 001C 001C 001C 001C 001C 001C 001C
+					001C 001C 001C 0003 0003 0003 0003 0003
+					0003 0003 0003 0003 0003 0003 0003 0003
+					0003 0003 0003 0003 0000 0000 0000 0000
+					0000 0000 0000 FFFF FF1E 00E6 00FF 00FF
+					00FF 00FF 00FF 00FF 00FF 00FF 000A 0001
+					0001 0002 0002 0003 0001 0001 0002 0002
+					0003 0AA8
+				];
+				config_private = [
+					0118 0069 0064 0038 F0FF 1428 001E 0190
+					03B6 00AA 0064 0018 04E2 003C 1400 B232
+					FEFF FFFD FEFE FFFF 00FF FF15 4E21 0DC3
+					7864 524C FFFF FFFF FFFF FFFF FFFF FFFF
+					FFFF FDB8
+				];
+				config_lin_x = [
+					002B 3016 644C 8876 AA99 CBBB F0E0 8437
+				];
+				config_lin_y = [
+					0030 2E17 664B 8F7D AE9F CABC EADA 8844
+				];
+			};
+
+			config0 {
+				config_id = <0x0067>;
+				chip_id = <0x78>;
+				major_ver = <1>;
+				minor_ver = <30>;
+				protocol_ver = <8>;
+				eng_id = <0>;
+				config_touch = [
+					0067 0F1B 0078 001E 0A01 13FF FF15 1614
+					FF19 171A FFFF FF18 120E 0FFF 110D 0CFF
+					FF10 0BFF 0AFF 0509 FF08 0703 0602 0104
+					FF00 0100 0302 0504 FF06 0807 0A09 0C0B
+					0E0D FFFF FFFF FFFF FFFF FFFF FFFF FFFF
+					FFFF 0B3F 0653 FF13 0001 1402 0834 0AF0
+					06A4 04B0 00B4 1900 0A08 00B4 0082 FFFF
+					FFFF 03E8 FFFF FFFF FFFF FFFF FFFF FFFF
+					5FEA
+				];
+				config_cal = [
+					FFF5 FFEA FFDF 001E 001E 001E 001E 001E
+					001E 001E 001E 001E 001E 001E 001E 001E
+					001E 001E 001E 001E 001E 001E 001E 001E
+					001E 001E 001E 0006 0006 0006 0006 0006
+					0006 0006 0006 0006 0006 0006 0006 0006
+					0006 0006 0006 0006 0006 0006 0006 0006
+					0006 0006 0006 FFFF FF1E 00DC 00FF 00FF
+					00FF 00C8 00FF 00FF 00FF 00FF 000A 0001
+					0001 0002 0002 0003 0001 0001 0002 0002
+					0003 0AF4
+				];
+				config_private = [
+					0118 0069 0082 0038 F0FF 1428 001E 0190
+					03B6 00AA 0064 0018 04E2 003C 1400 B232
+					FEFF FFFE FEFE FFFF 00FF FF15 4E21 0DC3
+					7864 524C FFFF FFFF FFFF FFFF FFFF FFFF
+					FFFF FDD7
+				];
+				config_lin_x = [
+					002B 3016 644C 8876 AA99 CBBB F0E0 8437
+				];
+				config_lin_y = [
+					0030 2E17 664B 8F7D AE9F CABC EADA 8844
+				];
+			};
+		};
+	};
+};
+

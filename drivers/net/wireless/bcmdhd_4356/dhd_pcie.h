@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_pcie.h 546977 2015-04-07 06:34:52Z $
+ * $Id: dhd_pcie.h 594491 2015-10-22 04:26:15Z $
  */
 
 
@@ -37,6 +37,22 @@
 #else
 #include <mach/msm_pcie.h>
 #endif
+#endif 
+#endif 
+#ifdef DHD_USE_IDLECOUNT
+#include <linux/mutex.h>
+#include <linux/wait.h>
+
+#if !defined(CUSTOM_DHD_WATCHDOG_MS) || (CUSTOM_DHD_WATCHDOG_MS <= 0)
+#error "MUST define CUSTOM_DHD_WATCHDOG_MS > 0 when DHD_USE_IDLECOUNT defined."
+#endif
+
+#ifndef MAX_IDLE_COUNT
+#define MAX_IDLE_COUNT 16
+#endif 
+
+#ifndef MAX_RESUME_WAIT
+#define MAX_RESUME_WAIT 100
 #endif 
 #endif 
 
@@ -177,6 +193,18 @@ typedef struct dhd_bus {
 	struct work_struct delete_flow_work;
 	unsigned long *delete_flow_map;
 	struct sk_buff_head orphan_list;
+#endif 
+#ifdef DHD_USE_IDLECOUNT
+	int32 idlecount;		
+	int32 idletime;			
+#ifdef DHD_USE_IDLEACTIVE
+	int32 idleclock;		
+#endif 
+	int32 bus_wake;			
+	atomic_t runtime_suspend;		
+	bool host_suspend;		
+	struct mutex pm_lock;		
+	wait_queue_head_t rpm_queue; 
 #endif 
 	uint32 d0_inform_cnt;
 	uint32 d0_inform_in_use_cnt;

@@ -192,7 +192,10 @@ dhd_deferred_schedule_work(void *workq, void *event_data, u8 event,
 {
 	struct dhd_deferred_wq *deferred_wq = (struct dhd_deferred_wq *) workq;
 	struct	dhd_deferred_event_t	deferred_event;
-	int	status;
+	int	status = 0;
+	
+	unsigned long flags = 0;
+	
 
 	if (!deferred_wq) {
 		DHD_ERROR(("%s: work queue not initialized \n", __FUNCTION__));
@@ -213,11 +216,33 @@ dhd_deferred_schedule_work(void *workq, void *event_data, u8 event,
 	deferred_event.event_handler = event_handler;
 
 	if (priority == DHD_WORK_PRIORITY_HIGH) {
+		
+#if 0
 		status = kfifo_in_spinlocked(deferred_wq->prio_fifo, &deferred_event,
 			DEFRD_EVT_SIZE, &deferred_wq->work_lock);
+#else
+		spin_lock_irqsave(&deferred_wq->work_lock, flags);
+		if (kfifo_avail(deferred_wq->prio_fifo) >= DEFRD_EVT_SIZE)
+			status = kfifo_in(deferred_wq->prio_fifo, &deferred_event, DEFRD_EVT_SIZE);
+		else
+			DHD_ERROR(("%s: prio_fifo kfifo_avail %d %ld\n", __FUNCTION__, kfifo_avail(deferred_wq->prio_fifo), DEFRD_EVT_SIZE));
+		spin_unlock_irqrestore(&deferred_wq->work_lock, flags);
+#endif
+		
 	} else {
+		
+#if 0
 		status = kfifo_in_spinlocked(deferred_wq->work_fifo, &deferred_event,
 			DEFRD_EVT_SIZE, &deferred_wq->work_lock);
+#else
+		spin_lock_irqsave(&deferred_wq->work_lock, flags);
+		if (kfifo_avail(deferred_wq->work_fifo) >= DEFRD_EVT_SIZE)
+			status = kfifo_in(deferred_wq->work_fifo, &deferred_event, DEFRD_EVT_SIZE);
+		else
+			DHD_ERROR(("%s: work_fifo kfifo_avail %d %ld\n", __FUNCTION__, kfifo_avail(deferred_wq->work_fifo), DEFRD_EVT_SIZE));
+		spin_unlock_irqrestore(&deferred_wq->work_lock, flags);
+#endif
+		
 	}
 
 	if (!status) {

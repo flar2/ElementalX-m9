@@ -17,7 +17,6 @@
 #define PLATFORM_DRIVER_NAME "msm_camera_gc0310"
 #define gc0310_obj gc0310_##obj
 
-/*#define CONFIG_MSMB_CAMERA_DEBUG*/
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -87,7 +86,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xf9, 0x8e},
 	{0xfa, 0x11},
 
-	/*	CISCTL reg	*/
+	
 	{0x00, 0x2f},
 	{0x01, 0x0f},
 	{0x02, 0x04},
@@ -119,7 +118,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0x24, 0x16},
 	{0x34, 0x20},
 
-	/*	 BLK	 */
+	
 	{0x26, 0x23},
 	{0x28, 0xff},
 	{0x29, 0x00},
@@ -130,7 +129,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xa8, 0x02},
 	{0xa9, 0x80},
 
-	/*	ISP	reg		*/
+	
 	{0x40, 0xff},
 	{0x41, 0x21},
 	{0x42, 0xcf},
@@ -147,7 +146,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0x57, 0x02},
 	{0x58, 0x80},
 
-	/*		GAIN	 */
+	
 	{0x70, 0x50},
 	{0x5a, 0x98},
 	{0x5b, 0xdc},
@@ -156,11 +155,11 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0x78, 0x40},
 	{0x79, 0x5f},
 
-	/*		DNDD	*/
+	
 	{0x82, 0x0a},
 	{0x83, 0x0b},
 
-	/*	 EEINTP	 */
+	
 	{0x8f, 0xff},
 	{0x90, 0x8c},
 	{0x91, 0x90},
@@ -169,7 +168,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0x95, 0x43},
 	{0x96, 0x82},
 
-	/*	 ASDE	 */
+	
 	{0xfe, 0x00},
 	{0x9a, 0x20},
 	{0x9b, 0x80},
@@ -182,7 +181,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xaa, 0x50},
 	{0xac, 0x24},
 
-	/*		GAMMA		*/
+	
 	{0xbf, 0x0d},
 	{0xc0, 0x26},
 	{0xc1, 0x3d},
@@ -201,7 +200,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xce, 0xf5},
 	{0xcf, 0xfb},
 
-	/*		YCP	 */
+	
 	{0xd0, 0x40},
 	{0xd1, 0x30},
 	{0xd2, 0x30},
@@ -212,7 +211,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xdd, 0x71},
 	{0x7c, 0x80},
 
-	/*	 AEC	 */
+	
 	{0xfe, 0x01},
 	{0x05, 0x30},
 	{0x06, 0x75},
@@ -252,7 +251,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 
 	{0x44, 0x03},
 
-	/*	 AWB	 */
+	
 	{0x1c, 0x91},
 	{0x21, 0x15},
 	{0x50, 0x80},
@@ -285,7 +284,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0x8a, 0x06},
 	{0x8f, 0x00},
 
-	/*awb*/
+	
 	{0x90, 0x00},
 	{0x91, 0x00},
 	{0x92, 0xf0},
@@ -339,7 +338,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xb8, 0xdd},
 	{0xb9, 0x80},
 
-	/*CC*/
+	
 	{0xfe, 0x01},
 	{0xd0, 0x38},
 	{0xd1, 0xf0},
@@ -354,7 +353,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xda, 0x38},
 	{0xdb, 0xe9},
 
-	/*	 LSC	 */
+	
 	{0xfe, 0x01},
 	{0x76, 0x80},
 	{0xc1, 0x3c},
@@ -371,7 +370,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0xdf, 0x00},
 	{0xde, 0x00},
 
-	/*	 Histogram	*/
+	
 	{0x01, 0x10},
 	{0x0b, 0x31},
 	{0x0e, 0x6c},
@@ -382,20 +381,20 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0x16, 0x60},
 	{0x17, 0x20},
 
-	/* Measure Window */
+	
 	{0xcc, 0x10},
 	{0xcd, 0x10},
 	{0xce, 0xa0},
 	{0xcf, 0xe0},
 
-	/* dark sun  */
+	
 	{0x45, 0xf7},
 	{0x46, 0xff},
 	{0x47, 0x15},
 	{0x48, 0x03},
 	{0x4f, 0x60},
 
-	/* MIPI  */
+	
 	{0xfe, 0x03},
 	{0x01, 0x03},
 	{0x02, 0x22},
@@ -409,7 +408,7 @@ static struct msm_camera_i2c_reg_array gc0310_recommend_setting_list[] = {
 	{0x13, 0x05},
 	{0x15, 0x10},
 	{0x17, 0xf0},
-	/* 1/24M= 42ns */
+	
 	{0x21, 0x02},
 	{0x22, 0x02},
 	{0x23, 0x04},
@@ -577,15 +576,15 @@ int32_t gc0310_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 
 		break;
 	case CFG_SET_INIT_SETTING:
-		/* 1. Write Recommend settings */
-		/* 2. Write change settings */
+		
+		
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_table(
 			s_ctrl->sensor_i2c_client, gc0310_recommend_setting);
 		break;
 
 	case CFG_SET_RESOLUTION: {
-	/*copy from user the desired resoltuion*/
+	
 		enum msm_sensor_resolution_t res = MSM_SENSOR_INVALID_RES;
 		if (copy_from_user(&res, (void *)cdata->cfg.setting,
 			sizeof(enum msm_sensor_resolution_t))) {
@@ -652,16 +651,16 @@ int32_t gc0310_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 			rc = -EFAULT;
 			break;
 		}
-		/* Update sensor slave address */
+		
 		if (sensor_slave_info->slave_addr)
 			s_ctrl->sensor_i2c_client->cci_client->sid =
 				sensor_slave_info->slave_addr >> 1;
 
-		/* Update sensor address type */
+		
 		s_ctrl->sensor_i2c_client->addr_type =
 			sensor_slave_info->addr_type;
 
-		/* Update power up / down sequence */
+		
 		p_ctrl = &s_ctrl->sensordata->power_info;
 		size = sensor_slave_info->power_setting_array.size;
 		if (p_ctrl->power_setting_size < size) {
@@ -831,11 +830,11 @@ int32_t gc0310_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 	case CFG_SET_SHARPNESS:
 		break;
 	case CFG_SET_AUTOFOCUS:
-		/* TO-DO: set the Auto Focus */
+		
 		pr_debug("%s: Setting Auto Focus", __func__);
 		break;
 	case CFG_CANCEL_AUTOFOCUS:
-		/* TO-DO: Cancel the Auto Focus */
+		
 		pr_debug("%s: Cancelling Auto Focus", __func__);
 		break;
 	case CFG_SET_ISO:
@@ -897,15 +896,15 @@ int32_t gc0310_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 
 		break;
 	case CFG_SET_INIT_SETTING:
-		/* 1. Write Recommend settings */
-		/* 2. Write change settings */
+		
+		
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_table(
 			s_ctrl->sensor_i2c_client, gc0310_recommend_setting);
 		break;
 
 	case CFG_SET_RESOLUTION: {
-	/*copy from user the desired resoltuion*/
+	
 		enum msm_sensor_resolution_t res = MSM_SENSOR_INVALID_RES;
 		if (copy_from_user(&res, (void *)cdata->cfg.setting,
 			sizeof(enum msm_sensor_resolution_t))) {
@@ -972,16 +971,16 @@ int32_t gc0310_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			rc = -EFAULT;
 			break;
 		}
-		/* Update sensor slave address */
+		
 		if (sensor_slave_info->slave_addr)
 			s_ctrl->sensor_i2c_client->cci_client->sid =
 				sensor_slave_info->slave_addr >> 1;
 
-		/* Update sensor address type */
+		
 		s_ctrl->sensor_i2c_client->addr_type =
 			sensor_slave_info->addr_type;
 
-		/* Update power up / down sequence */
+		
 		p_ctrl = &s_ctrl->sensordata->power_info;
 		size = sensor_slave_info->power_setting_array.size;
 		if (p_ctrl->power_setting_size < size) {
@@ -1151,11 +1150,11 @@ int32_t gc0310_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 	case CFG_SET_SHARPNESS:
 		break;
 	case CFG_SET_AUTOFOCUS:
-		/* TO-DO: set the Auto Focus */
+		
 		pr_debug("%s: Setting Auto Focus", __func__);
 		break;
 	case CFG_CANCEL_AUTOFOCUS:
-		/* TO-DO: Cancel the Auto Focus */
+		
 		pr_debug("%s: Cancelling Auto Focus", __func__);
 		break;
 	case CFG_SET_ISO:

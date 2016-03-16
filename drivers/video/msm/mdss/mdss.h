@@ -81,9 +81,9 @@ struct mdss_perf_tune {
 #define MDSS_IRQ_REQ		0
 
 struct mdss_intr {
-	/* requested intr */
+	
 	u32 req;
-	/* currently enabled intr */
+	
 	u32 curr;
 	int state;
 	spinlock_t lock;
@@ -110,7 +110,6 @@ enum mdss_hw_index {
 	MDSS_HW_DSI1,
 	MDSS_HW_HDMI,
 	MDSS_HW_EDP,
-	MDSS_HW_IOMMU,
 	MDSS_MAX_HW_BLK
 };
 
@@ -118,12 +117,15 @@ enum mdss_bus_clients {
 	MDSS_MDP_RT,
 	MDSS_DSI_RT,
 	MDSS_MDP_NRT,
+	MDSS_IOMMU_RT,
 	MDSS_MAX_BUS_CLIENTS
 };
 
 enum mdss_hw_quirk {
 	MDSS_QUIRK_BWCPANIC,
 	MDSS_QUIRK_DOWNSCALE_HANG,
+	MDSS_QUIRK_DOWNSCALE_HFLIP_MDPCLK,
+	MDSS_QUIRK_SVS_PLUS_VOTING,
 	MDSS_QUIRK_MAX,
 };
 
@@ -144,13 +146,20 @@ struct mdss_data_type {
 	struct dss_io_data vbif_nrt_io;
 	char __iomem *mdp_base;
 
+	
+	u32 svs_plus_vote;
+	
+	u32 svs_plus_min;
+	
+	u32 svs_plus_max;
+
 	struct mutex reg_lock;
 
-	/* bitmap to track pipes that have BWC enabled */
+	
 	DECLARE_BITMAP(bwc_enable_map, MAX_DRV_SUP_PIPES);
-	/* bitmap to track hw workarounds */
+	
 	DECLARE_BITMAP(mdss_quirk_map, MDSS_QUIRK_MAX);
-	/* bitmap to track total mmbs in use */
+	
 	DECLARE_BITMAP(mmb_alloc_map, MAX_DRV_SUP_MMB_BLKS);
 
 	u32 has_bwc;
@@ -275,11 +284,13 @@ struct mdss_data_type {
 	int iommu_attached;
 	struct mdss_iommu_map_type *iommu_map;
 
+	struct debug_bus *dbg_bus;
+	u32 dbg_bus_size;
 	struct mdss_debug_inf debug_inf;
 	bool mixer_switched;
 	struct mdss_panel_cfg pan_cfg;
 	struct mdss_prefill_data prefill_data;
-	u32 min_prefill_lines; /* this changes within different chipsets */
+	u32 min_prefill_lines; 
 	u32 props;
 
 	int handoff_pending;
@@ -384,4 +395,4 @@ static inline bool mdss_has_quirk(struct mdss_data_type *mdata,
 #define MDSS_REG_READ(mdata, offset) \
 		dss_reg_r(&mdata->mdss_io, offset, 0)
 
-#endif /* MDSS_H */
+#endif 

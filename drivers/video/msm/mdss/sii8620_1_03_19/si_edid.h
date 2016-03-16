@@ -36,7 +36,7 @@ enum data_block_tag_code_e {
 	DBTC_VENDOR_SPECIFIC_DATA_BLOCK,
 	DBTC_SPEAKER_ALLOCATION_DATA_BLOCK,
 	DBTC_VESA_DTC_DATA_BLOCK,
-	
+	/* reserved = 6 */
 	DBTC_USE_EXTENDED_TAG = 7
 };
 
@@ -83,11 +83,11 @@ struct SI_PACK_THIS_STRUCT MHL_short_desc_t {
 
 struct SI_PACK_THIS_STRUCT video_data_block_t {
 	union data_block_header_byte_t header;
-	struct cea_short_descriptor_t short_descriptors[1]; 
+	struct cea_short_descriptor_t short_descriptors[1]; /*open ended */
 };
 
 enum AudioFormatCodes_e {
-	
+	/* reserved = 0 */
 	afd_linear_PCM_IEC60958 = 1,
 	afd_AC3,
 	afd_MPEG1_layers_1_2,
@@ -105,7 +105,7 @@ enum AudioFormatCodes_e {
 
 	afd_DST,
 	afd_WMA_Pro
-	
+	/* reserved = 15 */
 };
 
 struct SI_PACK_THIS_STRUCT CEA_short_audio_descriptor_t {
@@ -141,7 +141,7 @@ struct SI_PACK_THIS_STRUCT CEA_short_audio_descriptor_t {
 
 struct SI_PACK_THIS_STRUCT audio_data_block_t {
 	union data_block_header_byte_t header;
-	
+	/* open ended */
 	struct CEA_short_audio_descriptor_t short_audio_descriptors[1];
 };
 
@@ -219,7 +219,7 @@ struct SI_PACK_THIS_STRUCT HDMI_LLC_Byte14_t {
 struct SI_PACK_THIS_STRUCT VSDB_byte_13_through_byte_15_t {
 	struct HDMI_LLC_Byte13_t byte13;
 	struct HDMI_LLC_Byte14_t byte14;
-	uint8_t vicList[1];	
+	uint8_t vicList[1];	/* variable length list base on HDMI_VIC_len */
 };
 
 struct SI_PACK_THIS_STRUCT VSDB_all_fields_b9_thru_b15_t {
@@ -228,7 +228,7 @@ struct SI_PACK_THIS_STRUCT VSDB_all_fields_b9_thru_b15_t {
 	uint8_t interlaced_video_latency;
 	uint8_t interlaced_audio_latency;
 	struct VSDB_byte_13_through_byte_15_t byte_13_through_byte_15;
-	
+	/* There must be no fields after here */
 };
 
 struct SI_PACK_THIS_STRUCT
@@ -236,7 +236,7 @@ struct SI_PACK_THIS_STRUCT
 	uint8_t interlaced_video_latency;
 	uint8_t interlaced_audio_latency;
 	struct VSDB_byte_13_through_byte_15_t byte_13_through_byte_15;
-	
+	/* There must be no fields after here */
 };
 
 struct SI_PACK_THIS_STRUCT
@@ -244,13 +244,13 @@ struct SI_PACK_THIS_STRUCT
 	uint8_t video_latency;
 	uint8_t audio_latency;
 	struct VSDB_byte_13_through_byte_15_t byte_13_through_byte_15;
-	
+	/* There must be no fields after here */
 };
 
 struct SI_PACK_THIS_STRUCT
 	VSDB_all_fields_b9_thru_b15_sans_all_latency_t {
 	struct VSDB_byte_13_through_byte_15_t byte_13_through_byte_15;
-	
+	/* There must be no fields after here */
 };
 
 struct SI_PACK_THIS_STRUCT HDMI_LLC_vsdb_payload_t {
@@ -269,7 +269,7 @@ struct SI_PACK_THIS_STRUCT HDMI_LLC_vsdb_payload_t {
 		vsdb_b9_to_b15_no_i_latency;
 	    struct VSDB_all_fields_b9_thru_b15_t vsdb_all_fields_b9_thru_b15;
 	} vsdb_fields_b9_thru_b15;
-	
+	/* There must be no fields after here */
 };
 
 struct SI_PACK_THIS_STRUCT _3D_structure_all_15_8_t {
@@ -295,7 +295,7 @@ struct SI_PACK_THIS_STRUCT _3D_mask_t {
 };
 
 struct SI_PACK_THIS_STRUCT _2D_VIC_order_3D_structure_t {
-	enum _3D_structure_e _3D_structure:4; 
+	enum _3D_structure_e _3D_structure:4; /* definition from infoframe */
 	unsigned _2D_VIC_order:4;
 };
 
@@ -306,7 +306,7 @@ struct SI_PACK_THIS_STRUCT _3D_detail_t {
 
 struct SI_PACK_THIS_STRUCT _3D_structure_and_detail_entry_sans_byte1_t {
 	struct _2D_VIC_order_3D_structure_t byte0;
-	
+	/*see HDMI 1.4 spec w.r.t. contents of 3D_structure_X */
 };
 
 struct SI_PACK_THIS_STRUCT _3D_structure_and_detail_entry_with_byte1_t {
@@ -349,7 +349,7 @@ struct SI_PACK_THIS_STRUCT vsdb_t {
 	uint8_t IEEE_OUI[3];
 	union {
 		struct HDMI_LLC_vsdb_payload_t HDMI_LLC;
-		uint8_t payload[1];	
+		uint8_t payload[1];	/* open ended */
 	} payload_u;
 };
 
@@ -420,7 +420,7 @@ struct SI_PACK_THIS_STRUCT CEA_data_block_collection_t {
 		struct extended_tag_code_t extended_tag;
 		struct cea_short_descriptor_t short_descriptor;
 	} payload_u;
-	
+	/* open ended array of cea_short_descriptor_t starts here */
 };
 
 struct SI_PACK_THIS_STRUCT CEA_extension_version_1_t {
@@ -642,8 +642,8 @@ void clear_EDID_block_impl(uint8_t *pData);
 	length)
 #define CLEAR_EDID_BLOCK(pData) clear_EDID_block_impl(pData)
 #else
-#define DUMP_EDID_BLOCK(override, pData, length)	
-#define CLEAR_EDID_BLOCK(pData)	
+#define DUMP_EDID_BLOCK(override, pData, length)	/* nothing to do */
+#define CLEAR_EDID_BLOCK(pData)	/* nothing to do */
 #endif
 
 enum EDID_error_codes {
@@ -664,4 +664,4 @@ enum EDID_error_codes {
 };
 
 SI_POP_STRUCT_PACKING
-#endif 
+#endif /* #if !defined(SI_EDID_H) */

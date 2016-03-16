@@ -1660,17 +1660,12 @@ static int mtp_bind_config(struct usb_configuration *c, bool ptp_config)
 	dev->cdev = c->cdev;
 	dev->function.name = "mtp";
 	dev->function.strings = mtp_strings;
-	if (ptp_config || fsg_mode) {
-		dev->function.fs_descriptors = fs_ptp_descs;
-		dev->function.hs_descriptors = hs_ptp_descs;
-		if (gadget_is_superspeed(c->cdev->gadget))
-			dev->function.ss_descriptors = ss_ptp_descs;
-	} else {
-		dev->function.fs_descriptors = fs_mtp_descs;
-		dev->function.hs_descriptors = hs_mtp_descs;
-		if (gadget_is_superspeed(c->cdev->gadget))
-			dev->function.ss_descriptors = ss_mtp_descs;
-	}
+
+	dev->function.fs_descriptors = fs_ptp_descs;
+	dev->function.hs_descriptors = hs_ptp_descs;
+	if (gadget_is_superspeed(c->cdev->gadget))
+		dev->function.ss_descriptors = ss_ptp_descs;
+
 	dev->function.bind = mtp_function_bind;
 	dev->function.unbind = mtp_function_unbind;
 	dev->function.set_alt = mtp_function_set_alt;

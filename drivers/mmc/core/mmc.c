@@ -1268,10 +1268,14 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 
 	if (oldcard) {
 		if (memcmp(cid, oldcard->raw_cid, sizeof(cid)) != 0) {
-			err = -ENOENT;
-			pr_err("%s: %s: CID memcmp failed %d\n",
-					mmc_hostname(host), __func__, err);
-			goto err;
+			if (!mmc_is_mmc_host(host)) {
+				err = -ENOENT;
+				pr_err("%s: %s: CID memcmp failed %d\n",
+						mmc_hostname(host), __func__, err);
+				goto err;
+			} else
+				pr_err("%s: %s: CID memcmp failed %d, new cid is %x %x %x %x\n",
+						mmc_hostname(host), __func__, err, cid[0], cid[1], cid[2], cid[3]);
 		}
 
 		card = oldcard;
@@ -1395,8 +1399,7 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 				  EXT_CSD_PART_CONFIG_ACC_MASK;
 	}
 
-	if ((host->caps2 & MMC_CAP2_POWEROFF_NOTIFY) &&
-	    (card->ext_csd.rev >= 6)) {
+	if (card->ext_csd.rev >= 6) {
 		err = mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 				 EXT_CSD_POWER_OFF_NOTIFICATION,
 				 EXT_CSD_POWER_ON,
@@ -1608,7 +1611,7 @@ static void mmc_detect(struct mmc_host *host)
 	}
 }
 
-static int mmc_suspend(struct mmc_host *host)
+static int _mmc_suspend(struct mmc_host *host, bool is_suspend)
 {
 	int err = 0;
 
@@ -1620,7 +1623,7 @@ static int mmc_suspend(struct mmc_host *host)
 
 	mmc_disable_clk_scaling(host);
 
-	err = mmc_cache_ctrl(host, 0);
+	err = mmc_flush_cache(host->card);
 	if (err)
 		goto out;
 
@@ -1647,6 +1650,11 @@ static int mmc_reinit(struct mmc_host *host)
 	mmc_release_host(host);
 
 	return err;
+}
+
+static int mmc_suspend(struct mmc_host *host)
+{
+	return _mmc_suspend(host, true);
 }
 
 static int mmc_resume(struct mmc_host *host)

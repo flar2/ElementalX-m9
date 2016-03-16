@@ -184,6 +184,7 @@ struct max1187x_pdata {
 	u32			eng_id;
 	bool			disp_panel_check;
 	char                    disp_panel[36];
+	bool			force_calibration_hall_near;
 	u32			hall_block_touch_time;
 	u32			retry_config_update_delay;
 	struct max1187x_virtual_key *button_data;

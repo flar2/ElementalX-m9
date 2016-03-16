@@ -77,3 +77,7 @@ config LMK_ZYGOTE_PROTECT
 	bool "LMK zygote protect"
 	default n
 	help
+
+config HTC_FD_MONITOR
+        bool "fd operation monitor mechanism"
+        default n

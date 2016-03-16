@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wl_cfgp2p.c 554655 2015-05-06 06:36:36Z $
+ * $Id: wl_cfgp2p.c 560024 2015-05-29 10:14:36Z $
  *
  */
 #include <typedefs.h>
@@ -2005,7 +2005,7 @@ wl_cfgp2p_set_p2p_noa(struct bcm_cfg80211 *cfg, struct net_device *ndev, char* b
 		}
 		else {
 			
-			dongle_noa.action = WL_P2P_SCHED_ACTION_NONE;
+			dongle_noa.action = WL_P2P_SCHED_ACTION_DOZE;
 			dongle_noa.type = WL_P2P_SCHED_TYPE_ABS;
 			if ((cfg->p2p->noa.desc[0].interval == 102) ||
 				(cfg->p2p->noa.desc[0].interval == 100)) {
@@ -2725,9 +2725,6 @@ wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev, struct bcm_cfg80211 *cfg)
 	
 
 	synchronize_rcu();
-
-	
-	CFGP2P_ERR(("wdev is %p before free in wl_cfgp2p_del_p2p_disc_if\n", wdev));
 
 	kfree(wdev);
 

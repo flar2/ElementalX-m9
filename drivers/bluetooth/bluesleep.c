@@ -837,8 +837,8 @@ static int bluesleep_remove(struct platform_device *pdev)
 	gpio_free(bsi->host_wake);
 	gpio_free(bsi->ext_wake);
 	wake_lock_destroy(&bsi->wake_lock);
-	kfree(bsi);
 	mutex_destroy(&bsi->state_mutex);
+	kfree(bsi);
 	return 0;
 }
 

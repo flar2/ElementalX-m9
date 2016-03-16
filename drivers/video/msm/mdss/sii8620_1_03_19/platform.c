@@ -64,6 +64,8 @@
 
 #define RESET_PULSE_WIDTH			1	
 #define MHL_ISR_TIMEOUT 	(5 * HZ)
+#define MHL_STATE_CYCLE 	(5 * HZ)
+#define MHL_STATE_TIMEOUT 	(10 * HZ)
 
 #define GPIO_EXP_INPUT_REGS_OFFSET		0x80
 #define GPIO_EXP_OUTPUT_REGS_OFFSET		0x88
@@ -597,6 +599,31 @@ static void hdmi_offline(void)
 	queue_work(dev_context->wq, &dev_context->mhl_disconnect_notifier_work);
 }
 #endif
+
+static void mhl_status_handler(struct work_struct *w)
+{
+	struct device *dev = NULL;
+	struct mhl_dev_context *dev_context;
+	struct drv_hw_context *hw_context;
+	int cbus_status = 0;
+
+	if (use_spi)
+		dev = &spi_dev->dev;
+	else
+		dev = &device_addresses[0].client->dev;
+
+	dev_context = dev_get_drvdata(dev);
+	hw_context = (struct drv_hw_context *)&dev_context->drv_context;
+
+	if (!dev_context || !hw_context)
+		return;
+
+	cbus_status = mhl_tx_read_reg(hw_context, REG_CBUS_STATUS);
+	pr_info("[MHL]%s:cbus_status%x\n", __func__, cbus_status);
+	if (cbus_status & (BIT_CBUS_STATUS_CBUS_HPD | BIT_CBUS_STATUS_CBUS_CONNECTED))
+		queue_delayed_work(dev_context->wq, &dev_context->mhl_status_work,
+				MHL_STATE_CYCLE);
+}
 
 void mhl_tx_vbus_current_ctl(uint16_t max_current_in_milliamps)
 {
@@ -1560,6 +1587,8 @@ void si_wakeup_mhl(bool b_enableOTG5V)
 	dev_context->fake_cable_out = true;
 	queue_delayed_work(dev_context->wq, &dev_context->irq_timeout_work,
 				MHL_ISR_TIMEOUT);
+	queue_delayed_work(dev_context->wq, &dev_context->mhl_status_work,
+				MHL_STATE_TIMEOUT);
 }
 
 int si_8620_pm_suspend(struct device *dev);
@@ -1758,6 +1787,7 @@ static int __devinit si_8620_mhl_tx_i2c_probe(struct i2c_client *client,
 #endif
 	dev_context->fake_cable_out = false;
 	INIT_DELAYED_WORK(&dev_context->irq_timeout_work, irq_timeout_handler);
+	INIT_DELAYED_WORK(&dev_context->mhl_status_work, mhl_status_handler);
 
 	si_suspend_mhl();
 done:

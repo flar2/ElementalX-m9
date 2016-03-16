@@ -28,13 +28,17 @@
 #include "fpc1020_regs.h"
 #endif
 
+/* -------------------------------------------------------------------- */
+/* fpc1020 driver constants						*/
+/* -------------------------------------------------------------------- */
 extern const bool target_little_endian;
 
 #define FPC1020_DEV_NAME                        "fpc1020"
 
+/* set '0' for dynamic assignment, or '> 0' for static assignment */
 #define FPC1020_MAJOR				0
 
-#define FPC1020_SPI_CLOCK_SPEED			9600000U
+#define FPC1020_SPI_CLOCK_SPEED			9600000U// (8 * 1000000U) // change for qualcomm platform
 
 #define FPC1020_BUFFER_MAX_IMAGES		3
 #define FPC1020_MAX_ADC_SETTINGS        (FPC1020_BUFFER_MAX_IMAGES + 1)
@@ -73,6 +77,9 @@ extern const bool target_little_endian;
 
 #define FPC1020_PXL_BIAS_CTRL			0x0F00
 
+/* -------------------------------------------------------------------- */
+/* fpc1020 data types							*/
+/* -------------------------------------------------------------------- */
 typedef enum {
 	FPC_1020_STATUS_REG_BIT_IRQ			= 1 << 0,
 	FPC_1020_STATUS_REG_BIT_MAIN_IDLE_CMD		= 1 << 1,
@@ -145,10 +152,10 @@ typedef struct fpc1020_setup {
 	u8 capture_settings_mux;
 	u8 capture_count;
 	fpc1020_capture_mode_t capture_mode;
-	u8 capture_row_start;	
-	u8 capture_row_count;	
-	u8 capture_col_start;	
-	u8 capture_col_groups;	
+	u8 capture_row_start;	/* Row 0-191        */
+	u8 capture_row_count;	/* Rows <= 192      */
+	u8 capture_col_start;	/* ADC group 0-23   */
+	u8 capture_col_groups;	/* ADC groups, 1-24 */
 	u8 capture_finger_up_threshold;
 	u8 capture_finger_down_threshold;
 	u8 finger_detect_threshold;
@@ -157,12 +164,12 @@ typedef struct fpc1020_setup {
 } fpc1020_setup_t;
 
 typedef struct fpc1020_diag {
-	const char *chip_id;	
-	u8  selftest;		
-	u16 spi_register;	
-	u8  spi_regsize;	
-	u8  spi_data;		
-	u16 last_capture_time;	
+	const char *chip_id;	/* RO */
+	u8  selftest;		/* RO */
+	u16 spi_register;	/* RW */
+	u8  spi_regsize;	/* RO */
+	u8  spi_data;		/* RW */
+	u16 last_capture_time;	/* RO*/
 } fpc1020_diag_t;
 
 typedef struct fpc1020_chip_info {
@@ -212,6 +219,9 @@ typedef struct {
 } fpc1020_reg_access_t;
 
 
+/* -------------------------------------------------------------------- */
+/* function prototypes							*/
+/* -------------------------------------------------------------------- */
 extern size_t fpc1020_calc_huge_buffer_minsize(fpc1020_data_t *fpc1020);
 
 extern int fpc1020_manage_huge_buffer(fpc1020_data_t *fpc1020,
@@ -292,5 +302,5 @@ extern int fpc1020_set_finger_detect_threshold(fpc1020_data_t *fpc1020,
 
 #define FPC1020_FINGER_DETECT_ZONE_MASK		0x0FFFU
 
-#endif 
+#endif /* LINUX_SPI_FPC1020_COMMON_H */
 

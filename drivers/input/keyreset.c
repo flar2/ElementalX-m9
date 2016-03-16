@@ -29,9 +29,10 @@ struct keyreset_state {
 	int restart_requested;
 	int (*reset_fn)(void);
 	struct platform_device *pdev_child;
+	struct work_struct restart_work;
 };
 
-static void do_restart(void)
+static void do_restart(struct work_struct *unused)
 {
 #if defined(CONFIG_POWER_KEY_CLR_RESET)
 	clear_hw_reset();
@@ -52,7 +53,7 @@ static void do_reset_fn(void *priv)
 		state->restart_requested = state->reset_fn();
 	} else {
 		KEY_LOGI("keyboard reset (default)\n");
-		do_restart();
+		schedule_work(&state->restart_work);
 		state->restart_requested = 1;
 	}
 }
@@ -150,34 +151,41 @@ static int keyreset_probe(struct platform_device *pdev)
 	if (pdev->dev.of_node) {
 		pdata = kzalloc(sizeof(struct keyreset_platform_data), GFP_KERNEL);
 		if (!pdata) {
-			KEY_LOGE("[KEY] fail to allocate keyreset_platform_data\n");
+			KEY_LOGE("fail to allocate keyreset_platform_data\n");
 			ret = -ENOMEM;
 			goto err_get_pdata_fail;
 		}
 		ret = keyreset_parse_dt(pdev->dev.of_node, pdata);
 		if (ret < 0) {
-			KEY_LOGE("[KEY] keyreset_parse_dt fail\n");
+			KEY_LOGE("keyreset_parse_dt fail\n");
 			ret = -ENOMEM;
 			goto err_parse_fail;
 		}
 	} else {
 		pdata = pdev->dev.platform_data;
 		if(!pdata) {
-			KEY_LOGE("[KEY] keyreset_platform_data does not exist\n");
+			KEY_LOGE("keyreset_platform_data does not exist\n");
 			ret = -ENOMEM;
 			goto err_get_pdata_fail;
 		}
 	}
 
 	state = devm_kzalloc(&pdev->dev, sizeof(*state), GFP_KERNEL);
-	if (!state)
-		return -ENOMEM;
+	if (!state) {
+		KEY_LOGE("fail to allocate state\n");
+		ret = -ENOMEM;
+		goto err_alloc_state;
+	}
 
 	state->pdev_child = platform_device_alloc(KEYCOMBO_NAME,
 							PLATFORM_DEVID_AUTO);
-	if (!state->pdev_child)
-		return -ENOMEM;
+	if (!state->pdev_child) {
+		KEY_LOGE("fail to allocate pdev_child\n");
+		ret = -ENOMEM;
+		goto err_alloc_state;
+	}
 	state->pdev_child->dev.parent = &pdev->dev;
+	INIT_WORK(&state->restart_work, do_restart);
 
 	keyp = pdata->keys_down;
 	while ((key = *keyp++)) {
@@ -233,9 +241,15 @@ static int keyreset_probe(struct platform_device *pdev)
 	return platform_device_add(state->pdev_child);
 error:
 	platform_device_put(state->pdev_child);
+err_alloc_state:
 err_parse_fail:
-	if (pdev->dev.of_node)
+	if (pdev->dev.of_node) {
+		if(pdata->keys_up)
+			kfree(pdata->keys_up);
+		if(pdata->keys_down)
+			kfree(pdata->keys_down);
 		kfree(pdata);
+	}
 err_get_pdata_fail:
 	return ret;
 }

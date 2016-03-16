@@ -20,6 +20,7 @@
 
 #include <asm/uaccess.h>
 
+
 int vfs_readdir(struct file *file, filldir_t filler, void *buf)
 {
 	struct inode *inode = file_inode(file);
@@ -47,14 +48,39 @@ out:
 
 EXPORT_SYMBOL(vfs_readdir);
 
-/*
- * Traditional linux readdir() handling..
- *
- * "count=1" is a special case, meaning that the buffer is one
- * dirent-structure in size and that the code can't handle more
- * anyway. Thus the special "fillonedir()" function for that
- * case (the low-level handlers don't need to care about this).
- */
+int iterate_dir(struct file *file, struct dir_context *ctx)
+{
+	struct inode *inode = file_inode(file);
+	int res = -ENOTDIR;
+	if (!file->f_op || (!file->f_op->readdir && !file->f_op->iterate))
+		goto out;
+
+	res = security_file_permission(file, MAY_READ);
+	if (res)
+		goto out;
+
+	res = mutex_lock_killable(&inode->i_mutex);
+	if (res)
+		goto out;
+
+	res = -ENOENT;
+	if (!IS_DEADDIR(inode)) {
+		if (file->f_op->iterate) {
+			ctx->pos = file->f_pos;
+			res = file->f_op->iterate(file, ctx);
+			file->f_pos = ctx->pos;
+		} else {
+			res = file->f_op->readdir(file, ctx, ctx->actor);
+			ctx->pos = file->f_pos;
+		}
+		file_accessed(file);
+	}
+	mutex_unlock(&inode->i_mutex);
+out:
+	return res;
+}
+EXPORT_SYMBOL(iterate_dir);
+
 
 #ifdef __ARCH_WANT_OLD_READDIR
 
@@ -66,6 +92,7 @@ struct old_linux_dirent {
 };
 
 struct readdir_callback {
+	struct dir_context ctx;
 	struct old_linux_dirent __user * dirent;
 	int result;
 };
@@ -73,7 +100,7 @@ struct readdir_callback {
 static int fillonedir(void * __buf, const char * name, int namlen, loff_t offset,
 		      u64 ino, unsigned int d_type)
 {
-	struct readdir_callback * buf = (struct readdir_callback *) __buf;
+	struct readdir_callback *buf = (struct readdir_callback *) __buf;
 	struct old_linux_dirent __user * dirent;
 	unsigned long d_ino;
 
@@ -107,15 +134,15 @@ SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 {
 	int error;
 	struct fd f = fdget(fd);
-	struct readdir_callback buf;
+	struct readdir_callback buf = {
+		.ctx.actor = fillonedir,
+		.dirent = dirent
+	};
 
 	if (!f.file)
 		return -EBADF;
 
-	buf.result = 0;
-	buf.dirent = dirent;
-
-	error = vfs_readdir(f.file, fillonedir, &buf);
+	error = iterate_dir(f.file, &buf.ctx);
 	if (buf.result)
 		error = buf.result;
 
@@ -123,12 +150,8 @@ SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 	return error;
 }
 
-#endif /* __ARCH_WANT_OLD_READDIR */
+#endif 
 
-/*
- * New, all-improved, singing, dancing, iBCS2-compliant getdents()
- * interface. 
- */
 struct linux_dirent {
 	unsigned long	d_ino;
 	unsigned long	d_off;
@@ -137,6 +160,7 @@ struct linux_dirent {
 };
 
 struct getdents_callback {
+	struct dir_context ctx;
 	struct linux_dirent __user * current_dir;
 	struct linux_dirent __user * previous;
 	int count;
@@ -152,7 +176,7 @@ static int filldir(void * __buf, const char * name, int namlen, loff_t offset,
 	int reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,
 		sizeof(long));
 
-	buf->error = -EINVAL;	/* only used if we fail.. */
+	buf->error = -EINVAL;	
 	if (reclen > buf->count)
 		return -EINVAL;
 	d_ino = ino;
@@ -191,7 +215,11 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 {
 	struct fd f;
 	struct linux_dirent __user * lastdirent;
-	struct getdents_callback buf;
+	struct getdents_callback buf = {
+		.ctx.actor = filldir,
+		.count = count,
+		.current_dir = dirent
+	};
 	int error;
 
 	if (!access_ok(VERIFY_WRITE, dirent, count))
@@ -201,17 +229,12 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 	if (!f.file)
 		return -EBADF;
 
-	buf.current_dir = dirent;
-	buf.previous = NULL;
-	buf.count = count;
-	buf.error = 0;
-
-	error = vfs_readdir(f.file, filldir, &buf);
+	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
 	lastdirent = buf.previous;
 	if (lastdirent) {
-		if (put_user(f.file->f_pos, &lastdirent->d_off))
+		if (put_user(buf.ctx.pos, &lastdirent->d_off))
 			error = -EFAULT;
 		else
 			error = count - buf.count;
@@ -221,6 +244,7 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 }
 
 struct getdents_callback64 {
+	struct dir_context ctx;
 	struct linux_dirent64 __user * current_dir;
 	struct linux_dirent64 __user * previous;
 	int count;
@@ -235,7 +259,7 @@ static int filldir64(void * __buf, const char * name, int namlen, loff_t offset,
 	int reclen = ALIGN(offsetof(struct linux_dirent64, d_name) + namlen + 1,
 		sizeof(u64));
 
-	buf->error = -EINVAL;	/* only used if we fail.. */
+	buf->error = -EINVAL;	
 	if (reclen > buf->count)
 		return -EINVAL;
 	dirent = buf->previous;
@@ -271,7 +295,11 @@ SYSCALL_DEFINE3(getdents64, unsigned int, fd,
 {
 	struct fd f;
 	struct linux_dirent64 __user * lastdirent;
-	struct getdents_callback64 buf;
+	struct getdents_callback64 buf = {
+		.ctx.actor = filldir64,
+		.count = count,
+		.current_dir = dirent
+	};
 	int error;
 
 	if (!access_ok(VERIFY_WRITE, dirent, count))
@@ -281,17 +309,12 @@ SYSCALL_DEFINE3(getdents64, unsigned int, fd,
 	if (!f.file)
 		return -EBADF;
 
-	buf.current_dir = dirent;
-	buf.previous = NULL;
-	buf.count = count;
-	buf.error = 0;
-
-	error = vfs_readdir(f.file, filldir64, &buf);
+	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
 	lastdirent = buf.previous;
 	if (lastdirent) {
-		typeof(lastdirent->d_off) d_off = f.file->f_pos;
+		typeof(lastdirent->d_off) d_off = buf.ctx.pos;
 		if (__put_user(d_off, &lastdirent->d_off))
 			error = -EFAULT;
 		else

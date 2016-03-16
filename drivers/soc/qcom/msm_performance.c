@@ -27,43 +27,48 @@
 
 static struct mutex managed_cpus_lock;
 
-/* Maximum number to clusters that this module will manage*/
 static unsigned int num_clusters;
 struct cluster {
 	cpumask_var_t cpus;
-	/* Number of CPUs to maintain online */
+	
 	int max_cpu_request;
-	/* To track CPUs that the module decides to offline */
+	
 	cpumask_var_t offlined_cpus;
-	/* stats for load detection */
-	/* IO */
+	
+	
 	u64 last_io_check_ts;
-	unsigned int iowait_cycle_cnt;
+	unsigned int iowait_enter_cycle_cnt;
+	unsigned int iowait_exit_cycle_cnt;
 	spinlock_t iowait_lock;
 	unsigned int cur_io_busy;
 	bool io_change;
-	/* CPU */
+	
 	unsigned int mode;
 	bool mode_change;
 	u64 last_mode_check_ts;
-	unsigned int single_cycle_cnt;
-	unsigned int multi_cycle_cnt;
+	unsigned int single_enter_cycle_cnt;
+	unsigned int single_exit_cycle_cnt;
+	unsigned int multi_enter_cycle_cnt;
+	unsigned int multi_exit_cycle_cnt;
 	spinlock_t mode_lock;
-	/* Tunables */
+	
 	unsigned int single_enter_load;
 	unsigned int pcpu_multi_enter_load;
 	unsigned int single_exit_load;
 	unsigned int pcpu_multi_exit_load;
-	unsigned int single_cycles;
-	unsigned int multi_cycles;
+	unsigned int single_enter_cycles;
+	unsigned int single_exit_cycles;
+	unsigned int multi_enter_cycles;
+	unsigned int multi_exit_cycles;
+	spinlock_t timer_lock;
+	unsigned int timer_rate;
+	struct timer_list mode_exit_timer;
 };
 static struct cluster **managed_clusters;
 static bool clusters_inited;
 
-/* Work to evaluate the onlining/offlining CPUs */
 struct delayed_work evaluate_hotplug_work;
 
-/* To handle cpufreq min/max request */
 struct cpu_status {
 	unsigned int min;
 	unsigned int max;
@@ -73,27 +78,36 @@ static DEFINE_PER_CPU(struct cpu_status, cpu_stats);
 static unsigned int num_online_managed(struct cpumask *mask);
 static int init_cluster_control(void);
 static int rm_high_pwr_cost_cpus(struct cluster *cl);
+static int init_events_group(void);
 
 static DEFINE_PER_CPU(unsigned int, cpu_power_cost);
 
 struct load_stats {
 	u64 last_wallclock;
-	/* IO wait related */
+	
 	u64 last_iowait;
 	unsigned int last_iopercent;
-	/* CPU load related */
+	
 	unsigned int cpu_load;
 };
 static DEFINE_PER_CPU(struct load_stats, cpu_load_stats);
+
+struct events {
+	spinlock_t cpu_hotplug_lock;
+	bool cpu_hotplug;
+	bool init_success;
+};
+static struct events events_group;
+static struct task_struct *events_notify_thread;
+
 #define LAST_UPDATE_TOL		USEC_PER_MSEC
 
-/* Bitmask to keep track of the workloads being detected */
 static unsigned int workload_detect;
 #define IO_DETECT	1
 #define MODE_DETECT	2
 
-/* IOwait related tunables */
 static unsigned int io_enter_cycles = 4;
+static unsigned int io_exit_cycles = 4;
 static u64 iowait_ceiling_pct = 25;
 static u64 iowait_floor_pct = 8;
 #define LAST_IO_CHECK_TOL	(3 * USEC_PER_MSEC)
@@ -103,7 +117,6 @@ static unsigned int aggr_mode;
 
 static struct task_struct *notify_thread;
 
-/* CPU workload detection related */
 #define NO_MODE		(0)
 #define SINGLE		(1)
 #define MULTI		(2)
@@ -112,11 +125,12 @@ static struct task_struct *notify_thread;
 #define DEF_PCPU_MULTI_ENT	85
 #define DEF_SINGLE_EX		60
 #define DEF_PCPU_MULTI_EX	50
-#define DEF_SINGLE_CYCLE	4
-#define DEF_MULTI_CYCLE		4
+#define DEF_SINGLE_ENTER_CYCLE	4
+#define DEF_SINGLE_EXIT_CYCLE	4
+#define DEF_MULTI_ENTER_CYCLE	4
+#define DEF_MULTI_EXIT_CYCLE	4
 #define LAST_LD_CHECK_TOL	(2 * USEC_PER_MSEC)
 
-/**************************sysfs start********************************/
 
 static int set_num_clusters(const char *buf, const struct kernel_param *kp)
 {
@@ -256,7 +270,6 @@ static const struct kernel_param_ops param_ops_managed_cpus = {
 };
 device_param_cb(managed_cpus, &param_ops_managed_cpus, NULL, 0644);
 
-/* Read-only node: To display all the online managed CPUs */
 static int get_managed_online_cpus(char *buf, const struct kernel_param *kp)
 {
 	int i, cnt = 0;
@@ -290,10 +303,6 @@ static const struct kernel_param_ops param_ops_managed_online_cpus = {
 device_param_cb(managed_online_cpus, &param_ops_managed_online_cpus,
 								NULL, 0444);
 
-/*
- * Userspace sends cpu#:min_freq_value to vote for min_freq_value as the new
- * scaling_min. To withdraw its vote it needs to enter cpu#:0
- */
 static int set_cpu_min_freq(const char *buf, const struct kernel_param *kp)
 {
 	int i, j, ntokens = 0;
@@ -307,7 +316,7 @@ static int set_cpu_min_freq(const char *buf, const struct kernel_param *kp)
 	while ((cp = strpbrk(cp + 1, " :")))
 		ntokens++;
 
-	/* CPU:value pair */
+	
 	if (!(ntokens % 2))
 		return -EINVAL;
 
@@ -328,13 +337,6 @@ static int set_cpu_min_freq(const char *buf, const struct kernel_param *kp)
 		cp++;
 	}
 
-	/*
-	 * Since on synchronous systems policy is shared amongst multiple
-	 * CPUs only one CPU needs to be updated for the limit to be
-	 * reflected for the entire cluster. We can avoid updating the policy
-	 * of other CPUs in the cluster once it is done for at least one CPU
-	 * in the cluster
-	 */
 	get_online_cpus();
 	for_each_cpu(i, limit_mask) {
 		i_cpu_stats = &per_cpu(cpu_stats, i);
@@ -373,10 +375,6 @@ static const struct kernel_param_ops param_ops_cpu_min_freq = {
 };
 module_param_cb(cpu_min_freq, &param_ops_cpu_min_freq, NULL, 0644);
 
-/*
- * Userspace sends cpu#:max_freq_value to vote for max_freq_value as the new
- * scaling_max. To withdraw its vote it needs to enter cpu#:UINT_MAX
- */
 static int set_cpu_max_freq(const char *buf, const struct kernel_param *kp)
 {
 	int i, j, ntokens = 0;
@@ -390,7 +388,7 @@ static int set_cpu_max_freq(const char *buf, const struct kernel_param *kp)
 	while ((cp = strpbrk(cp + 1, " :")))
 		ntokens++;
 
-	/* CPU:value pair */
+	
 	if (!(ntokens % 2))
 		return -EINVAL;
 
@@ -672,7 +670,8 @@ static const struct kernel_param_ops param_ops_pcpu_multi_exit_load = {
 device_param_cb(pcpu_multi_exit_load, &param_ops_pcpu_multi_exit_load,
 								NULL, 0644);
 
-static int set_single_cycles(const char *buf, const struct kernel_param *kp)
+static int set_single_enter_cycles(const char *buf,
+					const struct kernel_param *kp)
 {
 	unsigned int val, i, ntokens = 0;
 	const char *cp = buf;
@@ -693,7 +692,7 @@ static int set_single_cycles(const char *buf, const struct kernel_param *kp)
 		if (sscanf(cp, "%u\n", &val) != 1)
 			return -EINVAL;
 
-		managed_clusters[i]->single_cycles = val;
+		managed_clusters[i]->single_enter_cycles = val;
 
 		bytes_left = PAGE_SIZE - (cp - buf);
 		cp = strnchr(cp, bytes_left, ':');
@@ -703,7 +702,7 @@ static int set_single_cycles(const char *buf, const struct kernel_param *kp)
 	return 0;
 }
 
-static int get_single_cycles(char *buf, const struct kernel_param *kp)
+static int get_single_enter_cycles(char *buf, const struct kernel_param *kp)
 {
 	int i, cnt = 0;
 
@@ -711,20 +710,23 @@ static int get_single_cycles(char *buf, const struct kernel_param *kp)
 		return cnt;
 
 	for (i = 0; i < num_clusters; i++)
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%u:", managed_clusters[i]->single_cycles);
+		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "%u:",
+				managed_clusters[i]->single_enter_cycles);
 	cnt--;
 	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
 	return cnt;
 }
 
-static const struct kernel_param_ops param_ops_single_cycles = {
-	.set = set_single_cycles,
-	.get = get_single_cycles,
+static const struct kernel_param_ops param_ops_single_enter_cycles = {
+	.set = set_single_enter_cycles,
+	.get = get_single_enter_cycles,
 };
-device_param_cb(single_cycles, &param_ops_single_cycles, NULL, 0644);
+device_param_cb(single_enter_cycles, &param_ops_single_enter_cycles,
+								NULL, 0644);
 
-static int set_multi_cycles(const char *buf, const struct kernel_param *kp)
+
+static int set_single_exit_cycles(const char *buf,
+					const struct kernel_param *kp)
 {
 	unsigned int val, i, ntokens = 0;
 	const char *cp = buf;
@@ -745,7 +747,7 @@ static int set_multi_cycles(const char *buf, const struct kernel_param *kp)
 		if (sscanf(cp, "%u\n", &val) != 1)
 			return -EINVAL;
 
-		managed_clusters[i]->multi_cycles = val;
+		managed_clusters[i]->single_exit_cycles = val;
 
 		bytes_left = PAGE_SIZE - (cp - buf);
 		cp = strnchr(cp, bytes_left, ':');
@@ -755,7 +757,7 @@ static int set_multi_cycles(const char *buf, const struct kernel_param *kp)
 	return 0;
 }
 
-static int get_multi_cycles(char *buf, const struct kernel_param *kp)
+static int get_single_exit_cycles(char *buf, const struct kernel_param *kp)
 {
 	int i, cnt = 0;
 
@@ -764,17 +766,122 @@ static int get_multi_cycles(char *buf, const struct kernel_param *kp)
 
 	for (i = 0; i < num_clusters; i++)
 		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%u:", managed_clusters[i]->multi_cycles);
+				"%u:", managed_clusters[i]->single_exit_cycles);
 	cnt--;
 	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
 	return cnt;
 }
 
-static const struct kernel_param_ops param_ops_multi_cycles = {
-	.set = set_multi_cycles,
-	.get = get_multi_cycles,
+static const struct kernel_param_ops param_ops_single_exit_cycles = {
+	.set = set_single_exit_cycles,
+	.get = get_single_exit_cycles,
 };
-device_param_cb(multi_cycles, &param_ops_multi_cycles, NULL, 0644);
+device_param_cb(single_exit_cycles, &param_ops_single_exit_cycles, NULL, 0644);
+
+static int set_multi_enter_cycles(const char *buf,
+					const struct kernel_param *kp)
+{
+	unsigned int val, i, ntokens = 0;
+	const char *cp = buf;
+	unsigned int bytes_left;
+
+	if (!clusters_inited)
+		return -EINVAL;
+
+	while ((cp = strpbrk(cp + 1, ":")))
+		ntokens++;
+
+	if (ntokens != (num_clusters - 1))
+		return -EINVAL;
+
+	cp = buf;
+	for (i = 0; i < num_clusters; i++) {
+
+		if (sscanf(cp, "%u\n", &val) != 1)
+			return -EINVAL;
+
+		managed_clusters[i]->multi_enter_cycles = val;
+
+		bytes_left = PAGE_SIZE - (cp - buf);
+		cp = strnchr(cp, bytes_left, ':');
+		cp++;
+	}
+
+	return 0;
+}
+
+static int get_multi_enter_cycles(char *buf, const struct kernel_param *kp)
+{
+	int i, cnt = 0;
+
+	if (!clusters_inited)
+		return cnt;
+
+	for (i = 0; i < num_clusters; i++)
+		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
+				"%u:", managed_clusters[i]->multi_enter_cycles);
+	cnt--;
+	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
+	return cnt;
+}
+
+static const struct kernel_param_ops param_ops_multi_enter_cycles = {
+	.set = set_multi_enter_cycles,
+	.get = get_multi_enter_cycles,
+};
+device_param_cb(multi_enter_cycles, &param_ops_multi_enter_cycles, NULL, 0644);
+
+static int set_multi_exit_cycles(const char *buf, const struct kernel_param *kp)
+{
+	unsigned int val, i, ntokens = 0;
+	const char *cp = buf;
+	unsigned int bytes_left;
+
+	if (!clusters_inited)
+		return -EINVAL;
+
+	while ((cp = strpbrk(cp + 1, ":")))
+		ntokens++;
+
+	if (ntokens != (num_clusters - 1))
+		return -EINVAL;
+
+	cp = buf;
+	for (i = 0; i < num_clusters; i++) {
+
+		if (sscanf(cp, "%u\n", &val) != 1)
+			return -EINVAL;
+
+		managed_clusters[i]->multi_exit_cycles = val;
+
+		bytes_left = PAGE_SIZE - (cp - buf);
+		cp = strnchr(cp, bytes_left, ':');
+		cp++;
+	}
+
+	return 0;
+}
+
+static int get_multi_exit_cycles(char *buf, const struct kernel_param *kp)
+{
+	int i, cnt = 0;
+
+	if (!clusters_inited)
+		return cnt;
+
+	for (i = 0; i < num_clusters; i++)
+		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
+				"%u:", managed_clusters[i]->multi_exit_cycles);
+	cnt--;
+	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, " ");
+	return cnt;
+}
+
+static const struct kernel_param_ops param_ops_multi_exit_cycles = {
+	.set = set_multi_exit_cycles,
+	.get = get_multi_exit_cycles,
+};
+device_param_cb(multi_exit_cycles, &param_ops_multi_exit_cycles, NULL, 0644);
 
 static int set_io_enter_cycles(const char *buf, const struct kernel_param *kp)
 {
@@ -798,6 +905,29 @@ static const struct kernel_param_ops param_ops_io_enter_cycles = {
 	.get = get_io_enter_cycles,
 };
 device_param_cb(io_enter_cycles, &param_ops_io_enter_cycles, NULL, 0644);
+
+static int set_io_exit_cycles(const char *buf, const struct kernel_param *kp)
+{
+	unsigned int val;
+
+	if (sscanf(buf, "%u\n", &val) != 1)
+		return -EINVAL;
+
+	io_exit_cycles = val;
+
+	return 0;
+}
+
+static int get_io_exit_cycles(char *buf, const struct kernel_param *kp)
+{
+	return snprintf(buf, PAGE_SIZE, "%u", io_exit_cycles);
+}
+
+static const struct kernel_param_ops param_ops_io_exit_cycles = {
+	.set = set_io_exit_cycles,
+	.get = get_io_exit_cycles,
+};
+device_param_cb(io_exit_cycles, &param_ops_io_exit_cycles, NULL, 0644);
 
 static int set_iowait_floor_pct(const char *buf, const struct kernel_param *kp)
 {
@@ -871,7 +1001,8 @@ static int set_workload_detect(const char *buf, const struct kernel_param *kp)
 		for (i = 0; i < num_clusters; i++) {
 			i_cl = managed_clusters[i];
 			spin_lock_irqsave(&i_cl->iowait_lock, flags);
-			i_cl->iowait_cycle_cnt = 0;
+			i_cl->iowait_enter_cycle_cnt = 0;
+			i_cl->iowait_exit_cycle_cnt = 0;
 			i_cl->cur_io_busy = 0;
 			i_cl->io_change = true;
 			spin_unlock_irqrestore(&i_cl->iowait_lock, flags);
@@ -881,8 +1012,10 @@ static int set_workload_detect(const char *buf, const struct kernel_param *kp)
 		for (i = 0; i < num_clusters; i++) {
 			i_cl = managed_clusters[i];
 			spin_lock_irqsave(&i_cl->mode_lock, flags);
-			i_cl->single_cycle_cnt = 0;
-			i_cl->multi_cycle_cnt = 0;
+			i_cl->single_enter_cycle_cnt = 0;
+			i_cl->single_exit_cycle_cnt = 0;
+			i_cl->multi_enter_cycle_cnt = 0;
+			i_cl->multi_exit_cycle_cnt = 0;
 			i_cl->mode = 0;
 			i_cl->mode_change = true;
 			spin_unlock_irqrestore(&i_cl->mode_lock, flags);
@@ -932,7 +1065,24 @@ static struct attribute_group attr_group = {
 	.attrs = attrs,
 };
 
-/*******************************sysfs ends************************************/
+static struct kobject *events_kobj;
+
+static ssize_t show_cpu_hotplug(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "\n");
+}
+static struct kobj_attribute cpu_hotplug_attr =
+__ATTR(cpu_hotplug, 0444, show_cpu_hotplug, NULL);
+
+static struct attribute *events_attrs[] = {
+	&cpu_hotplug_attr.attr,
+	NULL,
+};
+
+static struct attribute_group events_attr_group = {
+	.attrs = events_attrs,
+};
 
 static unsigned int num_online_managed(struct cpumask *mask)
 {
@@ -1035,7 +1185,55 @@ static int notify_userspace(void *data)
 	return 0;
 }
 
-static void check_cluster_iowait(struct cluster *cl, unsigned int rate, u64 now)
+static void hotplug_notify(int action)
+{
+	unsigned long flags;
+
+	if (!events_group.init_success)
+		return;
+
+	if ((action == CPU_ONLINE) || (action == CPU_DEAD)) {
+		spin_lock_irqsave(&(events_group.cpu_hotplug_lock), flags);
+		events_group.cpu_hotplug = true;
+		spin_unlock_irqrestore(&(events_group.cpu_hotplug_lock), flags);
+		wake_up_process(events_notify_thread);
+	}
+}
+
+static int events_notify_userspace(void *data)
+{
+	unsigned long flags;
+	bool notify_change;
+
+	while (1) {
+
+		set_current_state(TASK_INTERRUPTIBLE);
+		spin_lock_irqsave(&(events_group.cpu_hotplug_lock), flags);
+
+		if (!events_group.cpu_hotplug) {
+			spin_unlock_irqrestore(&(events_group.cpu_hotplug_lock),
+									flags);
+
+			schedule();
+			if (kthread_should_stop())
+				break;
+			spin_lock_irqsave(&(events_group.cpu_hotplug_lock),
+									flags);
+		}
+
+		set_current_state(TASK_RUNNING);
+		notify_change = events_group.cpu_hotplug;
+		events_group.cpu_hotplug = false;
+		spin_unlock_irqrestore(&(events_group.cpu_hotplug_lock), flags);
+
+		if (notify_change)
+			sysfs_notify(events_kobj, NULL, "cpu_hotplug");
+	}
+
+	return 0;
+}
+
+static void check_cluster_iowait(struct cluster *cl, u64 now)
 {
 	struct load_stats *pcpu_st;
 	unsigned int i;
@@ -1045,8 +1243,9 @@ static void check_cluster_iowait(struct cluster *cl, unsigned int rate, u64 now)
 
 	spin_lock_irqsave(&cl->iowait_lock, flags);
 
-	if (((now - cl->last_io_check_ts) < (rate - LAST_IO_CHECK_TOL)) ||
-					!(workload_detect & IO_DETECT)) {
+	if (((now - cl->last_io_check_ts)
+		< (cl->timer_rate - LAST_IO_CHECK_TOL)) ||
+		!(workload_detect & IO_DETECT)) {
 		spin_unlock_irqrestore(&cl->iowait_lock, flags);
 		return;
 	}
@@ -1054,7 +1253,8 @@ static void check_cluster_iowait(struct cluster *cl, unsigned int rate, u64 now)
 	temp_iobusy = cl->cur_io_busy;
 	for_each_cpu(i, cl->cpus) {
 		pcpu_st = &per_cpu(cpu_load_stats, i);
-		if ((now - pcpu_st->last_wallclock) > (rate + LAST_UPDATE_TOL))
+		if ((now - pcpu_st->last_wallclock)
+			> (cl->timer_rate + LAST_UPDATE_TOL))
 			continue;
 		if (max_iowait < pcpu_st->last_iopercent)
 			max_iowait = pcpu_st->last_iopercent;
@@ -1062,24 +1262,29 @@ static void check_cluster_iowait(struct cluster *cl, unsigned int rate, u64 now)
 
 	if (!cl->cur_io_busy) {
 		if (max_iowait > iowait_ceiling_pct) {
-			cl->iowait_cycle_cnt++;
-			if (cl->iowait_cycle_cnt >= io_enter_cycles)
+			cl->iowait_enter_cycle_cnt++;
+			if (cl->iowait_enter_cycle_cnt >= io_enter_cycles) {
 				cl->cur_io_busy = 1;
+				cl->iowait_enter_cycle_cnt = 0;
+			}
 		} else {
-			cl->iowait_cycle_cnt = 0;
+			cl->iowait_enter_cycle_cnt = 0;
 		}
 	} else {
 		if (max_iowait < iowait_floor_pct) {
-			cl->iowait_cycle_cnt--;
-			if (!cl->iowait_cycle_cnt)
+			cl->iowait_exit_cycle_cnt++;
+			if (cl->iowait_exit_cycle_cnt >= io_exit_cycles) {
 				cl->cur_io_busy = 0;
+				cl->iowait_exit_cycle_cnt = 0;
+			}
 		} else {
-			cl->iowait_cycle_cnt = io_enter_cycles;
+			cl->iowait_exit_cycle_cnt = 0;
 		}
 	}
+
 	cl->last_io_check_ts = now;
-	trace_track_iowait(cpumask_first(cl->cpus), cl->iowait_cycle_cnt,
-						cl->cur_io_busy, max_iowait);
+	trace_track_iowait(cpumask_first(cl->cpus), cl->iowait_enter_cycle_cnt,
+			cl->iowait_exit_cycle_cnt, cl->cur_io_busy, max_iowait);
 
 	if (temp_iobusy != cl->cur_io_busy) {
 		cl->io_change = true;
@@ -1091,7 +1296,46 @@ static void check_cluster_iowait(struct cluster *cl, unsigned int rate, u64 now)
 		wake_up_process(notify_thread);
 }
 
-static void check_cpu_load(struct cluster *cl, unsigned int rate, u64 now)
+static void disable_timer(struct cluster *cl)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&cl->timer_lock, flags);
+
+	if (del_timer(&cl->mode_exit_timer)) {
+		trace_single_cycle_exit_timer_stop(cpumask_first(cl->cpus),
+			cl->single_enter_cycles, cl->single_enter_cycle_cnt,
+			cl->single_exit_cycles, cl->single_exit_cycle_cnt,
+			cl->multi_enter_cycles, cl->multi_enter_cycle_cnt,
+			cl->multi_exit_cycles, cl->multi_exit_cycle_cnt,
+			cl->timer_rate, cl->mode);
+	}
+
+	spin_unlock_irqrestore(&cl->timer_lock, flags);
+}
+
+static void start_timer(struct cluster *cl)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&cl->timer_lock, flags);
+	if ((cl->mode & SINGLE) && !timer_pending(&cl->mode_exit_timer)) {
+		
+		cl->mode_exit_timer.expires = get_jiffies_64() +
+		usecs_to_jiffies(cl->single_exit_cycles * cl->timer_rate);
+		cl->mode_exit_timer.data = cpumask_first(cl->cpus);
+		add_timer(&cl->mode_exit_timer);
+		trace_single_cycle_exit_timer_start(cpumask_first(cl->cpus),
+			cl->single_enter_cycles, cl->single_enter_cycle_cnt,
+			cl->single_exit_cycles, cl->single_exit_cycle_cnt,
+			cl->multi_enter_cycles, cl->multi_enter_cycle_cnt,
+			cl->multi_exit_cycles, cl->multi_exit_cycle_cnt,
+			cl->timer_rate, cl->mode);
+	}
+	spin_unlock_irqrestore(&cl->timer_lock, flags);
+}
+
+static void check_cpu_load(struct cluster *cl, u64 now)
 {
 	struct load_stats *pcpu_st;
 	unsigned int i, max_load = 0, total_load = 0, ret_mode, cpu_cnt = 0;
@@ -1100,15 +1344,17 @@ static void check_cpu_load(struct cluster *cl, unsigned int rate, u64 now)
 
 	spin_lock_irqsave(&cl->mode_lock, flags);
 
-	if (((now - cl->last_mode_check_ts) < (rate - LAST_LD_CHECK_TOL)) ||
-					!(workload_detect & MODE_DETECT)) {
+	if (((now - cl->last_mode_check_ts)
+		< (cl->timer_rate - LAST_LD_CHECK_TOL)) ||
+		!(workload_detect & MODE_DETECT)) {
 		spin_unlock_irqrestore(&cl->mode_lock, flags);
 		return;
 	}
 
 	for_each_cpu(i, cl->cpus) {
 		pcpu_st = &per_cpu(cpu_load_stats, i);
-		if ((now - pcpu_st->last_wallclock) > (rate + LAST_UPDATE_TOL))
+		if ((now - pcpu_st->last_wallclock)
+			> (cl->timer_rate + LAST_UPDATE_TOL))
 			continue;
 		if (pcpu_st->cpu_load > max_load)
 			max_load = pcpu_st->cpu_load;
@@ -1127,37 +1373,52 @@ static void check_cpu_load(struct cluster *cl, unsigned int rate, u64 now)
 	ret_mode = cl->mode;
 	if (!(cl->mode & SINGLE)) {
 		if (max_load >= cl->single_enter_load) {
-			cl->single_cycle_cnt++;
-			if (cl->single_cycle_cnt >= cl->single_cycles)
+			cl->single_enter_cycle_cnt++;
+			if (cl->single_enter_cycle_cnt
+				>= cl->single_enter_cycles) {
 				ret_mode |= SINGLE;
+				cl->single_enter_cycle_cnt = 0;
+			}
 		} else {
-			cl->single_cycle_cnt = 0;
+			cl->single_enter_cycle_cnt = 0;
 		}
 	} else {
 		if (max_load < cl->single_exit_load) {
-			cl->single_cycle_cnt--;
-			if (!cl->single_cycle_cnt)
+			start_timer(cl);
+			cl->single_exit_cycle_cnt++;
+			if (cl->single_exit_cycle_cnt
+				>= cl->single_exit_cycles) {
 				ret_mode &= ~SINGLE;
+				cl->single_exit_cycle_cnt = 0;
+				disable_timer(cl);
+			}
 		} else {
-			cl->single_cycle_cnt = cl->single_cycles;
+			cl->single_exit_cycle_cnt = 0;
+			disable_timer(cl);
 		}
 	}
 
 	if (!(cl->mode & MULTI)) {
 		if (total_load >= total_load_ceil) {
-			cl->multi_cycle_cnt++;
-			if (cl->multi_cycle_cnt >= cl->multi_cycles)
+			cl->multi_enter_cycle_cnt++;
+			if (cl->multi_enter_cycle_cnt
+				>= cl->multi_enter_cycles) {
 				ret_mode |= MULTI;
+				cl->multi_enter_cycle_cnt = 0;
+			}
 		} else {
-			cl->multi_cycle_cnt = 0;
+			cl->multi_enter_cycle_cnt = 0;
 		}
 	} else {
 		if (total_load < total_load_floor) {
-			cl->multi_cycle_cnt--;
-			if (!cl->multi_cycle_cnt)
+			cl->multi_exit_cycle_cnt++;
+			if (cl->multi_exit_cycle_cnt
+				>= cl->multi_exit_cycles) {
 				ret_mode &= ~MULTI;
+				cl->multi_exit_cycle_cnt = 0;
+			}
 		} else {
-			cl->multi_cycle_cnt = cl->multi_cycles;
+			cl->multi_exit_cycle_cnt = 0;
 		}
 	}
 
@@ -1170,8 +1431,9 @@ static void check_cpu_load(struct cluster *cl, unsigned int rate, u64 now)
 	}
 
 	trace_cpu_mode_detect(cpumask_first(cl->cpus), max_load,
-		cl->single_cycle_cnt, total_load, cl->multi_cycle_cnt,
-		cl->mode, cpu_cnt);
+		cl->single_enter_cycle_cnt, cl->single_exit_cycle_cnt,
+		total_load, cl->multi_enter_cycle_cnt,
+		cl->multi_exit_cycle_cnt, cl->mode, cpu_cnt);
 
 	spin_unlock_irqrestore(&cl->mode_lock, flags);
 
@@ -1179,8 +1441,7 @@ static void check_cpu_load(struct cluster *cl, unsigned int rate, u64 now)
 		wake_up_process(notify_thread);
 }
 
-static void check_workload_stats(unsigned int cpu, unsigned int timer_rate,
-									u64 now)
+static void check_workload_stats(unsigned int cpu, unsigned int rate, u64 now)
 {
 	struct cluster *cl = NULL;
 	unsigned int i;
@@ -1194,8 +1455,9 @@ static void check_workload_stats(unsigned int cpu, unsigned int timer_rate,
 	if (cl == NULL)
 		return;
 
-	check_cluster_iowait(cl, timer_rate, now);
-	check_cpu_load(cl, timer_rate, now);
+	cl->timer_rate = rate;
+	check_cluster_iowait(cl, now);
+	check_cpu_load(cl, now);
 }
 
 static int perf_govinfo_notify(struct notifier_block *nb, unsigned long val,
@@ -1231,10 +1493,6 @@ static int perf_govinfo_notify(struct notifier_block *nb, unsigned long val,
 	cpu_st->last_iowait = cur_iowait;
 	cpu_st->cpu_load = gov_info->load;
 
-	/*
-	 * Avoid deadlock in case governor notifier ran in the context
-	 * of notify_work thread
-	 */
 	if (current == notify_thread)
 		return NOTIFY_OK;
 
@@ -1246,10 +1504,6 @@ static struct notifier_block perf_govinfo_nb = {
 	.notifier_call = perf_govinfo_notify,
 };
 
-/*
- * Attempt to offline CPUs based on their power cost.
- * CPUs with higher power costs are offlined first.
- */
 static int __ref rm_high_pwr_cost_cpus(struct cluster *cl)
 {
 	unsigned int cpu, i;
@@ -1317,11 +1571,6 @@ end:
 		return 0;
 }
 
-/*
- * try_hotplug tries to online/offline cores based on the current requirement.
- * It loops through the currently managed CPUs and tries to online/offline
- * them until the max_cpu_request criteria is met.
- */
 static void __ref try_hotplug(struct cluster *data)
 {
 	unsigned int i;
@@ -1339,10 +1588,6 @@ static void __ref try_hotplug(struct cluster *data)
 			return;
 		}
 
-		/*
-		 * If power aware offlining fails due to power cost info
-		 * being unavaiable fall back to original implementation
-		 */
 		for (i = num_present_cpus() - 1; i >= 0 &&
 						i < num_present_cpus(); i--) {
 			if (!cpumask_test_cpu(i, data->cpus) ||	!cpu_online(i))
@@ -1390,7 +1635,6 @@ static void __ref release_cluster_control(struct cpumask *off_cpus)
 	}
 }
 
-/* Work to evaluate current online CPU status and hotplug CPUs as per need*/
 static void check_cluster_status(struct work_struct *work)
 {
 	int i;
@@ -1421,10 +1665,14 @@ static int __ref msm_performance_cpu_callback(struct notifier_block *nfb,
 	unsigned int i;
 	struct cluster *i_cl = NULL;
 
+	hotplug_notify(action);
+
 	if (!clusters_inited)
 		return NOTIFY_OK;
 
 	for (i = 0; i < num_clusters; i++) {
+		if (managed_clusters[i]->cpus == NULL)
+			return NOTIFY_OK;
 		if (cpumask_test_cpu(cpu, managed_clusters[i]->cpus)) {
 			i_cl = managed_clusters[i];
 			break;
@@ -1435,10 +1683,8 @@ static int __ref msm_performance_cpu_callback(struct notifier_block *nfb,
 		return NOTIFY_OK;
 
 	if (action == CPU_UP_PREPARE || action == CPU_UP_PREPARE_FROZEN) {
-		/*
-		 * Prevent onlining of a managed CPU if max_cpu criteria is
-		 * already satisfied
-		 */
+		if (i_cl->offlined_cpus == NULL)
+			return NOTIFY_OK;
 		if (i_cl->max_cpu_request <=
 					num_online_managed(i_cl->cpus)) {
 			pr_debug("msm_perf: Prevent CPU%d onlining\n", cpu);
@@ -1448,13 +1694,10 @@ static int __ref msm_performance_cpu_callback(struct notifier_block *nfb,
 		cpumask_clear_cpu(cpu, i_cl->offlined_cpus);
 
 	} else if (action == CPU_DEAD) {
+		if (i_cl->offlined_cpus == NULL)
+			return NOTIFY_OK;
 		if (cpumask_test_cpu(cpu, i_cl->offlined_cpus))
 			return NOTIFY_OK;
-		/*
-		 * Schedule a re-evaluation to check if any more CPUs can be
-		 * brought online to meet the max_cpu_request requirement. This
-		 * work is delayed to account for CPU hotplug latencies
-		 */
 		if (schedule_delayed_work(&evaluate_hotplug_work, 0)) {
 			trace_reevaluate_hotplug(cpumask_bits(i_cl->cpus)[0],
 							i_cl->max_cpu_request);
@@ -1471,10 +1714,46 @@ static struct notifier_block __refdata msm_performance_cpu_notifier = {
 	.notifier_call = msm_performance_cpu_callback,
 };
 
+static void single_mod_exit_timer(unsigned long data)
+{
+	int i;
+	struct cluster *i_cl = NULL;
+	unsigned long flags;
+	if (!clusters_inited)
+		return;
+
+	for (i = 0; i < num_clusters; i++) {
+		if (cpumask_test_cpu(data,
+			managed_clusters[i]->cpus)) {
+			i_cl = managed_clusters[i];
+			break;
+		}
+	}
+
+	if (i_cl == NULL)
+		return;
+
+	spin_lock_irqsave(&i_cl->mode_lock, flags);
+	if (i_cl->mode & SINGLE) {
+		
+		i_cl->mode = i_cl->mode & ~SINGLE;
+		i_cl->single_enter_cycle_cnt = 0;
+		i_cl->single_exit_cycle_cnt = 0;
+		trace_single_mode_timeout(cpumask_first(i_cl->cpus),
+			i_cl->single_enter_cycles, i_cl->single_enter_cycle_cnt,
+			i_cl->single_exit_cycles, i_cl->single_exit_cycle_cnt,
+			i_cl->multi_enter_cycles, i_cl->multi_enter_cycle_cnt,
+			i_cl->multi_exit_cycles, i_cl->multi_exit_cycle_cnt,
+			i_cl->timer_rate, i_cl->mode);
+	}
+	spin_unlock_irqrestore(&i_cl->mode_lock, flags);
+	wake_up_process(notify_thread);
+}
+
 static int init_cluster_control(void)
 {
 	unsigned int i;
-	int ret;
+	int ret = 0;
 	struct kobject *module_kobj;
 
 	managed_clusters = kzalloc(num_clusters * sizeof(struct cluster *),
@@ -1489,20 +1768,41 @@ static int init_cluster_control(void)
 								GFP_KERNEL);
 		if (!managed_clusters[i]) {
 			pr_err("msm_perf:Cluster %u mem alloc failed\n", i);
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto error;
 		}
-
+		if (!alloc_cpumask_var(&managed_clusters[i]->cpus,
+		     GFP_KERNEL)) {
+			pr_err("msm_perf:Cluster %u cpu alloc failed\n",
+			       i);
+			ret = -ENOMEM;
+			goto error;
+		}
+		if (!alloc_cpumask_var(&managed_clusters[i]->offlined_cpus,
+		     GFP_KERNEL)) {
+			pr_err("msm_perf:Cluster %u off_cpus alloc failed\n",
+			       i);
+			ret = -ENOMEM;
+			goto error;
+		}
 		managed_clusters[i]->max_cpu_request = -1;
 		managed_clusters[i]->single_enter_load = DEF_SINGLE_ENT;
 		managed_clusters[i]->single_exit_load = DEF_SINGLE_EX;
-		managed_clusters[i]->single_cycles = DEF_SINGLE_CYCLE;
-		managed_clusters[i]->pcpu_multi_enter_load = DEF_PCPU_MULTI_ENT;
+		managed_clusters[i]->single_enter_cycles
+						= DEF_SINGLE_ENTER_CYCLE;
+		managed_clusters[i]->single_exit_cycles
+						= DEF_SINGLE_EXIT_CYCLE;
+		managed_clusters[i]->pcpu_multi_enter_load
+						= DEF_PCPU_MULTI_ENT;
 		managed_clusters[i]->pcpu_multi_exit_load = DEF_PCPU_MULTI_EX;
-		managed_clusters[i]->single_cycles = DEF_SINGLE_CYCLE;
-		managed_clusters[i]->multi_cycles = DEF_MULTI_CYCLE;
-
+		managed_clusters[i]->multi_enter_cycles = DEF_MULTI_ENTER_CYCLE;
+		managed_clusters[i]->multi_exit_cycles = DEF_MULTI_EXIT_CYCLE;
 		spin_lock_init(&(managed_clusters[i]->iowait_lock));
 		spin_lock_init(&(managed_clusters[i]->mode_lock));
+		spin_lock_init(&(managed_clusters[i]->timer_lock));
+		init_timer(&managed_clusters[i]->mode_exit_timer);
+		managed_clusters[i]->mode_exit_timer.function =
+			single_mod_exit_timer;
 	}
 
 	INIT_DELAYED_WORK(&evaluate_hotplug_work, check_cluster_status);
@@ -1511,21 +1811,73 @@ static int init_cluster_control(void)
 	module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
 	if (!module_kobj) {
 		pr_err("msm_perf: Couldn't find module kobject\n");
-		return -ENOENT;
+		ret = -ENOENT;
+		goto error;
 	}
 	mode_kobj = kobject_create_and_add("workload_modes", module_kobj);
 	if (!mode_kobj) {
 		pr_err("msm_perf: Failed to add mode_kobj\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		kobject_put(module_kobj);
+		goto error;
 	}
 	ret = sysfs_create_group(mode_kobj, &attr_group);
+	if (ret) {
+		pr_err("msm_perf: Failed to create sysfs\n");
+		kobject_put(module_kobj);
+		kobject_put(mode_kobj);
+		goto error;
+	}
+
+	notify_thread = kthread_run(notify_userspace, NULL, "wrkld_notify");
+	clusters_inited = true;
+
+	return 0;
+
+error:
+	for (i = 0; i < num_clusters; i++) {
+		if (!managed_clusters[i])
+			break;
+		if (managed_clusters[i]->offlined_cpus)
+			free_cpumask_var(managed_clusters[i]->offlined_cpus);
+		if (managed_clusters[i]->cpus)
+			free_cpumask_var(managed_clusters[i]->cpus);
+		kfree(managed_clusters[i]);
+	}
+	kfree(managed_clusters);
+	return ret;
+}
+
+static int init_events_group(void)
+{
+	int ret;
+	struct kobject *module_kobj;
+
+	module_kobj = kset_find_obj(module_kset, KBUILD_MODNAME);
+	if (!module_kobj) {
+		pr_err("msm_perf: Couldn't find module kobject\n");
+		return -ENOENT;
+	}
+
+	events_kobj = kobject_create_and_add("events", module_kobj);
+	if (!events_kobj) {
+		pr_err("msm_perf: Failed to add events_kobj\n");
+		return -ENOMEM;
+	}
+
+	ret = sysfs_create_group(events_kobj, &events_attr_group);
 	if (ret) {
 		pr_err("msm_perf: Failed to create sysfs\n");
 		return ret;
 	}
 
-	notify_thread = kthread_run(notify_userspace, NULL, "wrkld_notify");
-	clusters_inited = true;
+	spin_lock_init(&(events_group.cpu_hotplug_lock));
+	events_notify_thread = kthread_run(events_notify_userspace,
+					NULL, "msm_perf:events_notify");
+	if (IS_ERR(events_notify_thread))
+		return PTR_ERR(events_notify_thread);
+
+	events_group.init_success = true;
 
 	return 0;
 }
@@ -1542,7 +1894,8 @@ static int __init msm_performance_init(void)
 
 	register_cpu_notifier(&msm_performance_cpu_notifier);
 
+	init_events_group();
+
 	return 0;
 }
 late_initcall(msm_performance_init);
-

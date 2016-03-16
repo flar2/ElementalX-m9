@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_common.c 542237 2015-03-19 06:49:27Z $
+ * $Id: dhd_common.c 586744 2015-09-16 08:19:27Z $
  */
 #include <typedefs.h>
 #include <osl.h>
@@ -35,6 +35,7 @@
 #include <dhd.h>
 #include <dhd_ip.h>
 #include <proto/bcmevent.h>
+#include <dnglevent.h>
 
 #ifdef SHOW_LOGTRACE
 #include <event_log.h>
@@ -47,6 +48,7 @@
 #include <dhd_bus.h>
 #include <dhd_proto.h>
 #include <dhd_dbg.h>
+#include <dhd_debug.h>
 #include <msgtrace.h>
 
 #ifdef WL_CFG80211
@@ -109,9 +111,6 @@ uint32 dhd_conn_event;
 uint32 dhd_conn_status;
 uint32 dhd_conn_reason;
 
-#if defined(SHOW_EVENTS) && defined(SHOW_LOGTRACE)
-static int check_event_log_sequence_number(uint32 seq_no);
-#endif 
 extern int dhd_iscan_request(void * dhdp, uint16 action);
 extern void dhd_ind_scan_confirm(void *h, bool status);
 extern int dhd_iscan_in_progress(void *h);
@@ -121,6 +120,11 @@ extern int dhd_change_mtu(dhd_pub_t *dhd, int new_mtu, int ifidx);
 #if !defined(AP) && defined(WLP2P)
 extern int dhd_get_concurrent_capabilites(dhd_pub_t *dhd);
 #endif
+
+extern int dhd_socram_dump(struct dhd_bus *bus);
+static void dngl_host_event_process(dhd_pub_t *dhdp, bcm_dngl_event_t *event);
+static int dngl_host_event(dhd_pub_t *dhdp, void *pktdata);
+
 bool ap_cfg_running = FALSE;
 bool ap_fw_loaded = FALSE;
 
@@ -272,8 +276,27 @@ const bcm_iovar_t dhd_iovars[] = {
 	{NULL, 0, 0, 0, 0 }
 };
 
+void dhd_save_fwdump(dhd_pub_t *dhd_pub, void *buffer, uint32 length)
+{
+	if (dhd_pub->soc_ram == NULL) {
+		DHD_ERROR(("%s: Failed to allocate memory for fw crash snap shot.\n",
+			__FUNCTION__));
+		return;
+	}
+
+	if (dhd_pub->soc_ram != buffer) {
+		memset(dhd_pub->soc_ram, 0, dhd_pub->soc_ram_length);
+		dhd_pub->soc_ram_length = length;
+		memcpy(dhd_pub->soc_ram, buffer, length);
+	}
+}
+
 #define DHD_IOVAR_BUF_SIZE	128
 
+int dhd_common_socram_dump(dhd_pub_t *dhdp)
+{
+	return dhd_socram_dump(dhdp->bus);
+}
 
 static int
 dhd_dump(dhd_pub_t *dhdp, char *buf, int buflen)
@@ -347,6 +370,56 @@ dhd_wl_ioctl_cmd(dhd_pub_t *dhd_pub, int cmd, void *arg, int len, uint8 set, int
 	ioc.set = set;
 
 	return dhd_wl_ioctl(dhd_pub, ifidx, &ioc, arg, len);
+}
+
+int
+dhd_wl_ioctl_get_intiovar(dhd_pub_t *dhd_pub, char *name, uint *pval,
+	int cmd, uint8 set, int ifidx)
+{
+	char iovbuf[WLC_IOCTL_SMLEN];
+	int ret;
+
+	
+	if (bcm_mkiovar(name, NULL, 0, iovbuf, sizeof(iovbuf))) {
+		ret = dhd_wl_ioctl_cmd(dhd_pub, cmd, iovbuf, sizeof(iovbuf), set, ifidx);
+		if (!ret) {
+			*pval = ltoh32(*((uint*)iovbuf));
+			return 0;
+		} else {
+			DHD_ERROR(("%s: get int iovar %s failed, ERR %d\n",
+				__FUNCTION__, name, ret));
+		}
+	} else {
+		DHD_ERROR(("%s: mkiovar %s failed\n",
+			__FUNCTION__, name));
+	}
+
+	return -1;
+}
+
+int
+dhd_wl_ioctl_set_intiovar(dhd_pub_t *dhd_pub, char *name, uint val,
+	int cmd, uint8 set, int ifidx)
+{
+	char iovbuf[WLC_IOCTL_SMLEN];
+	int ret;
+	int lval = htol32(val);
+
+	
+	if (bcm_mkiovar(name, (char*)&lval, sizeof(lval), iovbuf, sizeof(iovbuf))) {
+		ret = dhd_wl_ioctl_cmd(dhd_pub, cmd, iovbuf, sizeof(iovbuf), set, ifidx);
+		if (!ret) {
+			return 0;
+		} else {
+			DHD_ERROR(("%s: set int iovar %s failed, ERR %d\n",
+				__FUNCTION__, name, ret));
+		}
+	} else {
+		DHD_ERROR(("%s: mkiovar %s failed\n",
+			__FUNCTION__, name));
+	}
+
+	return -1;
 }
 
 int
@@ -1238,53 +1311,6 @@ dhd_ioctl(dhd_pub_t * dhd_pub, dhd_ioctl_t *ioc, void * buf, uint buflen)
 }
 
 #ifdef SHOW_EVENTS
-#ifdef SHOW_LOGTRACE
-
-#define AVOID_BYTE 64
-#define MAX_NO_OF_ARG 16
-
-static int
-check_event_log_sequence_number(uint32 seq_no)
-{
-	int32 diff;
-	uint32 ret;
-	static uint32 logtrace_seqnum_prev = 0;
-
-	diff = ntoh32(seq_no)-logtrace_seqnum_prev;
-	switch (diff)
-	{
-		case 0:
-			ret = -1; 
-			break;
-
-		case 1:
-			ret =0; 
-			break;
-
-		default:
-			if ((ntoh32(seq_no) == 0) &&
-				(logtrace_seqnum_prev == 0xFFFFFFFF) ) { 
-					ret = 0;
-			} else {
-
-				if (diff > 0) {
-					DHD_EVENT(("WLC_E_TRACE:"
-						"Event lost (log) seqnum %d nblost %d\n",
-						ntoh32(seq_no), (diff-1)));
-				} else {
-					DHD_EVENT(("WLC_E_TRACE:"
-						"Event Packets coming out of order!!\n"));
-				}
-				ret = 0;
-			}
-	}
-
-	logtrace_seqnum_prev = ntoh32(seq_no);
-
-	return ret;
-}
-#endif 
-
 static void
 wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 	void *raw_event_ptr, char *eventmask)
@@ -1461,180 +1487,7 @@ wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 #ifdef SHOW_LOGTRACE
 	case WLC_E_TRACE:
 	{
-		msgtrace_hdr_t hdr;
-		uint32 nblost;
-		uint8 count;
-		char *s, *p;
-		static uint32 seqnum_prev = 0;
-		uint32 *record = NULL;
-		uint32 *log_ptr =  NULL;
-		uint32 writeindex = 0;
-		event_log_hdr_t event_hdr;
-		int no_of_fmts = 0;
-		char *fmt = NULL;
-		dhd_event_log_t *raw_event = (dhd_event_log_t *) raw_event_ptr;
-
-		buf = (uchar *) event_data;
-		memcpy(&hdr, buf, MSGTRACE_HDRLEN);
-
-		if (hdr.version != MSGTRACE_VERSION) {
-			DHD_EVENT(("\nMACEVENT: %s [unsupported version --> "
-				"dhd version:%d dongle version:%d]\n",
-				event_name, MSGTRACE_VERSION, hdr.version));
-			
-			datalen = 0;
-			break;
-		}
-
-		if (hdr.trace_type == MSGTRACE_HDR_TYPE_MSG) {
-			
-			buf[MSGTRACE_HDRLEN + ntoh16(hdr.len)] = '\0';
-
-			if (ntoh32(hdr.discarded_bytes) || ntoh32(hdr.discarded_printf)) {
-				DHD_EVENT(("WLC_E_TRACE: [Discarded traces in dongle -->"
-					"discarded_bytes %d discarded_printf %d]\n",
-					ntoh32(hdr.discarded_bytes),
-					ntoh32(hdr.discarded_printf)));
-			}
-
-			nblost = ntoh32(hdr.seqnum) - seqnum_prev - 1;
-			if (nblost > 0) {
-				DHD_EVENT(("WLC_E_TRACE:"
-					"[Event lost (msg) --> seqnum %d nblost %d\n",
-					ntoh32(hdr.seqnum), nblost));
-			}
-			seqnum_prev = ntoh32(hdr.seqnum);
-
-			p = (char *)&buf[MSGTRACE_HDRLEN];
-			while (*p != '\0' && (s = strstr(p, "\n")) != NULL) {
-				*s = '\0';
-				DHD_EVENT(("%s\n", p));
-				p = s+1;
-			}
-			if (*p)
-				DHD_EVENT(("%s", p));
-
-			
-			datalen = 0;
-
-		} else if (hdr.trace_type == MSGTRACE_HDR_TYPE_LOG) {
-			
-			uint32 timestamp, w, malloc_len;
-
-			if (check_event_log_sequence_number(hdr.seqnum)) {
-
-				DHD_EVENT(("%s: WLC_E_TRACE:"
-					"[Event duplicate (log) %d] dropping!!\n",
-					__FUNCTION__, hdr.seqnum));
-				return; 
-			}
-
-			p = (char *)&buf[MSGTRACE_HDRLEN];
-			datalen -= MSGTRACE_HDRLEN;
-			w = ntoh32((uint32)*p);
-			p += 4;
-			datalen -= 4;
-			timestamp = ntoh32((uint32)*p);
-			BCM_REFERENCE(timestamp);
-			BCM_REFERENCE(w);
-
-			DHD_EVENT(("timestamp %x%x\n", timestamp, w));
-
-			if (raw_event->fmts) {
-				malloc_len = datalen+ AVOID_BYTE;
-				record = (uint32 *)MALLOC(dhd_pub->osh, malloc_len);
-				if (record == NULL) {
-					DHD_EVENT(("MSGTRACE_HDR_TYPE_LOG:"
-						"malloc failed\n"));
-					return;
-				}
-				log_ptr = (uint32 *) (p + datalen);
-				writeindex = datalen/4;
-
-				if (record) {
-					while (datalen > 4) {
-						log_ptr--;
-						datalen -= 4;
-						event_hdr.t = *log_ptr;
-						if (log_ptr - (uint32 *) p < event_hdr.count) {
-								break;
-						}
-						if (event_hdr.tag ==  EVENT_LOG_TAG_NULL) {
-							continue;
-						}
-						if (event_hdr.tag == EVENT_LOG_TAG_TS) {
-							datalen -= 12;
-							log_ptr = log_ptr - 3;
-							continue;
-						}
-
-						log_ptr[0] = event_hdr.t;
-						if (event_hdr.count > MAX_NO_OF_ARG) {
-							break;
-						}
-						log_ptr -= event_hdr.count;
-
-						writeindex = writeindex - event_hdr.count;
-						record[writeindex++] = event_hdr.t;
-						for (count = 0; count < (event_hdr.count-1);
-							count++) {
-							record[writeindex++] = log_ptr[count];
-						}
-						writeindex = writeindex - event_hdr.count;
-						datalen = datalen - (event_hdr.count * 4);
-						no_of_fmts++;
-					}
-				}
-
-				while (no_of_fmts--)
-				{
-					event_log_hdr_t event_hdr;
-					event_hdr.t = record[writeindex];
-
-					if ((event_hdr.fmt_num>>2) < raw_event->num_fmts) {
-						fmt = raw_event->fmts[event_hdr.fmt_num>>2];
-						DHD_EVENT((fmt,
-							record[writeindex + 1],
-							record[writeindex + 2],
-							record[writeindex + 3],
-							record[writeindex + 4],
-							record[writeindex + 5],
-							record[writeindex + 6],
-							record[writeindex + 7],
-							record[writeindex + 8],
-							record[writeindex + 9],
-							record[writeindex + 10],
-							record[writeindex + 11],
-							record[writeindex + 12],
-							record[writeindex + 13],
-							record[writeindex + 14],
-							record[writeindex + 15],
-							record[writeindex + 16]));
-
-						if (fmt[strlen(fmt) - 1] != '\n') {
-							
-							DHD_EVENT(("\n"));
-						}
-					}
-
-					writeindex = writeindex + event_hdr.count;
-				}
-
-				if (record) {
-					MFREE(dhd_pub->osh, record, malloc_len);
-					record = NULL;
-				}
-			} else {
-				while (datalen > 4) {
-					p += 4;
-					datalen -= 4;
-					
-					DHD_EVENT((" %8.8x", *((uint32 *) p)));
-				}
-				DHD_EVENT(("\n"));
-			}
-			datalen = 0;
-		}
+		dhd_dbg_trace_evnt_handler(dhd_pub, event_data, raw_event_ptr, datalen);
 		break;
 	}
 #endif 
@@ -1675,6 +1528,119 @@ wl_show_host_event(dhd_pub_t *dhd_pub, wl_event_msg_t *event, void *event_data,
 #endif 
 
 int
+dngl_host_event(dhd_pub_t *dhdp, void *pktdata)
+{
+	bcm_dngl_event_t *pvt_data = (bcm_dngl_event_t *)pktdata;
+
+	if (bcmp(BRCM_OUI, &pvt_data->bcm_hdr.oui[0], DOT11_OUI_LEN)) {
+		DHD_ERROR(("%s: mismatched OUI, bailing\n", __FUNCTION__));
+		return BCME_ERROR;
+	}
+	
+	if (ntoh16_ua((void *)&pvt_data->bcm_hdr.usr_subtype) ==
+		BCMILCP_BCM_SUBTYPE_DNGLEVENT) {
+		dngl_host_event_process(dhdp, pvt_data);
+		return BCME_OK;
+	}
+	return BCME_ERROR;
+}
+
+void
+dngl_host_event_process(dhd_pub_t *dhdp, bcm_dngl_event_t *event)
+{
+	bcm_dngl_event_msg_t *dngl_event = &event->dngl_event;
+	uint8 *p = (uint8 *)(event + 1);
+	uint16 type = ntoh16_ua((void *)&dngl_event->event_type);
+	uint16 datalen = ntoh16_ua((void *)&dngl_event->datalen);
+	uint16 version = ntoh16_ua((void *)&dngl_event->version);
+
+	DHD_EVENT(("VERSION:%d, EVENT TYPE:%d, DATALEN:%d\n", version, type, datalen));
+	if (version != BCM_DNGL_EVENT_MSG_VERSION) {
+		DHD_ERROR(("%s:version mismatch:%d:%d\n", __FUNCTION__,
+			version, BCM_DNGL_EVENT_MSG_VERSION));
+		return;
+	}
+	if (dhd_socram_dump(dhdp->bus)) {
+		DHD_ERROR(("%s: socram dump failed\n", __FUNCTION__));
+	} else {
+		dhd_dbg_send_urgent_evt(dhdp, p, datalen);
+	}
+	switch (type) {
+	case DNGL_E_SOCRAM_IND:
+	{
+		bcm_dngl_socramind_t *socramind_ptr = (bcm_dngl_socramind_t *)p;
+		uint16 tag = ltoh32(socramind_ptr->tag);
+		uint16 taglen = ltoh32(socramind_ptr->length);
+		p = (uint8 *)socramind_ptr->value;
+		DHD_EVENT(("Tag:%d Len:%d Datalen:%d\n", tag, taglen, datalen));
+		switch (tag) {
+		case SOCRAM_IND_ASSRT_TAG:
+		{
+			char *fnname = (char *)p;
+			if (datalen < (ROUNDUP(strlen(fnname) + 1, sizeof(uint32)) +
+				sizeof(uint32) * 2)) {
+				DHD_ERROR(("Wrong length:%d\n", datalen));
+				return;
+			}
+			DHD_EVENT(("ASSRT Function:%s ", p));
+			p += ROUNDUP(strlen(p) + 1, sizeof(uint32));
+			DHD_EVENT(("Line:%d ", *(uint32 *)p));
+			p += sizeof(uint32);
+			DHD_EVENT(("Caller Addr:0x%x\n", *(uint32 *)p));
+			break;
+		}
+		case SOCRAM_IND_TAG_HEALTH_CHECK:
+		{
+			bcm_dngl_healthcheck_t *dngl_hc = (bcm_dngl_healthcheck_t *)p;
+			DHD_EVENT(("SOCRAM_IND_HEALTHCHECK_TAG:%d Len:%d\n",
+				ltoh32(dngl_hc->top_module_tag), ltoh32(dngl_hc->top_module_len)));
+			if (DHD_EVENT_ON()) {
+				prhex("HEALTHCHECK", p, ltoh32(dngl_hc->top_module_len));
+			}
+			p = (uint8 *)dngl_hc->value;
+
+			switch (ltoh32(dngl_hc->top_module_tag)) {
+			case HEALTH_CHECK_TOP_LEVEL_MODULE_PCIEDEV_RTE:
+			{
+				bcm_dngl_pcie_hc_t *pcie_hc = (bcm_dngl_pcie_hc_t *)p;
+				if (ltoh32(dngl_hc->top_module_len) < sizeof(bcm_dngl_pcie_hc_t)) {
+					DHD_ERROR(("Wrong length:%d\n",
+						ltoh32(dngl_hc->top_module_len)));
+					return;
+				}
+				DHD_EVENT(("%d:PCIE HC error:%d flag:0x%x, control:0x%x\n",
+					ltoh32(pcie_hc->version),
+					ltoh32(pcie_hc->pcie_err_ind_type),
+					ltoh32(pcie_hc->pcie_flag),
+					ltoh32(pcie_hc->pcie_control_reg)));
+				break;
+			}
+			default:
+				DHD_ERROR(("%s:Unknown module TAG:%d\n",
+					__FUNCTION__, ltoh32(dngl_hc->top_module_tag)));
+				break;
+			}
+			break;
+		}
+		default:
+			DHD_ERROR(("%s:Unknown TAG", __FUNCTION__));
+			if (p && DHD_EVENT_ON()) {
+				prhex("SOCRAMIND", p, taglen);
+			}
+			break;
+		}
+		break;
+	}
+	default:
+		DHD_ERROR(("%s:Unknown DNGL Event Type:%d", __FUNCTION__, type));
+		if (p && DHD_EVENT_ON()) {
+			prhex("SOCRAMIND", p, datalen);
+		}
+		break;
+	}
+}
+
+int
 wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 	wl_event_msg_t *event, void **data_ptr, void *raw_event)
 {
@@ -1686,13 +1652,14 @@ wl_host_event(dhd_pub_t *dhd_pub, int *ifidx, void *pktdata,
 	int evlen;
 	int hostidx;
 
+	
+	if (dngl_host_event(dhd_pub, pktdata) == BCME_OK) {
+		
+		return (BCME_ERROR);
+	}
+
 	if (bcmp(BRCM_OUI, &pvt_data->bcm_hdr.oui[0], DOT11_OUI_LEN)) {
 		DHD_ERROR(("%s: mismatched OUI, bailing\n", __FUNCTION__));
-		
-		
-		
-		
-		
 		return (BCME_ERROR);
 	}
 
@@ -2038,7 +2005,7 @@ fail:
 
 #define PATTERN_ITEMS 5
 #ifdef PACKET_FILTER2
-#define PATTERN_ELEMENT 2
+#define PATTERN_ELEMENT 3
 #else
 #define PATTERN_ELEMENT 1
 #endif

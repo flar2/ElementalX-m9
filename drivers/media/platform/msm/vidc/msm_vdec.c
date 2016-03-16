@@ -22,6 +22,7 @@
 #define MSM_VDEC_DVC_NAME "msm_vdec_8974"
 #define MIN_NUM_OUTPUT_BUFFERS 4
 #define MIN_NUM_CAPTURE_BUFFERS 6
+#define MIN_NUM_THUMBNAIL_MODE_CAPTURE_BUFFERS 1
 #define MAX_NUM_OUTPUT_BUFFERS VB2_MAX_FRAME
 #define DEFAULT_VIDEO_CONCEAL_COLOR_BLACK 0x8010
 #define MB_SIZE_IN_PIXEL (16 * 16)
@@ -521,6 +522,26 @@ static struct msm_vidc_ctrl msm_vdec_ctrls[] = {
 		.default_value = 0,
 		.step = 1,
 		.menu_skip_mask = 0,
+		.qmenu = NULL,
+	},
+	{
+		.id = V4L2_CID_MPEG_VIDC_VIDEO_PRIORITY,
+		.name = "Session Priority",
+		.type = V4L2_CTRL_TYPE_INTEGER,
+		.minimum = V4L2_MPEG_VIDC_VIDEO_PRIORITY_REALTIME_ENABLE,
+		.maximum = V4L2_MPEG_VIDC_VIDEO_PRIORITY_REALTIME_DISABLE,
+		.default_value = V4L2_MPEG_VIDC_VIDEO_PRIORITY_REALTIME_DISABLE,
+		.step = 1,
+		.qmenu = NULL,
+	},
+	{
+		.id = V4L2_CID_MPEG_VIDC_VIDEO_OPERATING_RATE,
+		.name = "Set Decoder Operating rate",
+		.type = V4L2_CTRL_TYPE_INTEGER,
+		.minimum = 0,
+		.maximum = 300 << 16,  /* 300 fps in Q16 format*/
+		.default_value = 0,
+		.step = 1,
 		.qmenu = NULL,
 	},
 };
@@ -1271,6 +1292,7 @@ int msm_vdec_s_fmt(struct msm_vidc_inst *inst, struct v4l2_format *f)
 		rc = msm_comm_try_state(inst, MSM_VIDC_OPEN_DONE);
 		if (rc) {
 			dprintk(VIDC_ERR, "Failed to open instance\n");
+			msm_comm_session_clean(inst);
 			goto err_invalid_fmt;
 		}
 
@@ -1360,6 +1382,8 @@ static int msm_vdec_queue_setup(struct vb2_queue *q,
 	struct hfi_device *hdev;
 	struct hal_buffer_count_actual new_buf_count;
 	enum hal_property property_id;
+	int min_buff_count = 0;
+
 	if (!q || !num_buffers || !num_planes
 		|| !sizes || !q->drv_priv) {
 		dprintk(VIDC_ERR, "Invalid input, q = %p, %p, %p\n",
@@ -1402,6 +1426,7 @@ static int msm_vdec_queue_setup(struct vb2_queue *q,
 		rc = msm_comm_try_state(inst, MSM_VIDC_OPEN_DONE);
 		if (rc) {
 			dprintk(VIDC_ERR, "Failed to open instance\n");
+			msm_comm_session_clean(inst);
 			break;
 		}
 		rc = msm_comm_try_get_bufreqs(inst);
@@ -1422,18 +1447,12 @@ static int msm_vdec_queue_setup(struct vb2_queue *q,
 		}
 		*num_buffers = max(*num_buffers, bufreq->buffer_count_min);
 
-		if ((*num_buffers < MIN_NUM_CAPTURE_BUFFERS ||
-			*num_buffers > VB2_MAX_FRAME) &&
-			(inst->fmts[OUTPUT_PORT]->fourcc ==
-				V4L2_PIX_FMT_H264)) {
-			int temp = *num_buffers;
-			*num_buffers = clamp_val(*num_buffers,
-					MIN_NUM_CAPTURE_BUFFERS,
-					VB2_MAX_FRAME);
-			dprintk(VIDC_INFO,
-				"Updating CAPTURE_MPLANE buffer count from %d -> %d\n",
-				temp, *num_buffers);
-		}
+		min_buff_count = (!!(inst->flags & VIDC_THUMBNAIL)) ?
+			MIN_NUM_THUMBNAIL_MODE_CAPTURE_BUFFERS :
+			MIN_NUM_CAPTURE_BUFFERS;
+
+		*num_buffers = clamp_val(*num_buffers,
+			min_buff_count, VB2_MAX_FRAME);
 
 		if (*num_buffers != bufreq->buffer_count_actual) {
 			property_id = HAL_PARAM_BUFFER_COUNT_ACTUAL;
@@ -1690,6 +1709,9 @@ int msm_vdec_cmd(struct msm_vidc_inst *inst, struct v4l2_decoder_cmd *dec)
 			goto exit;
 		}
 		rc = msm_comm_try_state(inst, MSM_VIDC_CLOSE_DONE);
+		/* Clients rely on this event for joining poll thread.
+		 * This event should be returned even if firmware has
+		 * failed to respond */
 		msm_vidc_queue_v4l2_event(inst, V4L2_EVENT_MSM_VIDC_CLOSE_DONE);
 		break;
 	default:
@@ -1765,6 +1787,10 @@ static int check_tz_dynamic_buffer_support(void)
 	int rc = 0;
 	int version = scm_get_feat_version(TZ_DYNAMIC_BUFFER_FEATURE_ID);
 
+	/*
+	 * if the version is < 1.1.0 then dynamic buffer allocation is
+	 * not supported
+	 */
 	if (version < TZ_FEATURE_VERSION(1, 1, 0)) {
 		dprintk(VIDC_DBG,
 			"Dynamic buffer mode not supported, tz version is : %u vs required : %u\n",
@@ -1846,7 +1872,7 @@ static int try_get_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 static int vdec_v4l2_to_hal(int id, int value)
 {
 	switch (id) {
-		
+		/* H264 */
 	case V4L2_CID_MPEG_VIDEO_H264_PROFILE:
 		switch (value) {
 		case V4L2_MPEG_VIDEO_H264_PROFILE_BASELINE:
@@ -1950,7 +1976,7 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 	if (rc)
 		return rc;
 
-	
+	/* Small helper macro for quickly getting a control and err checking */
 #define TRY_GET_CTRL(__ctrl_id) ({ \
 		struct v4l2_ctrl *__temp; \
 		__temp = get_ctrl_from_cluster( \
@@ -1959,8 +1985,8 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 		if (!__temp) { \
 			dprintk(VIDC_ERR, "Can't find %s (%x) in cluster\n", \
 				#__ctrl_id, __ctrl_id); \
-			 \
-			 \
+			/* Clusters are hardcoded, if we can't find */ \
+			/* something then things are massively screwed up */ \
 			BUG_ON(1); \
 		} \
 		__temp; \
@@ -2225,6 +2251,14 @@ static int try_set_ctrl(struct msm_vidc_inst *inst, struct v4l2_ctrl *ctrl)
 			ctrl->val ? "Enabling" : "Disabling");
 		pdata = &hal_property;
 		break;
+	case V4L2_CID_MPEG_VIDC_VIDEO_PRIORITY:
+		property_id = HAL_CONFIG_REALTIME;
+		hal_property.enable = ctrl->val;
+		pdata = &hal_property;
+		break;
+	case V4L2_CID_MPEG_VIDC_VIDEO_OPERATING_RATE:
+		property_id = 0;
+		break;
 	default:
 		break;
 	}
@@ -2379,10 +2413,14 @@ int msm_vdec_ctrl_init(struct msm_vidc_inst *inst)
 	for (; idx < NUM_CTRLS; idx++) {
 		struct v4l2_ctrl *ctrl = NULL;
 		if (IS_PRIV_CTRL(msm_vdec_ctrls[idx].id)) {
-			
+			/*add private control*/
 			ctrl_cfg.def = msm_vdec_ctrls[idx].default_value;
 			ctrl_cfg.flags = 0;
 			ctrl_cfg.id = msm_vdec_ctrls[idx].id;
+			/* ctrl_cfg.is_private =
+			 * msm_vdec_ctrls[idx].is_private;
+			 * ctrl_cfg.is_volatile =
+			 * msm_vdec_ctrls[idx].is_volatile;*/
 			ctrl_cfg.max = msm_vdec_ctrls[idx].maximum;
 			ctrl_cfg.min = msm_vdec_ctrls[idx].minimum;
 			ctrl_cfg.menu_skip_mask =
@@ -2445,7 +2483,7 @@ int msm_vdec_ctrl_init(struct msm_vidc_inst *inst)
 		inst->ctrls[idx] = ctrl;
 	}
 
-	
+	/* Construct a super cluster of all controls */
 	inst->cluster = get_super_cluster(inst, &cluster_size);
 	if (!inst->cluster || !cluster_size) {
 		dprintk(VIDC_WARN,

@@ -427,7 +427,7 @@ static int diagchar_close(struct inode *inode, struct file *file)
 	if (!driver)
 		return -ENOMEM;
 
-	dci_entry = dci_lookup_client_entry_pid(current->pid);
+	dci_entry = dci_lookup_client_entry_pid(current->tgid);
 	if (dci_entry)
 		diag_dci_deinit_client(dci_entry);
 	
@@ -2392,7 +2392,7 @@ static int diagchar_setup_cdev(dev_t devno)
 		return -1;
 	}
 
-	driver->diagchar_class = class_create(THIS_MODULE, "htc_diag");
+	driver->diagchar_class = class_create(THIS_MODULE, "diag");
 
 	if (IS_ERR(driver->diagchar_class)) {
 		printk(KERN_ERR "Error creating diagchar class.\n");
@@ -2400,7 +2400,7 @@ static int diagchar_setup_cdev(dev_t devno)
 	}
 
 	driver->diag_dev = device_create(driver->diagchar_class, NULL, devno,
-					 (void *)driver, "htc_diag");
+					 (void *)driver, "diag");
 
 	if (!driver->diag_dev)
 		return -EIO;
@@ -2514,7 +2514,7 @@ static int __init diagchar_init(void)
 	pr_debug("diagchar initializing ..\n");
 	driver->num = 1;
 	driver->name = ((void *)driver) + sizeof(struct diagchar_dev);
-	strlcpy(driver->name, "htc_diag", 8);
+	strlcpy(driver->name, "diag", 4);
 #if DIAG_XPST
 	driver->debug_dmbytes_recv = 0;
 #endif

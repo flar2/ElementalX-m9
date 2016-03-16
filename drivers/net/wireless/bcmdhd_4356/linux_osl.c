@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: linux_osl.c 544165 2015-03-26 07:15:26Z $
+ * $Id: linux_osl.c 560862 2015-06-02 13:32:59Z $
  */
 
 #define LINUX_PORT
@@ -1165,16 +1165,10 @@ osl_pktfree_static(osl_t *osh, void *p, bool send)
 
 	spin_unlock_irqrestore(&bcm_static_skb->osl_pkt_lock, flags);
 	printk("[WLAN] %s: packet %p does not exist in the pool\n", __FUNCTION__, p);
-
-	
-	
-	
 	
 	
 	printk("[WLAN] %s: try osl_pktfree instead\n", __FUNCTION__);
 	osl_pktfree(osh, p, send);
-	
-
 #else
 	down(&bcm_static_skb->osl_pkt_sem);
 

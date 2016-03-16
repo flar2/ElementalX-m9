@@ -324,7 +324,7 @@ static void voip_ssr_cb_fn(uint32_t opcode, void *private_data)
 	
 	struct voip_drv_info *prtd = private_data;
 
-	if (opcode == 0xFFFFFFFF) {
+	if ((opcode == 0xFFFFFFFF) || (opcode == RESET_EVENTS)) { 
 
 		prtd->voip_reset = true;
 		pr_debug("%s: Notify ASoC to send next playback/Capture\n",
@@ -1117,7 +1117,8 @@ static int msm_pcm_prepare(struct snd_pcm_substream *substream)
 		ret = msm_pcm_capture_prepare(substream);
 
 	if (prtd->playback_instance && prtd->capture_instance
-	    && (prtd->state != VOIP_STARTED)) {
+	    && (prtd->state != VOIP_STARTED)
+	    && (prtd->play_samp_rate == prtd->cap_samp_rate)) { 
 		ret = voip_config_vocoder(substream);
 		if (ret < 0) {
 			pr_err("%s(): fail at configuring vocoder for voip, ret=%d\n",

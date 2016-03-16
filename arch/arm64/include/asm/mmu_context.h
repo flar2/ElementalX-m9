@@ -27,6 +27,7 @@
 #include <asm-generic/mm_hooks.h>
 #include <asm/cputype.h>
 #include <asm/pgtable.h>
+#include <linux/msm_rtb.h>
 
 #define MAX_ASID_BITS	16
 
@@ -43,18 +44,22 @@ void __new_context(struct mm_struct *mm);
 #ifdef CONFIG_PID_IN_CONTEXTIDR
 static inline void contextidr_thread_switch(struct task_struct *next)
 {
+	pid_t pid = task_pid_nr(next);
 	asm(
 	"	msr	contextidr_el1, %0\n"
 	"	isb"
 	:
-	: "r" (task_pid_nr(next)));
+	: "r" (pid));
 #if defined(CONFIG_HTC_DEBUG_RTB)
 	uncached_logk_pc(LOGK_CTXID, (void *)(uintptr_t)htc_debug_get_sched_clock_ms(), (void *)(uintptr_t)(task_pid_nr(next)));
+#else
+	uncached_logk(LOGK_CTXID, (void *)(u64)pid);
 #endif
 }
 #else
 static inline void contextidr_thread_switch(struct task_struct *next)
 {
+	uncached_logk(LOGK_CTXID, (void *)(u64)task_pid_nr(next));
 }
 #endif
 

@@ -32,6 +32,9 @@
 static void __iomem *early_base;
 static void (*printch)(char ch);
 
+/*
+ * PL011 single character TX.
+ */
 static void pl011_printch(char ch)
 {
 	while (readl_relaxed(early_base + UART01x_FR) & UART01x_FR_TXFF)
@@ -41,6 +44,9 @@ static void pl011_printch(char ch)
 		;
 }
 
+/*
+ * Semihosting-based debug console
+ */
 static void smh_printch(char ch)
 {
 	asm volatile("mov  x1, %0\n"
@@ -49,6 +55,9 @@ static void smh_printch(char ch)
 		     : : "r" (&ch) : "x0", "x1", "memory");
 }
 
+/*
+ * 8250/16550 (8-bit aligned registers) single character TX.
+ */
 static void uart8250_8bit_printch(char ch)
 {
 	while (!(readb_relaxed(early_base + UART_LSR) & UART_LSR_THRE))
@@ -56,6 +65,9 @@ static void uart8250_8bit_printch(char ch)
 	writeb_relaxed(ch, early_base + UART_TX);
 }
 
+/*
+ * 8250/16550 (32-bit aligned registers) single character TX.
+ */
 static void uart8250_32bit_printch(char ch)
 {
 	while (!(readl_relaxed(early_base + (UART_LSR << 2)) & UART_LSR_THRE))
@@ -119,13 +131,21 @@ static struct console early_console_dev = {
 static int __initdata should_deferred_early_console = 0;
 void __init deferred_early_console_init(void)
 {
-	
+	/* Switch Early_printk Debug by Kernel Flag  */
 	if (should_deferred_early_console &&
 			(get_kernel_flag() & KERNEL_FLAG_SERIAL_HSL_ENABLE)) {
 		early_console = &early_console_dev;
 		register_console(&early_console_dev);
 	}
 }
+/*
+ * Parse earlyprintk=... parameter in the format:
+ *
+ *   <name>[,<addr>][,<options>]
+ *
+ * and register the early console. It is assumed that the UART has been
+ * initialised by the bootloader already.
+ */
 static int __init setup_early_printk(char *buf)
 {
 	const struct earlycon_match *match = earlycon_match;
@@ -149,13 +169,13 @@ static int __init setup_early_printk(char *buf)
 		return 0;
 	}
 
-	
+	/* I/O address */
 	if (!strncmp(buf, ",0x", 3)) {
 		char *e;
 		paddr = simple_strtoul(buf + 1, &e, 16);
 		buf = e;
 	}
-	
+	/* no options parsing yet */
 
 	if (paddr)
 		early_base = (void __iomem *)set_fixmap_offset_io(FIX_EARLYCON_MEM_BASE, paddr);

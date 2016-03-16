@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_pcie_linux.c 542237 2015-03-19 06:49:27Z $
+ * $Id: dhd_pcie_linux.c 561142 2015-06-03 12:12:54Z $
  */
 
 
@@ -130,7 +130,6 @@ static int dhdpcie_init(struct pci_dev *pdev);
 static irqreturn_t dhdpcie_isr(int irq, void *arg);
 
 static int dhdpcie_pci_suspend(struct pci_dev *dev, pm_message_t state);
-static int dhdpcie_set_suspend_resume(struct pci_dev *dev, bool state);
 static int dhdpcie_pci_resume(struct pci_dev *dev);
 static int dhdpcie_resume_dev(struct pci_dev *dev);
 static int dhdpcie_suspend_dev(struct pci_dev *dev);
@@ -162,7 +161,7 @@ static struct pci_driver dhdpcie_driver = {
 
 int dhdpcie_init_succeeded = FALSE;
 
-static int dhdpcie_set_suspend_resume(struct pci_dev *pdev, bool state)
+int dhdpcie_set_suspend_resume(struct pci_dev *pdev, bool state)
 {
 	int ret = 0;
 	dhdpcie_info_t *pch = pci_get_drvdata(pdev);
@@ -171,6 +170,22 @@ static int dhdpcie_set_suspend_resume(struct pci_dev *pdev, bool state)
 	if (pch) {
 		bus = pch->bus;
 	}
+
+#ifdef DHD_USE_IDLECOUNT
+	mutex_lock(&bus->pm_lock);
+	
+	if (bus && (bus->suspended == TRUE) && (bus->host_suspend == TRUE)) {
+		if (state == TRUE) {
+			mutex_unlock(&bus->pm_lock);
+			bus_wake(bus);
+			return -EAGAIN;
+		} else {
+			ret = dhdpcie_bus_suspend(bus, state);
+			mutex_unlock(&bus->pm_lock);
+			return ret;
+		}
+	}
+#endif 
 
 	
 	
@@ -182,15 +197,51 @@ static int dhdpcie_set_suspend_resume(struct pci_dev *pdev, bool state)
 		!bus->dhd->dongle_reset) {
 #endif 
 			ret = dhdpcie_pci_suspend_resume(bus, state);
+#ifdef DHD_USE_IDLECOUNT
+			mutex_unlock(&bus->pm_lock);
+#endif 
 			return ret;
 		}
 
 	if (bus && ((bus->dhd->busstate == DHD_BUS_SUSPEND)||
 		(bus->dhd->busstate == DHD_BUS_DATA)) &&
 		(bus->suspended != state)) {
+#ifdef CUSTOMER_HW_ONE
+		struct net_device *netdev = NULL;
+		bool runtime_pm = FALSE;
 
+		dhd_pub_t *pub = (dhd_pub_t *)(bus->dhd);
+		netdev = dhd_idx2net(pub, 0);
+
+#ifdef DHD_USE_IDLECOUNT
+		runtime_pm = bus->host_suspend;
+#endif
+		if (!runtime_pm && state) {
+			netif_stop_queue(netdev);
+			DHD_ERROR(("prepare in suspend mode stop net device traffic\n"));
+		}
+#endif 
 		ret = dhdpcie_bus_suspend(bus, state);
+#ifdef CUSTOMER_HW_ONE
+		if (!runtime_pm) {
+			if (state) {
+				if (ret != BCME_OK) {
+					DHD_ERROR(("fail to suspend, start net device traffic\n"));
+					netif_start_queue(netdev);
+				}
+			} else {
+				if (ret == BCME_OK) {
+					DHD_ERROR(("Normal resumed, start net device traffic\n"));
+					netif_wake_queue(netdev);
+				}
+			}
+		}
+#endif 
 	}
+
+#ifdef DHD_USE_IDLECOUNT
+	mutex_unlock(&bus->pm_lock);
+#endif 
 	return ret;
 }
 
@@ -860,10 +911,6 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	if (bus->islinkdown) {
 		options = MSM_PCIE_CONFIG_NO_CFG_RESTORE;
-                
-                
-                DHD_ERROR(("%s: do link recovery\n", __FUNCTION__));
-                
 	}
 	ret = msm_pcie_pm_control(MSM_PCIE_RESUME, bus->dev->bus->number,
 		bus->dev, NULL, options);
@@ -878,10 +925,7 @@ dhdpcie_start_host_pcieclock(dhd_bus_t *bus)
 		bus->dev, NULL, 0);
 #endif 
 	if (ret) {
-                
-                
-		DHD_ERROR(("%s Failed to bring up PCIe link. ret=%d\n", __FUNCTION__, ret));
-                
+		DHD_ERROR(("%s Failed to bring up PCIe link\n", __FUNCTION__));
 		goto done;
 	}
 
@@ -1213,6 +1257,9 @@ static irqreturn_t wlan_oob_irq(int irq, void *data)
 	bus = (dhd_bus_t *)data;
 	DHD_INTR(("%s: up %d suspend %d\n", __FUNCTION__, bus->dhd->up, bus->suspended));
 	dhdpcie_oob_intr_set(bus, FALSE);
+#ifdef DHD_USE_IDLECOUNT
+	bus_wakeup(bus);
+#endif 
 	if (bus->dhd->up && bus->suspended) {
 		DHD_OS_OOB_IRQ_WAKE_LOCK_TIMEOUT(bus->dhd, OOB_WAKE_LOCK_TIMEOUT);
 	}

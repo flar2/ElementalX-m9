@@ -49,7 +49,7 @@
 
 #define DHD_FLOW_PRIO_AC_MAP		0
 #define DHD_FLOW_PRIO_TID_MAP		1
-
+#define DHD_FLOW_PRIO_LLR_MAP		2
 
 typedef struct dhd_pkttag_fr {
 	uint16  flowid;

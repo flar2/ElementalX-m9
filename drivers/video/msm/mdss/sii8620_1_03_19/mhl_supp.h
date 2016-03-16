@@ -16,6 +16,7 @@
 #if !defined(MHL_SUPP_H)
 #define MHL_SUPP_H
 
+/* APIs exported from mhl_supp.c */
 
 int si_mhl_tx_get_num_block_reqs(void);
 int si_mhl_tx_initialize(struct mhl_dev_context *dev_context);
@@ -104,4 +105,4 @@ void si_mhl_tx_set_bist_timer_impl(struct mhl_dev_context *dev_context,
 				const char *caller, int line_num);
 #define si_mhl_tx_set_bist_timer(dev_context) \
 	si_mhl_tx_set_bist_timer_impl(dev_context,  __func__, __LINE__)
-#endif 
+#endif /* #if !defined(MHL_SUPP_H) */

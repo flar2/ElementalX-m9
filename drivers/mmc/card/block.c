@@ -281,7 +281,7 @@ static ssize_t force_ro_show(struct device *dev, struct device_attribute *attr,
 	if (!md)
 		return -EINVAL;
 
-	ret = snprintf(buf, PAGE_SIZE, "%d",
+	ret = snprintf(buf, PAGE_SIZE, "%d\n",
 		       get_disk_ro(dev_to_disk(dev)) ^
 		       md->read_only);
 	mmc_blk_put(md);
@@ -638,6 +638,64 @@ static int ioctl_do_sanitize(struct mmc_card *card)
                                              __func__);
 out:
         return err;
+}
+
+int mmc_blk_send_wp_info(struct block_device *bdev, unsigned long addr)
+{
+	struct mmc_blk_data *md;
+	int result = 0;
+	__be32 *blocks;
+
+	struct mmc_request mrq = {NULL};
+	struct mmc_command cmd = {0};
+	struct mmc_data data = {0};
+	struct scatterlist sg;
+	struct mmc_card *card;
+
+	md = mmc_blk_get(bdev->bd_disk);
+	if (!md)
+		return 0;
+
+	card = md->queue.card;
+	if (IS_ERR_OR_NULL(card))
+		return 0;
+
+
+	cmd.opcode = MMC_SEND_WRITE_PROT;
+	cmd.arg = addr;
+	cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
+
+	data.blksz = 4;
+	data.blocks = 1;
+	data.flags = MMC_DATA_READ;
+	data.sg = &sg;
+	data.sg_len = 1;
+	mmc_set_data_timeout(&data, card);
+
+	mrq.cmd = &cmd;
+	mrq.data = &data;
+
+	blocks = kmalloc(4, GFP_KERNEL);
+	if (!blocks)
+		return 0;
+
+	sg_init_one(&sg, blocks, 4);
+
+	mmc_rpm_hold(card->host, &card->dev);
+	mmc_claim_host(card->host);
+
+	mmc_wait_for_req(card->host, &mrq);
+
+	mmc_release_host(card->host);
+	mmc_rpm_release(card->host, &card->dev);
+
+	result = ntohl(*blocks);
+	kfree(blocks);
+	if (cmd.error || data.error)
+		result = 0;
+
+	pr_info("%s: addr %lu, return 0x%x\n", __func__, addr, result);
+	return result;
 }
 
 static int mmc_blk_ioctl_cmd(struct block_device *bdev,
@@ -997,12 +1055,14 @@ static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 		return -ENODEV;
 	}
 
+	mmc_claim_host(card->host);
 	if (mmc_bus_needs_resume(card->host)) {
 		int err = 0;
 		int retries = 3;
 		if (mmc_card_sd(card) && mmc_card_removed(card)) {
 			pr_err("%s: card already removed, %s\n",
 			mmc_hostname(card->host), __func__);
+			mmc_release_host(card->host);
 			mmc_blk_put(md);
 			return -ENODEV;
 		}
@@ -1013,13 +1073,15 @@ static int mmc_blk_ioctl(struct block_device *bdev, fmode_t mode,
 		} while(err && retries);
 
 		if (err) {
-			printk(KERN_ERR "%s: Resume fail, removed card, %s\n",
-			mmc_hostname(card->host), __func__);
+			printk(KERN_ERR "%s: Resume fail, removed card, %s, %d\n",
+			mmc_hostname(card->host), __func__, err);
 			mmc_remove_sd_card(card->host);
+			mmc_release_host(card->host);
 			mmc_blk_put(md);
 			return -ENODEV;
 		}
 	}
+	mmc_release_host(card->host);
 	mmc_blk_put(md);
 
 	if (cmd == MMC_IOC_CMD)
@@ -1335,6 +1397,15 @@ static int mmc_blk_reset(struct mmc_blk_data *md, struct mmc_host *host,
 static inline void mmc_blk_reset_success(struct mmc_blk_data *md, int type)
 {
 	md->reset_done &= ~type;
+}
+
+int mmc_access_rpmb(struct mmc_queue *mq)
+{
+	struct mmc_blk_data *md = mq->data;
+	if (md && md->part_type == EXT_CSD_PART_CONFIG_ACC_RPMB)
+		return true;
+
+	return false;
 }
 
 static int mmc_blk_issue_discard_rq(struct mmc_queue *mq, struct request *req)

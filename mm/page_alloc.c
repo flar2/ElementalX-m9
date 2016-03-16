@@ -1739,6 +1739,8 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 		return NULL;
 	}
 
+	note_oom_kill();
+
 	page = get_page_from_freelist(gfp_mask|__GFP_HARDWALL, nodemask,
 		order, zonelist, high_zoneidx,
 		ALLOC_WMARK_HIGH|ALLOC_CPUSET,
@@ -1945,15 +1947,15 @@ static inline int
 gfp_to_alloc_flags(gfp_t gfp_mask)
 {
 	int alloc_flags = ALLOC_WMARK_MIN | ALLOC_CPUSET;
-	const gfp_t wait = gfp_mask & __GFP_WAIT;
+	const bool atomic = !(gfp_mask & (__GFP_WAIT | __GFP_NO_KSWAPD));
 
 	
 	BUILD_BUG_ON(__GFP_HIGH != (__force gfp_t) ALLOC_HIGH);
 
 	alloc_flags |= (__force int) (gfp_mask & __GFP_HIGH);
 
-	if (!wait) {
-		if  (!(gfp_mask & __GFP_NOMEMALLOC))
+	if (atomic) {
+		if (!(gfp_mask & __GFP_NOMEMALLOC))
 			alloc_flags |= ALLOC_HARDER;
 		alloc_flags &= ~ALLOC_CPUSET;
 	} else if (unlikely(rt_task(current)) && !in_interrupt())
@@ -4309,6 +4311,22 @@ static void __meminit setup_per_zone_inactive_ratio(void)
 		calculate_zone_inactive_ratio(zone);
 }
 
+int vm_inactive_ratio = 0;
+int vm_inactive_ratio_handler(ctl_table *table, int write,
+	void __user *buffer, size_t *length, loff_t *ppos)
+{
+	struct zone *zone;
+	int old_ratio = vm_inactive_ratio;
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, length, ppos);
+	if (ret == 0 && write && vm_inactive_ratio != old_ratio) {
+		for_each_zone(zone){
+			zone->inactive_ratio = vm_inactive_ratio;
+		}
+	}
+	return ret;
+}
 int __meminit init_per_zone_wmark_min(void)
 {
 	unsigned long lowmem_kbytes;

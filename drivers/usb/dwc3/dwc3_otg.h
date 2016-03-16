@@ -36,7 +36,7 @@ struct dwc3_otg {
 	void __iomem		*regs;
 	struct regulator	*vbus_otg;
 	struct delayed_work	sm_work;
-	struct delayed_work	unknown_charger_notify_work;
+	struct delayed_work	unknown_charger_notify_work; 
 	struct dwc3_charger	*charger;
 	struct dwc3_ext_xceiv	*ext_xceiv;
 #define ID		 0

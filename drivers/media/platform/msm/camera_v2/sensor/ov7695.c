@@ -17,7 +17,6 @@
 #define PLATFORM_DRIVER_NAME "msm_camera_ov7695"
 #define ov7695_obj ov7695_##obj
 
-/*#define CONFIG_MSMB_CAMERA_DEBUG*/
 #undef CDBG
 #ifdef CONFIG_MSMB_CAMERA_DEBUG
 #define CDBG(fmt, args...) pr_err(fmt, ##args)
@@ -129,9 +128,9 @@ static struct msm_camera_i2c_reg_conf ov7695_recommend_settings[] = {
 	{0x530e, 0xde,},
 	{0x530f, 0xef,},
 	{0x5310, 0x16,},
-	{0x520a, 0x74,}, //f4
-	{0x520b, 0x64,}, //f4
-	{0x520c, 0xd4,}, //f4
+	{0x520a, 0x74,}, 
+	{0x520b, 0x64,}, 
+	{0x520c, 0xd4,}, 
 	{0x5504, 0x08,},
 	{0x5505, 0x48,},
 	{0x5506, 0x07,},
@@ -164,33 +163,33 @@ static struct msm_camera_i2c_reg_conf ov7695_recommend_settings[] = {
 	{0x3a0d, 0x04,},
 	{0x5000, 0xff,},
 	{0x5001, 0x3f,},
-	{0x5100, 0x1 ,}, //01
-	{0x5101, 0x25,}, //48
-	{0x5102, 0x0 ,}, //00
-	{0x5103, 0xf3,}, //f8
-	{0x5104, 0x7f,}, //04
-	{0x5105, 0x5 ,}, //00
-	{0x5106, 0xff,}, //00
-	{0x5107, 0xf ,}, //00
-	{0x5108, 0x1 ,}, //01
-	{0x5109, 0x1f,}, //48
-	{0x510a, 0x0 ,}, //00
-	{0x510b, 0xde,}, //f8
-	{0x510c, 0x56,}, //03
-	{0x510d, 0x5 ,}, //00
-	{0x510e, 0xff,}, //00
-	{0x510f, 0xf ,}, //00
-	{0x5110, 0x1 ,}, //01
-	{0x5111, 0x23,}, //48
-	{0x5112, 0x0 ,}, //00
-	{0x5113, 0xe3,}, //f8
-	{0x5114, 0x5c,}, //03
-	{0x5115, 0x5 ,}, //00
-	{0x5116, 0xff,}, //00
-	{0x5117, 0xf ,}, //00
-	{0x520a, 0x74,}, //f4
-	{0x520b, 0x64,}, //f4
-	{0x520c, 0xd4,}, //f4
+	{0x5100, 0x1 ,}, 
+	{0x5101, 0x25,}, 
+	{0x5102, 0x0 ,}, 
+	{0x5103, 0xf3,}, 
+	{0x5104, 0x7f,}, 
+	{0x5105, 0x5 ,}, 
+	{0x5106, 0xff,}, 
+	{0x5107, 0xf ,}, 
+	{0x5108, 0x1 ,}, 
+	{0x5109, 0x1f,}, 
+	{0x510a, 0x0 ,}, 
+	{0x510b, 0xde,}, 
+	{0x510c, 0x56,}, 
+	{0x510d, 0x5 ,}, 
+	{0x510e, 0xff,}, 
+	{0x510f, 0xf ,}, 
+	{0x5110, 0x1 ,}, 
+	{0x5111, 0x23,}, 
+	{0x5112, 0x0 ,}, 
+	{0x5113, 0xe3,}, 
+	{0x5114, 0x5c,}, 
+	{0x5115, 0x5 ,}, 
+	{0x5116, 0xff,}, 
+	{0x5117, 0xf ,}, 
+	{0x520a, 0x74,}, 
+	{0x520b, 0x64,}, 
+	{0x520c, 0xd4,}, 
 	{0x5004, 0x41,},
 	{0x5006, 0x41,},
 	{0x5301, 0x05,},
@@ -370,8 +369,8 @@ int32_t ov7695_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 
 		break;
 	case CFG_SET_INIT_SETTING:
-		/* 1. Write Recommend settings */
-		/* 2. Write change settings */
+		
+		
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_conf_tbl(
 			s_ctrl->sensor_i2c_client, ov7695_recommend_settings,
@@ -380,7 +379,7 @@ int32_t ov7695_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 		break;
 
 	case CFG_SET_RESOLUTION: {
-	/*copy from user the desired resoltuion*/
+	
 		enum msm_sensor_resolution_t res = MSM_SENSOR_INVALID_RES;
 		if (copy_from_user(&res, (void *)cdata->cfg.setting,
 			sizeof(enum msm_sensor_resolution_t))) {
@@ -531,11 +530,11 @@ int32_t ov7695_sensor_config(struct msm_sensor_ctrl_t *s_ctrl,
 	case CFG_SET_SHARPNESS:
 		break;
 	case CFG_SET_AUTOFOCUS:
-		/* TO-DO: set the Auto Focus */
+		
 		pr_debug("%s: Setting Auto Focus", __func__);
 		break;
 	case CFG_CANCEL_AUTOFOCUS:
-		/* TO-DO: Cancel the Auto Focus */
+		
 		pr_debug("%s: Cancelling Auto Focus", __func__);
 		break;
 	case CFG_SET_ISO:
@@ -597,8 +596,8 @@ int32_t ov7695_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 			cdata->cfg.sensor_info.session_id);
 		break;
 	case CFG_SET_INIT_SETTING:
-		/* 1. Write Recommend settings */
-		/* 2. Write change settings */
+		
+		
 		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 			i2c_write_conf_tbl(
 			s_ctrl->sensor_i2c_client, ov7695_recommend_settings,
@@ -607,7 +606,7 @@ int32_t ov7695_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		break;
 
 	case CFG_SET_RESOLUTION: {
-	/*copy from user the desired resoltuion*/
+	
 		enum msm_sensor_resolution_t res = MSM_SENSOR_INVALID_RES;
 		if (copy_from_user(&res,
 			(void *)compat_ptr(cdata->cfg.setting),
@@ -735,11 +734,11 @@ int32_t ov7695_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 	case CFG_SET_SHARPNESS:
 		break;
 	case CFG_SET_AUTOFOCUS:
-		/* TO-DO: set the Auto Focus */
+		
 		pr_debug("%s: Setting Auto Focus", __func__);
 		break;
 	case CFG_CANCEL_AUTOFOCUS:
-		/* TO-DO: Cancel the Auto Focus */
+		
 		pr_debug("%s: Cancelling Auto Focus", __func__);
 		break;
 	case CFG_SET_ISO:

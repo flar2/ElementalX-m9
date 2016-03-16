@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wldev_common.c 550257 2015-04-20 04:40:23Z $
+ * $Id: wldev_common.c 594711 2015-10-23 09:04:58Z $
  */
 
 #include <osl.h>
@@ -332,6 +332,9 @@ int wldev_set_country(
 {
 	int error = -1;
 	wl_country_t cspec = {{0}, 0, {0}};
+#ifdef CUSTOMER_HW_ONE
+	wl_country_t cspec_fw = {{0}, 0, {0}};
+#endif 
 	scb_val_t scbval;
 	char smbuf[WLC_IOCTL_SMLEN];
 
@@ -339,15 +342,28 @@ int wldev_set_country(
 		return error;
 
 	bzero(&scbval, sizeof(scb_val_t));
+#ifdef CUSTOMER_HW_ONE
+	error = wldev_iovar_getbuf(dev, "country", NULL, 0, &cspec_fw, sizeof(cspec_fw), NULL);
+#else
 	error = wldev_iovar_getbuf(dev, "country", NULL, 0, &cspec, sizeof(cspec), NULL);
+#endif 
 	if (error < 0) {
 		WLDEV_ERROR(("%s: get country failed = %d\n", __FUNCTION__, error));
 		return error;
 	}
 
+#ifdef CUSTOMER_HW_ONE
+	cspec.rev = -1;
+	memcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
+	memcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
+	dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
+
+	if ((strncmp(country_code, cspec.country_abbrev, WLC_CNTRY_BUF_SZ) != 0) ||
+	    (cspec_fw.rev != cspec.rev)) {
+#else
 	if ((error < 0) ||
 	    (strncmp(country_code, cspec.country_abbrev, WLC_CNTRY_BUF_SZ) != 0)) {
-
+#endif 
 		if (user_enforced) {
 			bzero(&scbval, sizeof(scb_val_t));
 			error = wldev_ioctl(dev, WLC_DISASSOC, &scbval, sizeof(scb_val_t), true);
@@ -360,10 +376,12 @@ int wldev_set_country(
 			}
 		}
 
+#ifndef CUSTOMER_HW_ONE
 		cspec.rev = -1;
 		memcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
 		memcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
 		dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
+#endif 
 		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
 			smbuf, sizeof(smbuf), NULL);
 		if (error < 0) {

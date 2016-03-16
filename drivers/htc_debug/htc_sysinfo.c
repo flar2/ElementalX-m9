@@ -21,6 +21,8 @@
 
 #define MSM_MAX_PARTITIONS 128
 
+int cancel_fsync = 0;
+
 static unsigned int emmc_partition_update = 0;
 struct htc_emmc_partition {
 	unsigned int dev_num;
@@ -141,11 +143,52 @@ static const struct file_operations htc_emmc_partition_fops = {
 	.release	= single_release,
 };
 
+static ssize_t htc_cancel_fsync_write(struct file *file, const char __user *buffer,
+		size_t count, loff_t *ppos)
+{
+	int val;
+
+	sscanf(buffer, "%d", &val);
+
+	if (val == 1) {
+		pr_info("Cancel fsync.\n");
+		cancel_fsync = 1;
+	} else if (val == 0) {
+		pr_info("Stop canceling fsync.\n");
+		cancel_fsync = 0;
+	}
+
+	return count;
+}
+
+static int htc_cancel_fsync_read(struct seq_file *m, void *v)
+{
+	return seq_printf(m, "%d", cancel_fsync);
+}
+
+static int htc_cancel_fsync_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, htc_cancel_fsync_read, NULL);
+}
+
+static const struct file_operations htc_cancel_fsync_fops = {
+	.open           = htc_cancel_fsync_open,
+	.write          = htc_cancel_fsync_write,
+	.read           = seq_read,
+	.llseek         = seq_lseek,
+	.release        = single_release,
+};
+
 static int __init sysinfo_proc_init(void)
 {
 	struct proc_dir_entry *entry = NULL;
 
 	pr_info("%s: Init HTC system info proc interface.\r\n", __func__);
+
+	entry = proc_create_data("cancel_fsync", 0644, NULL, &htc_cancel_fsync_fops, NULL);
+	if (entry == NULL)
+		pr_info(KERN_ERR "%s: unable to create /proc entry\n", __func__);
+	cancel_fsync = 0;
 
 	
 	entry = proc_create_data("emmc", 0644, NULL, &htc_emmc_partition_fops, NULL);

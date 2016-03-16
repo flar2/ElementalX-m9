@@ -26,6 +26,7 @@
 #include <linux/device_cgroup.h>
 #include <linux/fs_struct.h>
 #include <linux/posix_acl.h>
+#include <linux/hash.h>
 #include <asm/uaccess.h>
 #include <trace/events/mmcio.h>
 
@@ -1145,7 +1146,8 @@ static inline int walk_component(struct nameidata *nd, struct path *path,
 
 	if (should_follow_link(inode, follow)) {
 		if (nd->flags & LOOKUP_RCU) {
-			if (unlikely(unlazy_walk(nd, path->dentry))) {
+			if (unlikely(nd->path.mnt != path->mnt ||
+				     unlazy_walk(nd, path->dentry))) {
 				err = -ECHILD;
 				goto out_err;
 			}
@@ -1216,8 +1218,7 @@ static inline int can_lookup(struct inode *inode)
 
 static inline unsigned int fold_hash(unsigned long hash)
 {
-	hash += hash >> (8*sizeof(int));
-	return hash;
+	return hash_64(hash, 32);
 }
 
 #else	
@@ -2212,7 +2213,8 @@ finish_lookup:
 
 	if (should_follow_link(inode, !symlink_ok)) {
 		if (nd->flags & LOOKUP_RCU) {
-			if (unlikely(unlazy_walk(nd, path->dentry))) {
+			if (unlikely(nd->path.mnt != path->mnt ||
+				     unlazy_walk(nd, path->dentry))) {
 				error = -ECHILD;
 				goto out;
 			}
@@ -2749,9 +2751,11 @@ SYSCALL_DEFINE1(rmdir, const char __user *, pathname)
 	return do_rmdir(AT_FDCWD, pathname);
 }
 
+extern atomic_t em_remount;
 int vfs_unlink(struct inode *dir, struct dentry *dentry)
 {
 	int error = may_delete(dir, dentry, 0);
+	struct super_block *sb = dentry->d_sb;
 
 	if (error)
 		return error;
@@ -2760,6 +2764,11 @@ int vfs_unlink(struct inode *dir, struct dentry *dentry)
 		return -EPERM;
 
 	trace_vfs_unlink(dentry, dentry->d_inode->i_size);
+	if (atomic_read(&em_remount) && sb && (sb->s_flags & MS_EMERGENCY_RO)) {
+		printk_ratelimited(KERN_WARNING "VFS reject: %s pid:%d(%s)(parent:%d/%s) file %s\n", __func__,
+				current->pid, current->comm, current->parent->pid, current->parent->comm, dentry->d_name.name);
+		return -EROFS;
+	}
 	mutex_lock(&dentry->d_inode->i_mutex);
 	if (d_mountpoint(dentry))
 		error = -EBUSY;
@@ -3101,6 +3110,7 @@ int vfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	int error;
 	int is_dir = S_ISDIR(old_dentry->d_inode->i_mode);
 	const unsigned char *old_name;
+	struct super_block *sb = old_dentry->d_sb;
 
 	if (old_dentry->d_inode == new_dentry->d_inode)
  		return 0;
@@ -3119,6 +3129,12 @@ int vfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	if (!old_dir->i_op->rename)
 		return -EPERM;
 
+	if (atomic_read(&em_remount) && sb && (sb->s_flags & MS_EMERGENCY_RO)) {
+		printk_ratelimited(KERN_WARNING "VFS reject: %s pid:%d(%s)(parent:%d/%s) old_file %s new_file %s\n",
+				__func__, current->pid, current->comm, current->parent->pid, current->parent->comm,
+				old_dentry->d_name.name, new_dentry->d_name.name);
+		return -EROFS;
+	}
 	old_name = fsnotify_oldname_init(old_dentry->d_name.name);
 
 	if (is_dir)

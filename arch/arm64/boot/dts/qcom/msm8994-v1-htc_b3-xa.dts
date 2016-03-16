@@ -1,0 +1,11 @@
+/dts-v1/;
+
+#include "msm8994-v1.dtsi"
+#include "msm8994-htc_b3.dtsi"
+#include "msm8994-htc_b3-pm-pmi-gpio.dtsi"
+
+/ {
+	model = "HTC Corporation. MSM8994v1 B3 XA";
+	qcom,msm-id = <384 0x10000>, <385 0x10000>;
+	qcom,board-id = <0 0>;
+};

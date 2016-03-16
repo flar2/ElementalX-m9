@@ -29,6 +29,9 @@ enum AviColorSpace_e {
 	acsFuture
 };
 
+/*
+ * AVI Info Frame Structure
+ */
 struct __attribute__ ((__packed__)) avi_info_frame_data_byte_1_t {
 	uint8_t ScanInfo:2;
 	uint8_t BarInfo:2;
@@ -98,6 +101,9 @@ struct __attribute__ ((__packed__)) hw_avi_named_payload_t {
 	} ifData_u;
 };
 
+/* this union overlays the TPI HW for AVI InfoFrames,
+ * starting at REG_TPI_AVI_CHSUM.
+ */
 union hw_avi_payload_t {
 	struct hw_avi_named_payload_t namedIfData;
 	uint8_t ifData[14];
@@ -114,6 +120,7 @@ struct __attribute__ ((__packed__)) avi_info_frame_t {
 	struct avi_payload_t payLoad;
 };
 
+/* these values determine the interpretation of PB5 */
 enum HDMI_Video_Format_e {
 	hvfNoAdditionalHDMIVideoFormatPresent,
 	hvfExtendedResolutionFormatPresent,
@@ -140,7 +147,7 @@ enum ThreeDMetaDataType_e {
 
 struct __attribute__ ((__packed__)) vendor_specific_payload_t {
 	uint8_t checksum;
-	uint8_t IEEERegistrationIdentifier[3];	
+	uint8_t IEEERegistrationIdentifier[3];	/* 0x000C03 Little Endian */
 	struct __attribute__ ((__packed__)) {
 		unsigned reserved:5;
 		enum HDMI_Video_Format_e HDMI_Video_Format:3;
@@ -155,11 +162,11 @@ struct __attribute__ ((__packed__)) vendor_specific_payload_t {
 	} pb5;
 	struct __attribute__ ((__packed__)) {
 		uint8_t reserved:4;
-		uint8_t threeDExtData:4;	
+		uint8_t threeDExtData:4;	/* ThreeDExtData_e */
 	} pb6;
 	struct __attribute__ ((__packed__)) _PB7 {
 		uint8_t threeDMetaDataLength:5;
-		uint8_t threeDMetaDataType:3;	
+		uint8_t threeDMetaDataType:3;	/* ThreeDMetaDataType_e */
 	} pb7;
 };
 
@@ -168,6 +175,10 @@ struct __attribute__ ((__packed__)) vendor_specific_info_frame_t {
 	struct vendor_specific_payload_t payLoad;
 };
 
+/*
+ * MPEG Info Frame Structure
+ * Table 8-11 on page 141 of HDMI Spec v1.4
+ */
 struct __attribute__ ((__packed__)) unr_info_frame_t {
 	struct info_frame_header_t header;
 	uint8_t checksum;
@@ -188,7 +199,7 @@ void DumpIncomingInfoFrameImpl(char *pszId, char *pszFile, int iLine,
 	DumpIncomingInfoFrameImpl(#pData, __FILE__, __LINE__, \
 	(info_frame_t *)pData, length)
 #else
-#define DumpIncomingInfoFrame(pData, length)	
+#define DumpIncomingInfoFrame(pData, length)	/* do nothing */
 #endif
 
-#endif 
+#endif /* if !defined(SI_INFOFRAME_H) */

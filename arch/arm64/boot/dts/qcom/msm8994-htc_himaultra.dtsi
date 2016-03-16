@@ -1,0 +1,227 @@
+/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+#include "msm8994-v1.dtsi"
+#include "msm8994-pinctrl.dtsi"
+#include "msm8994-mtp.dtsi"
+#include "msm8994-htc-common.dtsi"
+#include "msm8994-htc_hima-family.dtsi"
+#include "msm8994-htc-ramdumpheap.dtsi"
+#include "msm8994-touch-himaultra.dtsi"
+#include "msm8994-camera-sensor-himaultra.dtsi"
+
+/ {
+	model = "HTC Corporation. MSM8994 HIMA_ULTRA";
+	compatible = "qcom,msm8994-mtp", "qcom,msm8994", "qcom,mtp";
+};
+
+#include "dsi-panel-himaultra.dtsi"
+
+&mdss_mdp {
+	qcom,mdss-pref-prim-intf = "dsi";
+};
+
+&pmx_mdss {
+	qcom,num-grp-pins = <1>;
+	qcom,pins = <&gp 78>;
+};
+
+&pmx_mdss_te {
+	qcom,num-grp-pins = <1>;
+	qcom,pins = <&gp 10>;
+};
+
+&mdss_dsi0 {
+	pinctrl-names = "mdss_default", "mdss_sleep";
+	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
+	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
+	qcom,dsi-panel-bias-vreg;
+	qcom,platform-reset-gpio = <&msm_gpio 78 0>;
+	vlcmio-supply = <&pm8994_lvs2>;
+	qcom,panel-supply-entries {
+		qcom,panel-supply-entry@0 {
+			qcom,supply-name = "vlcmio";
+			qcom,supply-post-on-sleep = <2>;	/*sleep 2 ms after turning on 1v8*/
+		};
+	};
+};
+
+&mdss_dsi1 {
+	vlcmio-supply = <&pm8994_lvs2>;
+	qcom,panel-supply-entries {
+		qcom,panel-supply-entry@0 {
+			qcom,supply-name = "vlcmio";
+			qcom,supply-post-on-sleep = <2>;	/*sleep 2 ms after turning on 1v8*/
+		};
+	};
+};
+
+&soc {
+	spi@f9923000 {
+		status = "ok";
+		synaptics-spi@0 {
+			compatible        = "validity,metallica";
+			reg               = <0>; //CS ID
+			pinctrl-names     = "spi_0_cs0_active", "spi_0_cs0_suspend";
+			pinctrl-0         = <&spi_0_cs0_active>;
+			pinctrl-1         = <&spi_0_cs0_suspend>;
+			fpr_irq           = <&msm_gpio 90 0>;   //Interrupt pin
+			fpr_reset         = <&msm_gpio 89 0>; //Reset pin
+			fpr_1v8           = <&pm8994_gpios 13 0>;
+			fpr_3v3           = <&msm_gpio 94 0>;
+			fpr_cs0           = <&msm_gpio 2 0>; //spi CS 0
+			spi-max-frequency = <9600000>; //Max Frequency for Device
+                 };
+		crucialtec-spi@1 {
+			compatible        = "fpc,fpc1020";
+			reg               = <2>; //CS ID
+			pinctrl-names     = "spi_0_cs2_active", "spi_0_cs2_suspend";
+			pinctrl-0         = <&spi_0_cs2_active>;
+			pinctrl-1         = <&spi_0_cs2_suspend>;
+			fpr_irq           = <&msm_gpio 90 0>;   //Interrupt pin
+			fpr_reset         = <&msm_gpio 89 0>; //Reset pin
+			fpr_cs2           = <&msm_gpio 11 0>; //spi CS 2
+			fpr_1v8           = <&pm8994_gpios 13 0>;
+			fpr_3v3           = <&msm_gpio 94 0>;
+			spi-max-frequency = <9600000>; //Max Frequency for Device
+		};
+	};
+
+	i2c@f9927000 {
+
+		htc_mcu@72 {
+			compatible = "htc_mcu";
+			reg = <0x72>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <42 0x0>;
+			mcu,intr-gpio  = <&msm_gpio 42 0>;
+			mcu,gs_chip_layout = <1>;
+			mcu,acceleration_axes = <6>;
+			mcu,magnetic_axes = <7>;
+			mcu,gyro_axes = <6>;
+			mcu,Cpu_wake_mcu-gpio = <&msm_gpio 21 0>;
+			mcu,Reset-gpio = <&msm_gpio 16 0>;
+			mcu,Chip_mode-gpio = <&msm_gpio 44 0>;
+			mcu,mcu_status-gpio = <&msm_gpio 91 0>;
+			mcu,als_levels = <5 77 149 221 290 2021 2834 3647 4458 65535>;
+			mcu,als_goldl = <0x4D>;
+			mcu,als_goldh = <0x09>;
+			mcu,ps_thd_add = <0x12A>;
+			mcu,ps_thd_fixed = <0x15>;
+			pinctrl-names = "mcu_gpio_init";
+			pinctrl-0 = <&mcu_init>;
+			vibrate_ms = <25>;
+		};
+
+		htc_mcu_flash@39 {
+			compatible = "htc_mcu_flash";
+			reg = <0x39>;
+		};
+
+		htc_mcu_dload@02 {
+			compatible = "htc_mcu_dload";
+			reg = <0x02>;
+		};
+	};
+
+
+	tlmm_pinmux: pinctrl@fd510000 {
+
+		mcugpio_int {
+			qcom,pins = <&gp 42>, <&gp 91>;
+			qcom,num-grp-pins = <2>;
+			qcom,pin-func = <0>;
+			label = "mcugpio";
+			mcu_init: mcu_init {
+				drive-strength = <2>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+
+	sound {
+		compatible = "qcom,msm8994-asoc-snd";
+		qcom,model = "msm8994-tomtom-snd-card";
+		qcom,hph-en-gpio	= <&pmi8994_gpios 5 0>;
+	};
+
+	htc,htc_nc_pins {
+		compatible = "htc,nc_pin";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&hiau_nc_pins_in_pd &hiau_nc_pins_out_low>;
+	};
+};
+
+&spmi_bus {
+    qcom,pmi8994@3 {
+        qcom,leds@d000 {
+            compatible = "qcom,leds-qpnp";
+            reg = <0xd000 0x100>;
+            label = "rgb";
+            status = "okay";
+
+            qcom,rgb_0 {
+                label = "rgb";
+                qcom,id = <3>;
+                qcom,mode = "pwm";
+                pwms = <&pmi8994_pwm_3 0 0>;
+                qcom,pwm-us = <1000>;
+                qcom,max-current = <12>;
+                qcom,default-state = "off";
+                linux,name = "amber";
+                qcom,pwm_coefficient = <20>;
+            };
+
+            qcom,rgb_1 {
+                label = "rgb";
+                qcom,id = <4>;
+                qcom,mode = "pwm";
+                pwms = <&pmi8994_pwm_2 0 0>;
+                qcom,pwm-us = <1000>;
+                qcom,max-current = <12>;
+                qcom,default-state = "off";
+                linux,name = "green";
+                qcom,pwm_coefficient = <35>;
+            };
+
+        };
+    };
+};
+
+&tlmm_pinmux {
+	hiau_nc_pins_in_pd {
+		qcom,pins = <&gp 31>, <&gp 49>, <&gp 50>, <&gp 51>, <&gp 52>;
+		qcom,num-grp-pins = <5>;
+		qcom,pin-func = <0>;
+		label = "hiau_nc_pins_in_pd";
+		hiau_nc_pins_in_pd: hiau_nc_pins_in_pd {
+			drive-strength = <2>;   /* 2 mA */
+			bias-pull-down;         /* PULL DOWN */
+			input-enable;
+		};
+	};
+
+	hiau_nc_pins_out_low {
+		qcom,pins = <&gp 130>;
+		qcom,num-grp-pins = <1>;
+		qcom,pin-func = <0>;
+		label = "hiau_nc_pins_out_low";
+		hiau_nc_pins_out_low: hiau_nc_pins_out_low {
+			drive-strength = <2>;   /* 2 mA */
+			bias-disable;           /* NO PULL */
+			output-low;
+		};
+	};
+};

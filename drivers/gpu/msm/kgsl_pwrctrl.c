@@ -32,6 +32,7 @@
 #define KGSL_PWRFLAGS_CLK_ON   1
 #define KGSL_PWRFLAGS_AXI_ON   2
 #define KGSL_PWRFLAGS_IRQ_ON   3
+#define KGSL_PWRFLAGS_WAKEUP_PWRLEVEL  24
 
 #define UPDATE_BUSY_VAL		1000000
 
@@ -156,9 +157,14 @@ static unsigned int _adjust_pwrlevel(struct kgsl_pwrctrl *pwr, int level,
 					struct kgsl_pwr_constraint *pwrc,
 					int popp)
 {
-	unsigned int max_pwrlevel = max_t(unsigned int, pwr->thermal_pwrlevel,
+	unsigned int therm_pwrlevel, max_pwrlevel, min_pwrlevel;
+
+	if (pwr->thermal_pwrlevel > 0)
+		therm_pwrlevel = pwr->thermal_pwrlevel - 1;
+
+	max_pwrlevel = max_t(unsigned int, therm_pwrlevel,
 		pwr->max_pwrlevel);
-	unsigned int min_pwrlevel = max_t(unsigned int, pwr->thermal_pwrlevel,
+	min_pwrlevel = max_t(unsigned int, therm_pwrlevel,
 		pwr->min_pwrlevel);
 
 	switch (pwrc->type) {
@@ -291,6 +297,10 @@ void kgsl_pwrctrl_pwrlevel_change(struct kgsl_device *device,
 
 	new_level = _adjust_pwrlevel(pwr, new_level, &pwr->constraint,
 					device->pwrscale.popp_level);
+
+	if (new_level == 0 && test_bit(KGSL_PWRFLAGS_WAKEUP_PWRLEVEL,
+		&device->pwrctrl.ctrl_flags))
+		new_level = 1;
 
 	kgsl_pwrctrl_set_thermal_cycle(pwr, new_level);
 
@@ -1729,7 +1739,11 @@ _aware(struct kgsl_device *device)
 		del_timer_sync(&device->idle_timer);
 		break;
 	case KGSL_STATE_SLUMBER:
+		set_bit(KGSL_PWRFLAGS_WAKEUP_PWRLEVEL,
+				&device->pwrctrl.ctrl_flags);
 		status = kgsl_pwrctrl_enable(device);
+		clear_bit(KGSL_PWRFLAGS_WAKEUP_PWRLEVEL,
+				&device->pwrctrl.ctrl_flags);
 		break;
 	default:
 		status = -EINVAL;

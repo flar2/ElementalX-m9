@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: wlioctl.h 518749 2014-12-03 10:13:43Z $
+ * $Id: wlioctl.h 586334 2015-09-15 07:11:14Z $
  */
 
 #ifndef _wlioctl_h_
@@ -2314,6 +2314,13 @@ enum {
 #define PFN_PARTIAL_SCAN_BIT		0
 #define PFN_PARTIAL_SCAN_MASK		1
 
+#define PFN_SWC_RSSI_WINDOW_MAX   8
+#define PFN_SWC_MAX_NUM_APS       16
+#define PFN_HOTLIST_MAX_NUM_APS   64
+
+#define MAX_EPNO_HIDDEN_SSID         8
+#define MAX_WHITELIST_SSID           2
+
 typedef struct wl_pfn_subnet_info {
 	struct ether_addr BSSID;
 	uint8	channel; 
@@ -2342,6 +2349,19 @@ typedef struct wl_pfn_lscanresults {
 	uint32 count;
 	wl_pfn_lnet_info_t netinfo[1];
 } wl_pfn_lscanresults_t;
+
+typedef struct wl_pfn_significant_net {
+	uint16 flags;
+	uint16 channel;
+	struct ether_addr BSSID;
+	int8 rssi[PFN_SWC_RSSI_WINDOW_MAX];
+} wl_pfn_significant_net_t;
+
+typedef struct wl_pfn_significant_bssid {
+	struct ether_addr	macaddr;
+	int8    rssi_low_threshold;
+	int8    rssi_high_threshold;
+} wl_pfn_significant_bssid_t;
 
 typedef struct wl_pfn_scanresults {
 	uint32 version;

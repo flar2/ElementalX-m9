@@ -19,6 +19,7 @@
 #include <linux/qpnp/clkdiv.h>
 #include <linux/regulator/consumer.h>
 #include <linux/io.h>
+#include <linux/input.h>
 #include <linux/module.h>
 #include <linux/switch.h>
 #include <sound/core.h>
@@ -276,6 +277,14 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.use_vddio_meas = true,
 	.enable_anc_mic_detect = false,
 	.hw_jack_type = SIX_POLE_JACK,
+	.key_code[0] = KEY_MEDIA,
+	.key_code[1] = KEY_VOICECOMMAND,
+	.key_code[2] = KEY_VOLUMEUP,
+	.key_code[3] = KEY_VOLUMEDOWN,
+	.key_code[4] = 0,
+	.key_code[5] = 0,
+	.key_code[6] = 0,
+	.key_code[7] = 0,
 };
 #endif
 static struct afe_clk_cfg mi2s_tx_clk = {
@@ -570,7 +579,7 @@ static int msm8994_liquid_dock_notify_handler(struct notifier_block *this,
 		if (ret < 0) {
 			pr_err("%s: Request Irq Failed err = %d\n",
 				__func__, ret);
-			goto fail_dock_gpio;
+			goto fail_gpio_irq;
 		}
 
 		switch_set_state(&msm8994_liquid_dock_dev->audio_sdev,
@@ -588,9 +597,10 @@ static int msm8994_liquid_dock_notify_handler(struct notifier_block *this,
 	}
 	return NOTIFY_OK;
 
-fail_dock_gpio:
+fail_gpio_irq:
 	gpio_free(msm8994_liquid_dock_dev->plug_gpio);
 
+fail_dock_gpio:
 	return NOTIFY_DONE;
 }
 
@@ -3352,21 +3362,21 @@ static void *def_codec_mbhc_cal(void)
 	btn_high = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg,
 					       MBHC_BTN_DET_V_BTN_HIGH);
 	btn_low[0] = -50;
-	btn_high[0] = 20;
-	btn_low[1] = 21;
-	btn_high[1] = 61;
-	btn_low[2] = 62;
-	btn_high[2] = 104;
-	btn_low[3] = 105;
-	btn_high[3] = 148;
-	btn_low[4] = 149;
-	btn_high[4] = 189;
-	btn_low[5] = 190;
-	btn_high[5] = 228;
-	btn_low[6] = 229;
-	btn_high[6] = 269;
-	btn_low[7] = 270;
-	btn_high[7] = 500;
+	btn_high[0] = 90;
+	btn_low[1] = 130;
+	btn_high[1] = 220;
+	btn_low[2] = 235;
+	btn_high[2] = 335;
+	btn_low[3] = 375;
+	btn_high[3] = 655;
+	btn_low[4] = 656;
+	btn_high[4] = 660;
+	btn_low[5] = 661;
+	btn_high[5] = 670;
+	btn_low[6] = 671;
+	btn_high[6] = 680;
+	btn_low[7] = 681;
+	btn_high[7] = 690;
 	n_ready = wcd9xxx_mbhc_cal_btn_det_mp(btn_cfg, MBHC_BTN_DET_N_READY);
 	n_ready[0] = 80;
 	n_ready[1] = 68;
@@ -4159,6 +4169,20 @@ static struct snd_soc_dai_link msm8994_common_dai_links[] = {
 		.ignore_pmdown_time = 1,
 		.codec_dai_name = "tomtom_mad1",
 		.codec_name = "tomtom_codec",
+	},
+	{
+		.name = "MultiMedia3 Record",
+		.stream_name = "MultiMedia3 Capture",
+		.cpu_dai_name = "MultiMedia3",
+		.platform_name = "msm-pcm-dsp.0",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
 	},
 	
 	

@@ -126,6 +126,10 @@ MODULE_PARM_DESC(dcp_max_current, "max current drawn for DCP charger");
 #define PWR_EVNT_LPM_OUT_L2_MASK		BIT(5)
 #define PWR_EVNT_LPM_OUT_L1_MASK		BIT(13)
 
+#define DWC3_3P3_VOL_MIN		3075000 
+#define DWC3_3P3_VOL_MAX		3200000 
+#define DWC3_3P3_HPM_LOAD		30000	
+
 #define DWC3_MSM_RESTORE_SCM_CFG_CMD 0x2
 struct dwc3_msm_scm_cmd_buf {
 	unsigned int device_id;
@@ -164,6 +168,7 @@ struct dwc3_msm {
 
 	
 	struct regulator	*vbus_otg;
+	struct regulator	*vdda33;
 	struct dwc3_ext_xceiv	ext_xceiv;
 	bool			resume_pending;
 	atomic_t                pm_suspended;
@@ -197,6 +202,7 @@ struct dwc3_msm {
 	bool			vbus_active;
 	bool			ext_inuse;
 	bool			mhl_online;
+	bool			rm_pulldown;
 	enum dwc3_id_state	id_state;
 	unsigned long		lpm_flags;
 #define MDWC3_PHY_REF_CLK_OFF		BIT(0)
@@ -1151,6 +1157,7 @@ extern void usb_set_connect_type(int);
 static void dwc3_chg_detect_work(struct work_struct *w)
 {
 	struct dwc3_msm *mdwc = container_of(w, struct dwc3_msm, chg_work.work);
+	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3); 
 	bool is_dcd = false, tmout, vout;
 	static bool dcd;
 	unsigned long delay;
@@ -1227,6 +1234,10 @@ static void dwc3_chg_detect_work(struct work_struct *w)
 				mdwc->ext_chg_active = true;
 			}
 		}
+		if (mdwc->charger.chg_type != DWC3_SDP_CHARGER)
+			cancel_delayed_work(&dwc->dotg->unknown_charger_notify_work);
+
+		USB_INFO("%s : charger type: %s\n", __func__, chg_to_string(mdwc->charger.chg_type));
 		dev_dbg(mdwc->dev, "chg_type = %s\n",
 			chg_to_string(mdwc->charger.chg_type));
 		mdwc->charger.notify_detection_complete(mdwc->otg_xceiv->otg,
@@ -1388,6 +1399,7 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 		if (!msm_bam_usb_lpm_ok(DWC3_CTRL)) {
 			dev_dbg(mdwc->dev, "%s: IPA handshake not finished, will suspend when done\n",
 					__func__);
+			pm_schedule_suspend(mdwc->dev, 1000);
 			return -EBUSY;
 		}
 	}
@@ -1944,6 +1956,54 @@ void htc_dwc3_disable_usb(int state)
 	}
 }
 
+static int dwc3_msm_remove_pulldown(struct dwc3_msm *mdwc, bool rm_pulldown)
+{
+	int ret = 0;
+
+	if (!rm_pulldown)
+		goto disable_vdda33;
+
+	ret = regulator_set_optimum_mode(mdwc->vdda33, DWC3_3P3_HPM_LOAD);
+	if (ret < 0) {
+		dev_err(mdwc->dev, "Unable to set HPM of vdda33:%d\n", ret);
+		return ret;
+	}
+
+	ret = regulator_set_voltage(mdwc->vdda33, DWC3_3P3_VOL_MIN,
+						DWC3_3P3_VOL_MAX);
+	if (ret) {
+		dev_err(mdwc->dev,
+				"Unable to set voltage for vdda33:%d\n", ret);
+		goto put_vdda33_lpm;
+	}
+
+	ret = regulator_enable(mdwc->vdda33);
+	if (ret) {
+		dev_err(mdwc->dev, "Unable to enable vdda33:%d\n", ret);
+		goto unset_vdd33;
+	}
+
+	return 0;
+
+disable_vdda33:
+	ret = regulator_disable(mdwc->vdda33);
+	if (ret)
+		dev_err(mdwc->dev, "Unable to disable vdda33:%d\n", ret);
+
+unset_vdd33:
+	ret = regulator_set_voltage(mdwc->vdda33, 0, DWC3_3P3_VOL_MAX);
+	if (ret)
+		dev_err(mdwc->dev,
+			"Unable to set (0) voltage for vdda33:%d\n", ret);
+
+put_vdda33_lpm:
+	ret = regulator_set_optimum_mode(mdwc->vdda33, 0);
+	if (ret < 0)
+		dev_err(mdwc->dev, "Unable to set (0) HPM of vdda33\n");
+
+	return ret;
+}
+
 static int
 get_prop_usbin_voltage_now(struct dwc3_msm *mdwc)
 {
@@ -2032,10 +2092,18 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 		}
 		break;
 	
+	case POWER_SUPPLY_PROP_ALLOW_DETECTION:
+		if (mdwc->rm_pulldown == val->intval)
+			break;
+
+		mdwc->rm_pulldown = val->intval;
+		dbg_event(0xFF, "RM PuDwn", val->intval);
+		dwc3_msm_remove_pulldown(mdwc, mdwc->rm_pulldown);
+		break;
+	
 	case POWER_SUPPLY_PROP_PRESENT:
 		dev_dbg(mdwc->dev, "%s: notify xceiv event\n", __func__);
 		USB_INFO("check_vbus_in: %d -> %d\n", mdwc->vbus_active, val->intval);
-		mdwc->vbus_active = val->intval;
 		htc_vbus_backup = val->intval;
 		vbus = val->intval;
 		if (mdwc->otg_xceiv && !mdwc->ext_inuse && !mdwc->in_restart) {
@@ -2058,6 +2126,7 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 				queue_delayed_work(system_nrt_wq, &dwc->dotg->unknown_charger_notify_work, HZ * 10);
 			}
 		}
+		mdwc->vbus_active = val->intval;
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
 		USB_INFO("%s: online %d -> %d\n", __func__, mdwc->online, val->intval);
@@ -2097,11 +2166,11 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 		}
 
 		if (mdwc->charger.chg_type != DWC3_INVALID_CHARGER) {
-			cancel_delayed_work(&dwc->dotg->unknown_charger_notify_work);
+			cancel_delayed_work(&dwc->dotg->unknown_charger_notify_work); 
 			mdwc->chg_state = USB_CHG_STATE_DETECTED;
 		}
 
-		USB_INFO("charger type: %s\n", chg_to_string(mdwc->charger.chg_type));
+		USB_INFO("%s : charger type: %s\n", __func__, chg_to_string(mdwc->charger.chg_type));
 		dev_dbg(mdwc->dev, "%s: charger type: %s\n", __func__,
 				chg_to_string(mdwc->charger.chg_type));
 
@@ -2643,6 +2712,12 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	INIT_WORK(&mdwc->id_work, dwc3_id_work);
 	INIT_DELAYED_WORK(&mdwc->init_adc_work, dwc3_init_adc_work);
 	init_completion(&mdwc->ext_chg_wait);
+
+	mdwc->vdda33 = devm_regulator_get(dev, "vdda33");
+	if (IS_ERR(mdwc->vdda33)) {
+		dev_err(&pdev->dev, "unable to get vdda33 supply\n");
+		return PTR_ERR(mdwc->vdda33);
+	}
 
 	ret = dwc3_msm_config_gdsc(mdwc, 1);
 	if (ret) {

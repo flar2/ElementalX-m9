@@ -314,6 +314,8 @@ static void __save_error_info(struct super_block *sb, const char *func,
 		return;
 	}
 	EXT4_SB(sb)->s_mount_state |= EXT4_ERROR_FS;
+	if (bdev_read_only(sb->s_bdev))
+		return;
 	es->s_state |= cpu_to_le16(EXT4_ERROR_FS);
 	es->s_last_error_time = cpu_to_le32(get_seconds());
 	strncpy(es->s_last_error_func, func, sizeof(es->s_last_error_func));
@@ -925,7 +927,7 @@ static struct inode *ext4_nfs_get_inode(struct super_block *sb,
 	if (ino > le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count))
 		return ERR_PTR(-ESTALE);
 
-	inode = ext4_iget(sb, ino);
+	inode = ext4_iget_normal(sb, ino);
 	if (IS_ERR(inode))
 		return ERR_CAST(inode);
 	if (generation && inode->i_generation != generation) {
@@ -1583,13 +1585,6 @@ static int parse_options(char *options, struct super_block *sb,
 					"not specified");
 			return 0;
 		}
-	} else {
-		if (sbi->s_jquota_fmt) {
-			ext4_msg(sb, KERN_ERR, "journaled quota format "
-					"specified with no journaling "
-					"enabled");
-			return 0;
-		}
 	}
 #endif
 	if (test_opt(sb, DIOREAD_NOLOCK)) {
@@ -1903,6 +1898,10 @@ static __le16 ext4_group_desc_csum(struct ext4_sb_info *sbi, __u32 block_group,
 	}
 
 	
+	if (!(sbi->s_es->s_feature_ro_compat &
+	      cpu_to_le32(EXT4_FEATURE_RO_COMPAT_GDT_CSUM)))
+		return 0;
+
 	offset = offsetof(struct ext4_group_desc, bg_checksum);
 
 	crc = crc16(~0, sbi->s_es->s_uuid, sizeof(sbi->s_es->s_uuid));
@@ -4242,6 +4241,7 @@ struct ext4_mount_options {
 #endif
 };
 
+extern int mmc_blk_send_wp_info(struct block_device *bdev, unsigned long addr);
 static int ext4_remount(struct super_block *sb, int *flags, char *data)
 {
 	struct ext4_super_block *es;
@@ -4256,6 +4256,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	int i, j;
 #endif
 	char *orig_data = kstrdup(data, GFP_KERNEL);
+
+	sync_filesystem(sb);
 
 	
 	old_sb_flags = sb->s_flags;
@@ -4301,6 +4303,23 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 				 "both data=journal and dioread_nolock");
 			err = -EINVAL;
 			goto restore_opts;
+		}
+	}
+
+	if (sb->s_bdev) {
+		struct block_device *bdev = sb->s_bdev;
+		struct hd_struct *p;
+		static bool system_is_wp = false;
+		p = bdev->bd_part;
+		if (p && p->info && !strcmp(p->info->volname, "system") && !(*flags & MS_RDONLY)) {
+			printk(KERN_INFO "%s: partition %s name %s flags 0x%x sect_start %lu\n",
+				__func__, sb->s_id, p->info->volname, *flags, (unsigned long)p->start_sect);
+			if (system_is_wp || mmc_blk_send_wp_info(bdev, (unsigned long)p->start_sect)) {
+				printk(KERN_INFO "%s: system is write-protected, not allow to remount R/W\n",
+					__func__);
+				system_is_wp = true;
+				return -EPERM;
+			}
 		}
 	}
 

@@ -24,7 +24,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_msgbuf.c 556648 2015-05-14 11:08:32Z $
+ * $Id: dhd_msgbuf.c 560846 2015-06-02 12:49:30Z $
  */
 #include <typedefs.h>
 #include <osl.h>
@@ -785,6 +785,10 @@ __dhd_pktid_map_reserve(dhd_pktid_map_handle_t *handle, void *pkt)
 #if defined(DHD_PKTIDMAP_FIFO)
 
 	ASSERT(!dll_empty(&map->list_free));
+	if (dll_empty(&map->list_free)) {
+		DHD_ERROR(("%s:%d: failed, dll_empty\n", __FUNCTION__, __LINE__));
+		return DHD_PKTID_INVALID;
+	}
 
 	
 	locker = (dhd_pktid_item_t *)dll_head_p(&map->list_free);
@@ -873,6 +877,11 @@ dhd_pktid_map_alloc(dhd_pktid_map_handle_t *handle, void *pkt,
 	dhd_pktid_map_t *map;
 
 	ASSERT(handle != NULL);
+	if (handle == NULL) {
+		DHD_ERROR(("%s:%d: handle is null \n", __FUNCTION__, __LINE__));
+		return DHD_PKTID_INVALID;
+	}
+
 	map = (dhd_pktid_map_t *)handle;
 
 	flags = DHD_PKTID_LOCK(map->pktid_lock);
@@ -1559,7 +1568,7 @@ dhd_prot_packet_free(dhd_pub_t *dhd, uint32 pktid, uint8 buf_type)
 	} else {
 #if defined(USE_STATIC_MEMDUMP)
 		DHD_ERROR(("%s: pkt id invaild. dump dongle memory.\n", __FUNCTION__));
-		if (dhd->memdump_enabled) {
+		if (dhd->memdump_enabled && !dhd->bus->islinkdown) {
 			
 			dhdpcie_mem_dump(dhd->bus);
 		}
@@ -1599,13 +1608,15 @@ dhd_prot_packet_get(dhd_pub_t *dhd, uint32 pktid, uint8 buf_type)
 	} else {
 #if defined(USE_STATIC_MEMDUMP)
 		int i;
-		DHD_ERROR(("%s: dump pktid/buf_type history for debug. idx=%d\n", __FUNCTION__, pktid_history_index));
-		for (i=0; i<MAX_LOG_OF_PKTID_HISTORY; i++) {
-			DHD_ERROR(("%d: %d,%d\n", i, pktid_history_array[i].pktid, pktid_history_array[i].buf_type));
+		DHD_ERROR(("%s: dump pktid/buf_type history for debug. idx=%d\n",
+			__FUNCTION__, pktid_history_index));
+		for (i = 0; i < MAX_LOG_OF_PKTID_HISTORY; i++) {
+			DHD_ERROR(("%d: %d,%d\n", i, pktid_history_array[i].pktid,
+				pktid_history_array[i].buf_type));
 		}
 
 		DHD_ERROR(("%s: pkt id invaild. dump dongle memory.\n", __FUNCTION__));
-		if (dhd->memdump_enabled) {
+		if (dhd->memdump_enabled && !dhd->bus->islinkdown) {
 			
 			dhdpcie_mem_dump(dhd->bus);
 		}
@@ -1761,6 +1772,10 @@ dhd_prot_rxbufpost(dhd_pub_t *dhd, uint16 count)
 	return alloced;
 }
 
+#ifdef CUSTOMER_HW_ONE
+static int rxbufpost_err_cnt = 0;
+#endif 
+
 static int
 dhd_prot_rxbufpost_ctrl(dhd_pub_t *dhd, bool event_buf)
 {
@@ -1806,8 +1821,23 @@ dhd_prot_rxbufpost_ctrl(dhd_pub_t *dhd, bool event_buf)
 		DHD_ERROR(("%s:%d: PKTGET for %s rxbuf failed\n",
 			__FUNCTION__, __LINE__, event_buf ? "event" :
 			"ioctl"));
+#ifdef CUSTOMER_HW_ONE
+		rxbufpost_err_cnt ++;
+		if (rxbufpost_err_cnt > 20) {
+			DHD_ERROR(("%s:%d: PKTGET for %s rxbuf failed continue over 20 times"
+				"trigger hang to recovery\n",
+				__FUNCTION__, __LINE__, event_buf ? "event" :
+				"ioctl"));
+			rxbufpost_err_cnt = 0;
+			dhd_os_send_hang_message(dhd);
+		}
+#endif 
 		return -1;
 	}
+
+#ifdef CUSTOMER_HW_ONE
+	rxbufpost_err_cnt = 0;
+#endif 
 
 	pktlen = PKTLEN(dhd->osh, p);
 	physaddr = DMA_MAP(dhd->osh, PKTDATA(dhd->osh, p), pktlen, DMA_RX, p, 0);
@@ -2573,7 +2603,7 @@ dhd_prot_txdata(dhd_pub_t *dhd, void *PKTBUF, uint8 ifidx)
 	txdesc = (host_txbuf_post_t *)dhd_alloc_ring_space(dhd,
 		msg_ring, DHD_FLOWRING_DEFAULT_NITEMS_POSTED_H2D, &alloced);
 	if (txdesc == NULL) {
-		DHD_ERROR(("%s:%d: HTOD Msgbuf Not available TxCount = %d\n",
+		DHD_INFO(("%s:%d: HTOD Msgbuf Not available TxCount = %d\n",
 			__FUNCTION__, __LINE__, prot->active_tx_count));
 		
 		PKTID_TO_NATIVE(dhd->prot->pktid_map_handle, pktid, physaddr,
@@ -2768,6 +2798,10 @@ int dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int 
 		DHD_ERROR(("%s : bus is down. we have nothing to do\n", __FUNCTION__));
 		goto done;
 	}
+
+#ifdef DHD_USE_IDLECOUNT
+	bus_wake(dhd->bus);
+#endif 
 
 	if (dhd->busstate == DHD_BUS_SUSPEND) {
 		DHD_ERROR(("%s : bus is suspended\n", __FUNCTION__));

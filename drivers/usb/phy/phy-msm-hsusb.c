@@ -33,19 +33,23 @@ MODULE_PARM_DESC(override_phy_init, "Override HSPHY Init Seq");
 
 #define PORT_OFFSET(i) ((i == 0) ? 0x0 : ((i == 1) ? 0x6c : 0x88))
 
+/* QSCRATCH register settings differ based on MSM core ver */
 #define MSM_CORE_VER_120		0x10020061
 #define MSM_CORE_VER_160		0x10060000
 #define MSM_CORE_VER_161		0x10060001
 
+/* QSCRATCH register offsets */
 #define GENERAL_CFG_REG			(0x08)
 #define HS_PHY_CTRL_REG(i)		(0x10 + PORT_OFFSET(i))
 #define PARAMETER_OVERRIDE_X_REG(i)		(0x14 + PORT_OFFSET(i))
 #define ALT_INTERRUPT_EN_REG(i)		(0x20 + PORT_OFFSET(i))
 #define HS_PHY_IRQ_STAT_REG(i)		(0x24 + PORT_OFFSET(i))
-#define HS_PHY_CTRL_COMMON_REG		(0xEC)	
+#define HS_PHY_CTRL_COMMON_REG		(0xEC)	/* ver >= MSM_CORE_VER_120 */
 
+/* GENERAL_CFG_REG bits */
 #define SEC_UTMI_FREE_CLK_GFM_SEL1	(0x80)
 
+/* HS_PHY_CTRL_REG bits */
 #define RETENABLEN			BIT(1)
 #define FSEL_MASK			(0x7 << 4)
 #define FSEL_DEFAULT			(0x3 << 4)
@@ -65,10 +69,12 @@ MODULE_PARM_DESC(override_phy_init, "Override HSPHY Init Seq");
 #define USB2_SUSPEND_N_SEL		BIT(23)
 #define DMSEHV_CLAMP_EN_N		BIT(24)
 #define CLAMP_MPM_DPSE_DMSE_EN_N	BIT(26)
+/* Following exist only when core_ver >= MSM_CORE_VER_120 */
 #define FREECLK_DIS_WHEN_SUSP		BIT(27)
 #define SW_SESSVLD_SEL			BIT(28)
 #define FREECLOCK_SEL			BIT(29)
 
+/* HS_PHY_CTRL_COMMON_REG bits used when core_ver >= MSM_CORE_VER_120 */
 #define COMMON_PLLITUNE_1		BIT(18)
 #define COMMON_PLLBTUNE		BIT(15)
 #define COMMON_CLKCORE			BIT(14)
@@ -80,6 +86,7 @@ MODULE_PARM_DESC(override_phy_init, "Override HSPHY Init Seq");
 #define COMMON_FSEL			(0x7 << 4)
 #define COMMON_RETENABLEN		BIT(3)
 
+/* ALT_INTERRUPT_EN/HS_PHY_IRQ_STAT bits */
 #define ACAINTEN			BIT(0)
 #define DMINTEN				BIT(1)
 #define DCDINTEN			BIT(1)
@@ -99,6 +106,7 @@ MODULE_PARM_DESC(override_phy_init, "Override HSPHY Init Seq");
 #define TCSR_USB30_CONTROL		BIT(8)
 #define TCSR_HSPHY_ARES			BIT(11)
 
+/* USB2PHY CSR register offsets */
 #define USB2PHY_HS_PHY_CTRL_COMMON0	(0x78)
 #define USB2PHY_COMMONONN		BIT(7)
 #define USB2PHY_RETENABLEN		BIT(3)
@@ -112,14 +120,14 @@ MODULE_PARM_DESC(override_phy_init, "Override HSPHY Init Seq");
 #define USB2PHY_USB_PHY_PWRDOWN_CTRL	(0xEC)
 #define PWRDN_B				BIT(0)
 
-#define USB_HSPHY_3P3_VOL_MIN			3050000 
-#define USB_HSPHY_3P3_VOL_MAX			3300000 
-#define USB_HSPHY_3P3_HPM_LOAD			16000	
-#define USB_HSPHY_3P3_VOL_FSHOST		3150000 
+#define USB_HSPHY_3P3_VOL_MIN			3050000 /* uV */
+#define USB_HSPHY_3P3_VOL_MAX			3300000 /* uV */
+#define USB_HSPHY_3P3_HPM_LOAD			16000	/* uA */
+#define USB_HSPHY_3P3_VOL_FSHOST		3150000 /* uV */
 
-#define USB_HSPHY_1P8_VOL_MIN			1800000 
-#define USB_HSPHY_1P8_VOL_MAX			1800000 
-#define USB_HSPHY_1P8_HPM_LOAD			19000	
+#define USB_HSPHY_1P8_VOL_MIN			1800000 /* uV */
+#define USB_HSPHY_1P8_VOL_MAX			1800000 /* uV */
+#define USB_HSPHY_1P8_HPM_LOAD			19000	/* uA */
 
 struct msm_hsphy {
 	struct usb_phy		phy;
@@ -127,7 +135,9 @@ struct msm_hsphy {
 	void __iomem		*tcsr;
 	void __iomem		*csr;
 	int			hsphy_init_seq;
+/*++ 2014/11/26 USB Team, PCN00023 ++*/
 	int 			hsphy_host_init_seq;
+/*-- 2014/11/26 USB Team, PCN00023 --*/
 	bool			set_pllbtune;
 	u32			core_ver;
 
@@ -135,32 +145,38 @@ struct msm_hsphy {
 	bool			sleep_clk_reset;
 
 	struct regulator	*vdd;
+	struct regulator	*vddcx;
 	struct regulator	*vdda33;
 	struct regulator	*vdda18;
-	int			vdd_levels[3]; 
+	int			vdd_levels[3]; /* none, low, high */
 	u32			lpm_flags;
 	bool			suspended;
 	bool			vdda_force_on;
 
-	
+	/* Using external VBUS/ID notification */
 	bool			ext_vbus_id;
 	int			num_ports;
 	bool			cable_connected;
 };
 
+/* global reference counter between all HSPHY instances */
 static atomic_t hsphy_active_count;
 
 static int msm_hsusb_config_vdd(struct msm_hsphy *phy, int high)
 {
 	int min, ret;
 
-	min = high ? 1 : 0; 
+	min = high ? 1 : 0; /* low or none? */
 	ret = regulator_set_voltage(phy->vdd, phy->vdd_levels[min],
 				    phy->vdd_levels[2]);
 	if (ret) {
 		dev_err(phy->phy.dev, "unable to set voltage for hsusb vdd\n");
 		return ret;
 	}
+
+	if (phy->vddcx)
+		regulator_set_voltage(phy->vddcx, phy->vdd_levels[min],
+					phy->vdd_levels[2]);
 
 	dev_dbg(phy->phy.dev, "%s: min_vol:%d max_vol:%d\n", __func__,
 		phy->vdd_levels[min], phy->vdd_levels[2]);
@@ -171,7 +187,9 @@ static int msm_hsusb_config_vdd(struct msm_hsphy *phy, int high)
 static int msm_hsusb_ldo_enable(struct msm_hsphy *phy, int on)
 {
 	int rc = 0;
+/*++ 2014/07/25, USB Team, PCN00001 ++*/
 	static int L24_keep = 0;
+/*-- 2014/07/25, USB Team, PCN00001 --*/
 
 	dev_dbg(phy->phy.dev, "reg (%s)\n", on ? "HPM" : "LPM");
 
@@ -210,6 +228,7 @@ static int msm_hsusb_ldo_enable(struct msm_hsphy *phy, int on)
 		dev_err(phy->phy.dev, "unable to set voltage for vdda33\n");
 		goto put_vdda33_lpm;
 	}
+/*++ 2014/07/25, USB Team, PCN00001 ++*/
 	if (L24_keep == 0) {
 		L24_keep = 1;
 		rc = regulator_enable(phy->vdda33);
@@ -218,10 +237,21 @@ static int msm_hsusb_ldo_enable(struct msm_hsphy *phy, int on)
 			goto unset_vdda33;
 		}
 	}
+/*-- 2014/07/25, USB Team, PCN00001 --*/
 	return 0;
 
 disable_regulators:
+/*++ 2014/07/25, USB Team, PCN00001 ++*/
+/*	rc = regulator_disable(phy->vdda33);
+	if (rc)
+		dev_err(phy->phy.dev, "Unable to disable vdda33\n");
+*/
 unset_vdda33:
+/*	rc = regulator_set_voltage(phy->vdda33, 0, USB_HSPHY_3P3_VOL_MAX);
+	if (rc)
+		dev_err(phy->phy.dev, "unable to set voltage for vdda33\n");
+*/
+/*-- 2014/07/25, USB Team, PCN00001 --*/
 put_vdda33_lpm:
 	rc = regulator_set_optimum_mode(phy->vdda33, 0);
 	if (rc < 0)
@@ -250,14 +280,14 @@ static void msm_usb_write_readback(void *base, u32 offset,
 {
 	u32 write_val, tmp = readl_relaxed(base + offset);
 
-	tmp &= ~mask;		
+	tmp &= ~mask;		/* retain other bits */
 	write_val = tmp | val;
 
 	writel_relaxed(write_val, base + offset);
 
 	/* Read back to see if val was written */
 	tmp = readl_relaxed(base + offset);
-	tmp &= mask;		
+	tmp &= mask;		/* clear other bits */
 
 	if (tmp != val)
 		pr_err("%s: write: %x to offset(%x) FAILED\n",
@@ -270,7 +300,7 @@ static int msm_hsphy_reset(struct usb_phy *uphy)
 	u32 val;
 	int ret;
 
-	
+	/* skip reset if there are other active PHY instances */
 	ret = atomic_read(&hsphy_active_count);
 	if (ret > 1) {
 		dev_dbg(uphy->dev, "skipping reset, inuse count=%d\n", ret);
@@ -280,12 +310,12 @@ static int msm_hsphy_reset(struct usb_phy *uphy)
 	if (phy->tcsr) {
 		val = readl_relaxed(phy->tcsr);
 
-		
+		/* Assert/deassert TCSR Reset */
 		writel_relaxed((val | TCSR_HSPHY_ARES), phy->tcsr);
 		usleep(1000);
 		writel_relaxed((val & ~TCSR_HSPHY_ARES), phy->tcsr);
 	} else if (phy->sleep_clk_reset) {
-		
+		/* Reset PHY using sleep clock */
 		ret = clk_reset(phy->sleep_clk, CLK_RESET_ASSERT);
 		if (ret) {
 			dev_err(uphy->dev, "hsphy_sleep_clk assert failed\n");
@@ -310,9 +340,13 @@ static int msm_hsphy_init(struct usb_phy *uphy)
 
 	msm_hsphy_reset(uphy);
 
-	
+	/* different sequences based on core version */
 	phy->core_ver = readl_relaxed(phy->base);
 
+	/*
+	 * HSPHY Initialization: Enable UTMI clock and clamp enable HVINTs,
+	 * and disable RETENTION (power-on default is ENABLED)
+	 */
 	val = readl_relaxed(phy->base + HS_PHY_CTRL_REG(0));
 	val |= (USB2_UTMI_CLK_EN | CLAMP_MPM_DPSE_DMSE_EN_N | RETENABLEN);
 
@@ -342,6 +376,12 @@ static int msm_hsphy_init(struct usb_phy *uphy)
 		writel_relaxed(val, phy->base + HS_PHY_CTRL_COMMON_REG);
 	}
 
+	/*
+	 * write HSPHY init value to QSCRATCH reg to set HSPHY parameters like
+	 * VBUS valid threshold, disconnect valid threshold, DC voltage level,
+	 * preempasis and rise/fall time.
+	 */
+/*++ 2014/11/26 USB Team, PCN00023 ++*/
 	if (override_phy_init) {
 		phy->hsphy_init_seq = override_phy_init;
 		phy->hsphy_host_init_seq = override_phy_init;
@@ -358,6 +398,7 @@ static int msm_hsphy_init(struct usb_phy *uphy)
 					PARAMETER_OVERRIDE_X_REG(0), 0x03FFFFFF,
 					phy->hsphy_host_init_seq & 0x03FFFFFF);
 	}
+/*-- 2014/11/26 USB Team, PCN00023 --*/
 
 	return 0;
 }
@@ -377,11 +418,11 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 
 	if (suspend) {
 		for (i = 0; i < phy->num_ports; i++) {
-			
+			/* Clear interrupt latch register */
 			writel_relaxed(ALT_INTERRUPT_MASK,
 				phy->base + HS_PHY_IRQ_STAT_REG(i));
 
-			
+			/* Enable DP and DM HV interrupts */
 			if (phy->core_ver >= MSM_CORE_VER_120)
 				msm_usb_write_readback(phy->base,
 						ALT_INTERRUPT_EN_REG(i),
@@ -395,6 +436,10 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 						DPDMHV_INT_MASK,
 						DPDMHV_INT_MASK);
 			if (!host) {
+				/* set the following:
+				 * OTGDISABLE0=1
+				 * USB2_SUSPEND_N_SEL=1, USB2_SUSPEND_N=0
+				 */
 				if (phy->core_ver >= MSM_CORE_VER_120)
 					msm_usb_write_readback(phy->base,
 							HS_PHY_CTRL_COMMON_REG,
@@ -412,16 +457,24 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 			}
 
 			if (!phy->ext_vbus_id)
+				/* Enable PHY-based IDHV and
+				 *OTGSESSVLD HV interrupts
+				 */
 				msm_usb_write_readback(phy->base,
 					HS_PHY_CTRL_REG(i),
 					(OTGSESSVLDHV_INTEN | IDHV_INTEN),
 					(OTGSESSVLDHV_INTEN | IDHV_INTEN));
 		}
 
-		
+		/* Enable PHY retention */
 		if (!host && !chg_connected) {
 			if (phy->core_ver == MSM_CORE_VER_120 &&
 					phy->set_pllbtune)
+				/*
+				 * On this particular revision the PLLITUNE[1]
+				 * bit acts as the control for the RETENABLEN
+				 * PHY signal.
+				 */
 				msm_usb_write_readback(phy->base,
 					HS_PHY_CTRL_COMMON_REG,
 					COMMON_PLLITUNE_1, COMMON_PLLITUNE_1);
@@ -435,27 +488,27 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 					RETENABLEN, 0);
 
 			if (phy->csr) {
-				
+				/* switch PHY control to USB2PHY CSRs */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_USB_PHY_CFG0,
 						USB2PHY_OVERRIDE_EN,
 						USB2PHY_OVERRIDE_EN);
-				
+				/* clear suspend_n */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_HS_PHY_CTRL2,
 						USB2PHY_SUSPEND_N_SEL |
 						USB2PHY_SUSPEND_N,
 						USB2PHY_SUSPEND_N_SEL);
-				
+				/* enable retention */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_HS_PHY_CTRL_COMMON0,
 						USB2PHY_COMMONONN |
 						USB2PHY_RETENABLEN, 0);
-				
+				/* disable internal ref clock buffer */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_USB_PHY_REFCLK_CTRL,
 						REFCLK_RXTAP_EN, 0);
-				
+				/* power down PHY */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_USB_PHY_PWRDOWN_CTRL,
 						PWRDN_B, 0);
@@ -464,7 +517,7 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 			phy->lpm_flags |= PHY_RETENTIONED;
 		}
 
-		
+		/* can turn off regulators if disconnected in device mode */
 		if (phy->lpm_flags & PHY_RETENTIONED && !phy->cable_connected) {
 			if (phy->ext_vbus_id) {
 				msm_hsusb_ldo_enable(phy, 0);
@@ -489,23 +542,23 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 			}
 
 			if (phy->csr) {
-				
+				/* power on PHY */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_USB_PHY_PWRDOWN_CTRL,
 						PWRDN_B, PWRDN_B);
-				
+				/* enable internal ref clock buffer */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_USB_PHY_REFCLK_CTRL,
 						REFCLK_RXTAP_EN,
 						REFCLK_RXTAP_EN);
-				
+				/* disable retention */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_HS_PHY_CTRL_COMMON0,
 						USB2PHY_COMMONONN |
 						USB2PHY_RETENABLEN,
 						USB2PHY_COMMONONN |
 						USB2PHY_RETENABLEN);
-				
+				/* switch suspend_n_sel back to HW */
 				msm_usb_write_readback(phy->csr,
 						USB2PHY_HS_PHY_CTRL2,
 						USB2PHY_SUSPEND_N_SEL |
@@ -515,7 +568,7 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 						USB2PHY_OVERRIDE_EN, 0);
 			}
 
-			
+			/* Disable PHY retention */
 			if (phy->core_ver == MSM_CORE_VER_120 &&
 					phy->set_pllbtune)
 				msm_usb_write_readback(phy->base,
@@ -546,16 +599,16 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 
 		for (i = 0; i < phy->num_ports; i++) {
 			if (!phy->ext_vbus_id)
-				
+				/* Disable HV interrupts */
 				msm_usb_write_readback(phy->base,
 					HS_PHY_CTRL_REG(i),
 					(OTGSESSVLDHV_INTEN | IDHV_INTEN),
 					0);
 
-			
+			/* Clear interrupt latch register */
 			writel_relaxed(ALT_INTERRUPT_MASK,
 				phy->base + HS_PHY_IRQ_STAT_REG(i));
-			
+			/* Disable DP and DM HV interrupt */
 			if (phy->core_ver >= MSM_CORE_VER_120)
 				msm_usb_write_readback(phy->base,
 						ALT_INTERRUPT_EN_REG(i),
@@ -565,7 +618,7 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 						ALT_INTERRUPT_EN_REG(i),
 						DPDMHV_INT_MASK, 0);
 			if (!host) {
-				
+				/* Bring PHY out of suspend */
 				msm_usb_write_readback(phy->base,
 						HS_PHY_CTRL_REG(i),
 						USB2_SUSPEND_N_SEL, 0);
@@ -581,6 +634,12 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 							OTGDISABLE0, 0);
 			}
 		}
+		/*
+		 * write HSPHY init value to QSCRATCH reg to set HSPHY
+		 * parameters like VBUS valid threshold, disconnect valid
+		 * threshold, DC voltage level,preempasis and rise/fall time
+		 */
+/*++ 2014/11/26 USB Team, PCN00023 ++*/
 		if (override_phy_init) {
 			phy->hsphy_init_seq = override_phy_init;
 			phy->hsphy_host_init_seq = override_phy_init;
@@ -599,9 +658,10 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 					0x03FFFFFF,
 					phy->hsphy_host_init_seq & 0x03FFFFFF);
 		}
+/*-- 2014/11/26 USB Team, PCN00023 --*/
 	}
 
-	phy->suspended = !!suspend; 
+	phy->suspended = !!suspend; /* double-NOT coerces to bool value */
 	return 0;
 }
 
@@ -616,6 +676,10 @@ static int msm_hsphy_notify_connect(struct usb_phy *uphy,
 	if (uphy->flags & PHY_HOST_MODE) {
 		if (phy->core_ver == MSM_CORE_VER_160 ||
 			phy->core_ver == MSM_CORE_VER_161) {
+			/* Some snps usb2 picophy revisions require 3.15 V to
+			 * operate correctly during full speed host mode at
+			 * sub zero temperature.
+			 */
 			rc = regulator_set_voltage(phy->vdda33,
 					USB_HSPHY_3P3_VOL_FSHOST,
 					USB_HSPHY_3P3_VOL_MAX);
@@ -629,7 +693,7 @@ static int msm_hsphy_notify_connect(struct usb_phy *uphy,
 	if (!(uphy->flags & PHY_VBUS_VALID_OVERRIDE))
 		return 0;
 
-	
+	/* Set External VBUS Valid Select. Set once, can be left on */
 	if (phy->core_ver >= MSM_CORE_VER_120) {
 		msm_usb_write_readback(phy->base, HS_PHY_CTRL_COMMON_REG,
 					COMMON_VBUSVLDEXTSEL0,
@@ -640,17 +704,17 @@ static int msm_hsphy_notify_connect(struct usb_phy *uphy,
 					VBUSVLDEXTSEL0, VBUSVLDEXTSEL0);
 	}
 
-	
+	/* Enable D+ pull-up resistor */
 	msm_usb_write_readback(phy->base,
 				HS_PHY_CTRL_REG(0),
 				VBUSVLDEXT0, VBUSVLDEXT0);
 
-	
+	/* Set OTG VBUS Valid from HSPHY to controller */
 	msm_usb_write_readback(phy->base, HS_PHY_CTRL_REG(0),
 				UTMI_OTG_VBUS_VALID,
 				UTMI_OTG_VBUS_VALID);
 
-	
+	/* Indicate value is driven by UTMI_OTG_VBUS_VALID bit */
 	if (phy->core_ver >= MSM_CORE_VER_120)
 		msm_usb_write_readback(phy->base, HS_PHY_CTRL_REG(0),
 					SW_SESSVLD_SEL, SW_SESSVLD_SEL);
@@ -682,15 +746,15 @@ static int msm_hsphy_notify_disconnect(struct usb_phy *uphy,
 	if (!(uphy->flags & PHY_VBUS_VALID_OVERRIDE))
 		return 0;
 
-	
+	/* Clear OTG VBUS Valid to Controller */
 	msm_usb_write_readback(phy->base, HS_PHY_CTRL_REG(0),
 				UTMI_OTG_VBUS_VALID, 0);
 
-	
+	/* Disable D+ pull-up resistor */
 	msm_usb_write_readback(phy->base,
 					HS_PHY_CTRL_REG(0), VBUSVLDEXT0, 0);
 
-	
+	/* Indicate value is no longer driven by UTMI_OTG_VBUS_VALID bit */
 	if (phy->core_ver >= MSM_CORE_VER_120)
 		msm_usb_write_readback(phy->base, HS_PHY_CTRL_REG(0),
 					SW_SESSVLD_SEL, 0);
@@ -734,7 +798,7 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 			return -ENODEV;
 		}
 
-		
+		/* switch MUX to let SNPS controller use the primary HSPHY */
 		writel_relaxed(readl_relaxed(phy->tcsr) | TCSR_USB30_CONTROL,
 				phy->tcsr);
 	}
@@ -773,6 +837,15 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 		goto err_ret;
 	}
 
+	if (of_get_property(dev->of_node, "vddcx-supply", NULL)) {
+		phy->vddcx = devm_regulator_get(dev, "vddcx");
+		if (IS_ERR(phy->vddcx)) {
+			dev_err(dev, "unable to get vddcx supply\n");
+			ret = PTR_ERR(phy->vddcx);
+			goto err_ret;
+		}
+	}
+
 	phy->vdda33 = devm_regulator_get(dev, "vdda33");
 	if (IS_ERR(phy->vdda33)) {
 		dev_err(dev, "unable to get vdda33 supply\n");
@@ -798,6 +871,13 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 		dev_err(dev, "unable to enable the hsusb vdd_dig\n");
 		goto unconfig_hs_vdd;
 	}
+	if (phy->vddcx) {
+		ret = regulator_enable(phy->vddcx);
+		if (ret) {
+			dev_err(dev, "unable to enable vddcx\n");
+			goto unconfig_hs_vdd;
+		}
+	}
 
 	ret = msm_hsusb_ldo_enable(phy, 1);
 	if (ret) {
@@ -821,11 +901,13 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	else if (!phy->hsphy_init_seq)
 		dev_warn(dev, "hsphy init seq cannot be 0. Using POR value\n");
 
+/*++ 2014/11/26 USB Team, PCN00023 ++*/
 	if (of_property_read_u32(dev->of_node, "qcom,hsphy-host-init",
 					&phy->hsphy_host_init_seq))
 		dev_dbg(dev, "unable to read hsphy host init seq\n");
 	else if (!phy->hsphy_host_init_seq)
 		dev_warn(dev, "hsphy host init seq cannot be 0. Using POR value\n");
+/*-- 2014/11/26 USB Team, PCN00023 --*/
 
 	if (of_property_read_u32(dev->of_node, "qcom,num-ports",
 					&phy->num_ports))
@@ -838,6 +920,12 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	phy->set_pllbtune = of_property_read_bool(dev->of_node,
 						 "qcom,set-pllbtune");
 
+	/*
+	 * If this workaround flag is enabled, the HW requires the 1.8 and 3.x
+	 * regulators to be kept ON when entering suspend. The easiest way to
+	 * do that is to call regulator_enable() an additional time here,
+	 * since it will keep the regulators' reference counts nonzero.
+	 */
 	phy->vdda_force_on = of_property_read_bool(dev->of_node,
 						"qcom,vdda-force-on");
 	if (phy->vdda_force_on) {
@@ -856,10 +944,12 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	phy->phy.notify_connect		= msm_hsphy_notify_connect;
 	phy->phy.notify_disconnect	= msm_hsphy_notify_disconnect;
 	phy->phy.reset			= msm_hsphy_reset;
-	
-	
+	/*FIXME: this conflicts with dwc3_otg */
+	/*phy->phy.type			= USB_PHY_TYPE_USB2; */
 
+/*++ 2014/11/26 USB Team, PCN00023 ++*/
 	phy->phy.is_in_host = false;
+/*-- 2014/11/26 USB Team, PCN00023 --*/
 
 	ret = usb_add_phy_dev(&phy->phy);
 	if (ret)
@@ -873,6 +963,8 @@ disable_clk:
 disable_hs_ldo:
 	msm_hsusb_ldo_enable(phy, 0);
 disable_hs_vdd:
+	if (phy->vddcx)
+		regulator_disable(phy->vddcx);
 	regulator_disable(phy->vdd);
 unconfig_hs_vdd:
 	msm_hsusb_config_vdd(phy, 0);
@@ -890,10 +982,12 @@ static int msm_hsphy_remove(struct platform_device *pdev)
 	usb_remove_phy(&phy->phy);
 	clk_disable_unprepare(phy->sleep_clk);
 
-	
+	/* Undo the additional regulator enable */
 	if (phy->vdda_force_on)
 		msm_hsusb_ldo_enable(phy, 0);
 	msm_hsusb_ldo_enable(phy, 0);
+	if (phy->vddcx)
+		regulator_disable(phy->vddcx);
 	regulator_disable(phy->vdd);
 	msm_hsusb_config_vdd(phy, 0);
 	if (!phy->suspended)

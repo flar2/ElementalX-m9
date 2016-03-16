@@ -105,6 +105,6 @@ do {									\
 #define smp_mb__before_atomic()	smp_mb()
 #define smp_mb__after_atomic()	smp_mb()
 
-#endif	
+#endif	/* __ASSEMBLY__ */
 
-#endif	
+#endif	/* __ASM_BARRIER_H */

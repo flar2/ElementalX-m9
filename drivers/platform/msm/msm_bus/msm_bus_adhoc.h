@@ -30,6 +30,7 @@ struct link_node {
 	uint32_t in_use;
 };
 
+/* New types introduced for adhoc topology */
 struct msm_bus_noc_ops {
 	int (*qos_init)(struct msm_bus_node_device_type *dev,
 			void __iomem *qos_base, uint32_t qos_off,
@@ -161,5 +162,5 @@ static inline int msm_bus_floor_init(struct device *dev)
 {
 	return 0;
 }
-#endif 
-#endif 
+#endif /* CONFIG_DBG_BUS_VOTER */
+#endif /* _ARCH_ARM_MACH_MSM_BUS_ADHOC_H */

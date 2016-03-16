@@ -20,7 +20,7 @@
 * software in any way with any other Broadcom software provided under a license
 * other than the GPL, without Broadcom's express prior written consent.
 *
-* $Id: dhd_custom_gpio.c 550257 2015-04-20 04:40:23Z $
+* $Id: dhd_custom_gpio.c 594530 2015-10-22 11:39:42Z $
 */
 
 #include <typedefs.h>
@@ -374,7 +374,7 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"Q1", "Q1", 77},
 #elif defined(CUSTOMER_HW_ONE)
 	{"",   "XZ", 11}, 
-	{"AM", "AM", 0},
+	{"AM", "AM", 1},
 	{"AR", "AR", 23},
 	{"AU", "AU", 4},
 	{"BG", "BG", 3},
@@ -385,7 +385,7 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"CN", "CN", 38},
 	{"CO", "CO", 17},
 	{"DE", "DE", 6},
-	{"DZ", "DZ", 1},
+	{"DZ", "XZ", 1},
 	{"EG", "EG", 2},
 	{"ES", "ES", 3},
 	{"FR", "FR", 3},
@@ -396,14 +396,14 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"IQ", "IQ", 0},
 	{"JO", "JO", 4},
 	{"JP", "JP", 45},
-	{"KR", "KR", 45},
+	{"KR", "KR", 4},
 	{"KW", "KW", 5},
 	{"KZ", "KZ", 212},
 	{"LB", "LB", 3},
 	{"LY", "FR", 3},
 	{"MA", "MA", 2},
 	{"MM", "MM", 5},
-	{"MY", "MY", 2},
+	{"MY", "MY", 19},
 	{"MX", "MX", 24},
 	{"NZ", "NZ", 2},
 	{"OM", "OM", 4},
@@ -412,13 +412,13 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"PR", "PR", 20},
 	{"QA", "QA", 0},
 	{"RS", "RS", 2},
-	{"RU", "RU", 36},
+	{"RU", "RU", 62},
 	{"SA", "SA", 0},
 	{"SG", "SG", 11},
 	{"TH", "TH", 3},
 	{"TN", "TN", 0},
 	{"TR", "TR", 7},
-	{"TW", "TW", 1},
+	{"TW", "TW", 65},
 	{"UA", "UA", 12},
 	{"US", "US", 111},
 	{"VE", "VE", 2},

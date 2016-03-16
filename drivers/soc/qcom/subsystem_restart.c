@@ -1038,8 +1038,12 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 #if defined(CONFIG_HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK)
 	if ( disable_ssr_check_work == 0 &&
 		!strcmp(desc->name, "modem")) {
-		printk("[<%p>][%s]: schedule ssr check work.\n", current, __func__);
-		schedule_delayed_work(&dev->ssr_check_wq, msecs_to_jiffies(SSR_CHECK_TIMEOUT));
+		int ssr_check_timeout = SSR_CHECK_TIMEOUT;
+		if ( dev->enable_ramdump ) {
+			ssr_check_timeout = ssr_check_timeout * 2;
+		}
+		printk("[<%p>][%s]: schedule ssr check work, enable_ramdump=[%d], timeout=[%d].\n", current, __func__, dev->enable_ramdump, ssr_check_timeout);
+		schedule_delayed_work(&dev->ssr_check_wq, msecs_to_jiffies(ssr_check_timeout));
 	}
 #endif
 

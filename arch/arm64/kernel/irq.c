@@ -89,12 +89,22 @@ void htc_show_interrupts(void)
 }
 #endif
 
+/*
+ * handle_IRQ handles all hardware IRQ's.  Decoded IRQs should
+ * not come via this function.  Instead, they should provide their
+ * own 'handler'.  Used by platform code implementing C-based 1st
+ * level decoding.
+ */
 void handle_IRQ(unsigned int irq, struct pt_regs *regs)
 {
 	struct pt_regs *old_regs = set_irq_regs(regs);
 
 	irq_enter();
 
+	/*
+	 * Some hardware gives randomly wrong interrupts.  Rather
+	 * than crashing, do something sensible.
+	 */
 	if (unlikely(irq >= nr_irqs)) {
 		pr_warn_ratelimited("Bad IRQ%u\n", irq);
 		ack_bad_irq(irq);
@@ -127,6 +137,10 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	struct irq_data *d = irq_desc_get_irq_data(desc);
 	const struct cpumask *affinity = d->affinity;
 
+	/*
+	 * If this is a per-CPU interrupt, or the affinity does not
+	 * include this CPU, then we have nothing to do.
+	 */
 	if (irqd_is_per_cpu(d) || !cpumask_test_cpu(smp_processor_id(), affinity))
 		return false;
 
@@ -135,6 +149,14 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	return irq_set_affinity_locked(d, affinity, 0) == 0;
 }
 
+/*
+ * The current CPU has been marked offline.  Migrate IRQs off this CPU.
+ * If the affinity settings do not allow other CPUs, force them onto any
+ * available CPU.
+ *
+ * Note: we must iterate over all IRQs, whether they have an attached
+ * action structure or not, as we need to get chained interrupts too.
+ */
 void migrate_irqs(void)
 {
 	unsigned int i;
@@ -157,4 +179,4 @@ void migrate_irqs(void)
 
 	local_irq_restore(flags);
 }
-#endif 
+#endif /* CONFIG_HOTPLUG_CPU */

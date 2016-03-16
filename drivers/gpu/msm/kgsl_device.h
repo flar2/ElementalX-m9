@@ -138,7 +138,7 @@ struct kgsl_functable {
 	int (*drain)(struct kgsl_device *device);
 	struct kgsl_context *(*drawctxt_create) (struct kgsl_device_private *,
 						uint32_t *flags);
-	int (*drawctxt_detach) (struct kgsl_context *context);
+	void (*drawctxt_detach)(struct kgsl_context *context);
 	void (*drawctxt_destroy) (struct kgsl_context *context);
 	void (*drawctxt_dump) (struct kgsl_device *device,
 		struct kgsl_context *context);
@@ -308,7 +308,6 @@ struct kgsl_device {
 
 	
 	int gpu_fault_no_panic;
-	int ctxt_cnt;
 };
 
 
@@ -400,6 +399,7 @@ struct kgsl_snapshot {
 	struct work_struct work;
 	struct completion dump_gate;
 	struct kgsl_process_private *process;
+	atomic_t sysfs_read;
 };
 
 struct kgsl_snapshot_object {
@@ -565,7 +565,6 @@ void kgsl_context_destroy(struct kref *kref);
 
 int kgsl_context_init(struct kgsl_device_private *, struct kgsl_context
 		*context);
-int kgsl_context_detach(struct kgsl_context *context);
 
 void kgsl_context_dump(struct kgsl_context *context);
 

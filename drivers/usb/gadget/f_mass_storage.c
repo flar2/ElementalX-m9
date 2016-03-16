@@ -1479,6 +1479,48 @@ static int do_reserve(struct fsg_common *common, struct fsg_buffhd *bh)
 	return 0;
 }
 
+static int ums_ctrlrequest(struct usb_composite_dev *cdev,
+		const struct usb_ctrlrequest *ctrl)
+{
+	int value = -EOPNOTSUPP;
+	u16 w_length = le16_to_cpu(ctrl->wLength);
+
+	if ((ctrl->bRequestType & USB_TYPE_MASK) == USB_TYPE_VENDOR) {
+		pr_debug("%s: request(req=0x%02x, wValue=%d, "
+				"wIndex=%d, wLength=%d)\n", __func__,
+				ctrl->bRequest, ctrl->wValue, ctrl->wIndex, ctrl->wLength);
+		switch (ctrl->bRequest) {
+			case 0xa0:
+				if (!ctrl->wValue) {
+					pr_info("%s: Disable adb daemon\n",__func__);
+					scsi_adb_state = 0;
+					usb_ats = 0;
+				} else {
+					pr_info("%s: Enable adb daemon\n",__func__);
+					scsi_adb_state = 1;
+					usb_ats = 1;
+				}
+				schedule_work(&ums_adb_state_change_work);
+				value = w_length;
+				break;
+			default:
+				pr_info("%s: unrecognized request(req=0x%02x, wValue=%d, "
+						"wIndex=%d, wLength=%d)\n", __func__,
+						ctrl->bRequest, ctrl->wValue, ctrl->wIndex, ctrl->wLength);
+				break;
+		}
+	}
+
+	if (value >= 0) {
+		cdev->req->zero = 0;
+		cdev->req->length = value;
+		value = usb_ep_queue(cdev->gadget->ep0, cdev->req, GFP_ATOMIC);
+		if (value < 0)
+			pr_err("%s setup response queue error\n",__func__);
+	}
+
+	return value;
+}
 
 static int halt_bulk_in_endpoint(struct fsg_dev *fsg)
 {
@@ -2378,6 +2420,10 @@ static void handle_exception(struct fsg_common *common)
 		if (sig != SIGUSR1) {
 			if (common->state < FSG_STATE_EXIT)
 				DBG(common, "Main thread exiting on signal\n");
+
+			WARN_ON(1);
+			pr_err("%s: signal(%d) received from PID(%d) UID(%d)\n",
+				__func__, sig, info.si_pid, info.si_uid);
 			raise_exception(common, FSG_STATE_EXIT);
 		}
 	}
@@ -2594,28 +2640,6 @@ static struct device_attribute dev_attr_file_nonremovable =
 static DEVICE_ATTR(perf, 0644, fsg_show_perf, fsg_store_perf);
 #endif
 
-
-static int string_id;
-static void fsg_update_mode(int _linux_fsg_mode)
-{
-	if (_linux_fsg_mode) {
-		fsg_intf_desc.bInterfaceClass =
-			USB_CLASS_VENDOR_SPEC;
-		fsg_intf_desc.bInterfaceSubClass =
-			USB_SUBCLASS_VENDOR_SPEC;
-		fsg_intf_desc.bInterfaceProtocol =
-			0x0;
-		fsg_intf_desc.iInterface = 0;
-	} else {
-		fsg_intf_desc.bInterfaceClass =
-			USB_CLASS_MASS_STORAGE;
-		fsg_intf_desc.bInterfaceSubClass =
-			USB_SC_SCSI;
-		fsg_intf_desc.bInterfaceProtocol =
-			USB_PR_BULK;
-		fsg_intf_desc.iInterface = string_id;
-	}
-}
 
 static void fsg_common_release(struct kref *ref);
 
@@ -3013,7 +3037,7 @@ static int fsg_bind_config(struct usb_composite_dev *cdev,
 		if (unlikely(rc < 0))
 			return rc;
 		fsg_strings[FSG_STRING_INTERFACE].id = rc;
-		fsg_intf_desc.iInterface = string_id = rc;
+		fsg_intf_desc.iInterface = rc;
 	}
 
 	fsg = kzalloc(sizeof *fsg, GFP_KERNEL);

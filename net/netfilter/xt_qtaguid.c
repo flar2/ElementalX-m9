@@ -1759,8 +1759,19 @@ static int qtaguid_ctrl_proc_show(struct seq_file *m, void *v)
 			 uid,
 			 sock_tag_entry->pid
 			);
+#ifdef CONFIG_HTC_NETWORK_MODIFY
+		if(likely(sock_tag_entry->socket->file)) {
+			f_count = atomic_long_read(
+			&sock_tag_entry->socket->file->f_count);
+		}else{
+			pr_warn("qtaguid:%s: socket->file is null, read from sk->sk_socket.\n", __func__);
+			f_count = atomic_long_read(
+				&sock_tag_entry->sk->sk_socket->file->f_count);
+		}
+#else
 		f_count = atomic_long_read(
 			&sock_tag_entry->socket->file->f_count);
+#endif
 		seq_printf(m, "sock=%p tag=0x%llx (uid=%u) pid=%u "
 			   "f_count=%lu\n",
 			   sock_tag_entry->sk,

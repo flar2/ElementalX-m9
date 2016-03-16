@@ -20,6 +20,9 @@
 #include "htc_msm_smem.h"
 
 
+/* HTC_START: ION debug mechanism enhancement
+ * Remove struct smem_client from here to msm_vidc.h
+ */
 #if 0
 struct smem_client {
 	int mem_type;
@@ -27,6 +30,7 @@ struct smem_client {
 	struct msm_vidc_platform_resources *res;
 };
 #endif
+/* HTC_END */
 
 static int get_device_address(struct smem_client *smem_client,
 		struct ion_handle *hndl, unsigned long align,
@@ -160,6 +164,15 @@ static int ion_user_to_kernel(struct smem_client *client, int fd, u32 offset,
 		"%s: ion_handle = 0x%p, fd = %d, device_addr = 0x%pa, size = %zx, kvaddr = 0x%p, buffer_type = %d, flags = 0x%lx\n",
 		__func__, mem->smem_priv, fd, &mem->device_addr, mem->size,
 		mem->kvaddr, mem->buffer_type, mem->flags);
+        /* HTC_START: ION debug mechanism enhancement
+         * The alphabet after Alloc_/Import_/Free_ represents for different meaning.
+         * I: Input buffer
+         * O: Output buffer
+         * S: Scratch buffer
+         * V: Venus hfi buffer
+         * P: Persist buffer
+         * U: Unknown buffer
+         */
         switch (mem->buffer_type) {
         case HAL_BUFFER_INPUT:
                 dprintk(VIDC_WARN,
@@ -178,7 +191,7 @@ static int ion_user_to_kernel(struct smem_client *client, int fd, u32 offset,
                         client->inst, hndl->buffer, mem->size, fd);
                 break;
         }
-        
+        /* HTC_END */
 	return rc;
 fail_device_address:
 	ion_free(client->clnt, hndl);
@@ -264,6 +277,15 @@ static int alloc_ion_mem(struct smem_client *client, size_t size, u32 align,
 		__func__, mem->smem_priv, &mem->device_addr,
 		mem->size, mem->kvaddr,
 		mem->buffer_type, mem->flags);
+        /* HTC_START: ION debug mechanism enhancement
+         * The alphabet after Alloc_/Import_/Free_ represents for different meaning.
+         * I: Input buffer
+         * O: Output buffer
+         * S: Scratch buffer
+         * V: Venus hfi buffer
+         * P: Persist buffer
+         * U: Unknown buffer
+         */
         switch (mem->buffer_type) {
         case HAL_BUFFER_INTERNAL_SCRATCH:
         case HAL_BUFFER_INTERNAL_SCRATCH_1:
@@ -289,7 +311,7 @@ static int alloc_ion_mem(struct smem_client *client, size_t size, u32 align,
                         client->inst, hndl->buffer, size);
                 break;
         }
-        
+        /* HTC_END */
 	return rc;
 fail_device_address:
 	ion_unmap_kernel(client->clnt, hndl);
@@ -302,6 +324,15 @@ fail_shared_mem_alloc:
 static void free_ion_mem(struct smem_client *client, struct msm_smem *mem)
 {
 	int domain, partition, rc;
+        /* HTC_START: ION debug mechanism enhancement
+         * The alphabet after Alloc_/Import_/Free_ represents for different meaning.
+         * I: Input buffer
+         * O: Output buffer
+         * S: Scratch buffer
+         * V: Venus hfi buffer
+         * P: Persist buffer
+         * U: Unknown buffer
+         */
         struct ion_handle *hndl = mem->smem_priv;
 
         switch (mem->buffer_type) {
@@ -340,7 +371,7 @@ static void free_ion_mem(struct smem_client *client, struct msm_smem *mem)
                         client->inst, hndl->buffer, mem->size);
                 break;
         }
-        
+        /* HTC_END */
 
 	dprintk(VIDC_DBG,
 		"%s: ion_handle = 0x%p, device_addr = 0x%pa, size = 0x%zx, kvaddr = 0x%p, buffer_type = 0x%x\n",
@@ -571,6 +602,10 @@ void msm_smem_free(void *clt, struct msm_smem *mem)
 	}
 	switch (client->mem_type) {
 	case SMEM_ION:
+                /* HTC_START: ION debug mechanism enhancement
+                 * Switch ion_client from clnt_import to clnt_alloc here due to
+                 * scratch buffer is allocated by clnt_alloc
+                 */
                 if ((mem->buffer_type == HAL_BUFFER_INTERNAL_SCRATCH) ||
                         (mem->buffer_type == HAL_BUFFER_INTERNAL_SCRATCH_1) ||
                         (mem->buffer_type == HAL_BUFFER_INTERNAL_SCRATCH_2) ||
@@ -586,7 +621,7 @@ void msm_smem_free(void *clt, struct msm_smem *mem)
                         (mem->buffer_type == HAL_BUFFER_INTERNAL_PERSIST_1)) {
                         client->clnt = client->clnt_import;
                 }
-                
+                /* HTC_END */
 		break;
 	default:
 		dprintk(VIDC_ERR, "Mem type not supported\n");

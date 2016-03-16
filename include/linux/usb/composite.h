@@ -193,7 +193,6 @@ struct usb_composite_dev {
 	struct switch_dev		sw_function_switch_off;
 	u8				next_string_id;
 	char				*def_manufacturer;
-	bool				do_serial_number_change;
 
 	unsigned			deactivations;
 

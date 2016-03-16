@@ -1107,6 +1107,12 @@ static void msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 		buf_event.u.buf_done.buf_idx = buf->buf_idx;
 		buf_event.u.buf_done.output_format =
 			stream_info->runtime_output_format;
+
+		
+		if (buf_event.frame_id < 10 || !(buf_event.frame_id%30))
+			pr_info("%s: ISP_EVENT_BUF_DIVERT Session id %d, Stream id %d, Frame id %d\n",
+				__func__, buf_event.u.buf_done.session_id, buf_event.u.buf_done.stream_id, buf_event.frame_id);
+		
 		msm_isp_send_event(vfe_dev, ISP_EVENT_BUF_DIVERT + stream_idx,
 			&buf_event);
 	} else {
@@ -1117,6 +1123,13 @@ static void msm_isp_process_done_buf(struct vfe_device *vfe_dev,
 		buf_event.u.buf_done.stream_id = stream_info->stream_id;
 		buf_event.u.buf_done.output_format =
 			stream_info->runtime_output_format;
+
+		
+		if ((buf_event.u.buf_done.stream_id != 3 && buf_event.u.buf_done.stream_id <= 6) ||
+			buf_event.frame_id < 10 || !(buf_event.frame_id%30))
+			pr_info("%s: ISP_EVENT_BUF_DONE Session id %d, Stream id %d, Frame id %d\n",
+				__func__, buf_event.u.buf_done.session_id, buf_event.u.buf_done.stream_id, buf_event.frame_id);
+		
 		msm_isp_send_event(vfe_dev, ISP_EVENT_BUF_DONE, &buf_event);
 		vfe_dev->buf_mgr->ops->buf_done(vfe_dev->buf_mgr,
 			buf->bufq_handle, buf->buf_idx, time_stamp, frame_id,

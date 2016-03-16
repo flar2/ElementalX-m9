@@ -71,109 +71,183 @@ typedef enum {
 	CW_TIME_BASE                   = 98,
 	CW_META_DATA                   = 99,
 	CW_MAGNETIC_UNCALIBRATED_BIAS  = 100,
-	CW_GYROSCOPE_UNCALIBRATED_BIAS = 101
+	CW_GYROSCOPE_UNCALIBRATED_BIAS = 101,
 } CW_SENSORS_ID;
+
+
+typedef enum {
+	CWSTM32_ENABLE_REG                               = 0x01,
+	CWSTM32_INT_ST1                                  = 0x08,
+	CWSTM32_INT_ST2                                  = 0x09,
+	CWSTM32_INT_ST3                                  = 0x0A,
+	CWSTM32_INT_ST4                                  = 0x0B,
+
+	FIRMWARE_VERSION                                 = 0x10,
+	CW_I2C_REG_MCU_TIME                              = 0x11,
+	CW_I2C_REG_FLASH_CHECKSUM                        = 0x12,
+	CW_I2C_REG_REBOOT_MODE                           = 0x13,
+	TOUCH_SOLUTION_REGISTER                          = 0x14,
+	FIRMWARE_INFO                                    = 0x15,
+	CW_I2C_REG_DISPLAY_STATE                         = 0x16,
+	CW_I2C_REG_DOTVIEW_STATUS                        = 0x17,
+	HTC_SYSTEM_STATUS_REG                            = 0x1E,
+	CWSTM32_ERR_ST                                   = 0x1F,
+
+	CWSTM32_READ_Acceleration                        = 0x20,
+	CWSTM32_READ_Magnetic                            = 0x21,
+	CWSTM32_READ_Gyro                                = 0x22,
+	CWSTM32_READ_Light                               = 0x23,
+	CWSTM32_READ_Proximity                           = 0x24,
+	CWSTM32_READ_Pressure                            = 0x25,
+	CWSTM32_READ_Orientation                         = 0x26,
+	CWSTM32_READ_RotationVector                      = 0x27,
+	CWSTM32_READ_LinearAcceleration                  = 0x28,
+	CWSTM32_READ_Gravity                             = 0x29,
+
+	CWSTM32_READ_MAGNETIC_UNCALIBRATED               = 0x30,
+	CWSTM32_READ_GYROSCOPE_UNCALIBRATED              = 0x31,
+	CWSTM32_READ_GAME_ROTATION_VECTOR                = 0x32,
+	CWSTM32_READ_GEOMAGNETIC_ROTATION_VECTOR         = 0x33,
+	CWSTM32_READ_SIGNIFICANT_MOTION                  = 0x34,
+	CWSTM32_READ_STEP_DETECTOR                       = 0x35,
+	CWSTM32_READ_STEP_COUNTER                        = 0x36,
+	CWSTM32_READ_Gesture_Motion                      = 0x38,
+	CWSTM32_READ_Any_Motion                          = 0x3F,
+
+	CWSTM32_BATCH_MODE_COMMAND                       = 0x40,
+	
+	CW_BATCH_ENABLE_REG                              = 0x41,
+	CWSTM32_BATCH_MODE_DATA_QUEUE                    = 0x45,
+	CWSTM32_BATCH_MODE_TIMEOUT                       = 0x46,
+	CWSTM32_BATCH_MODE_DATA_COUNTER                  = 0x47,
+	CWSTM32_BATCH_FLUSH                              = 0x48,
+
+	CW_WAKE_UP_BATCH_ENABLE_REG                      = 0x51,
+	CWSTM32_WAKE_UP_BATCH_MODE_DATA_QUEUE            = 0x55,
+	CWSTM32_WAKE_UP_BATCH_MODE_TIMEOUT               = 0x56,
+	CWSTM32_WAKE_UP_BATCH_MODE_DATA_COUNTER          = 0x57,
+
+	CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_ACC         = 0x60,
+	G_SENSORS_STATUS                                 = 0x60,
+	CW_I2C_REG_GSENSOR_HW_ID                         = 0x63,
+	GENSOR_POSITION                                  = 0x65,
+	ACCE_UPDATE_RATE                                 = 0x66,
+	ACCE_WAKE_UPDATE_RATE                            = 0x67,
+	CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_ACC       = 0x68,
+	CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_ACC       = 0x68,
+	
+	CW_I2C_REG_SENSORS_CALIBRATOR_TARGET_ACC         = 0x69,
+	CW_I2C_REG_SENSORS_CALIBRATOR_RESULT_RL_ACC      = 0x6A,
+
+	CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_MAG         = 0x70,
+	ECOMPASS_SENSORS_STATUS                          = 0x70,
+	CW_I2C_REG_COMPASS_HW_ID                         = 0x73,
+	COMPASS_POSITION                                 = 0x75,
+	MAGN_UPDATE_RATE                                 = 0x76,
+	MAGN_WAKE_UPDATE_RATE                            = 0x77,
+	CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_MAG       = 0x78,
+	CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_MAG       = 0x78,
+	CW_I2C_REG_SENSORS_ACCURACY_MAG                  = 0x79,
+
+	CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_GYRO        = 0x80,
+	GYRO_SENSORS_STATUS                              = 0x80,
+	CW_I2C_REG_GYRO_HW_ID                            = 0x83,
+	GYRO_POSITION                                    = 0x85,
+	GYRO_UPDATE_RATE                                 = 0x86,
+	GYRO_WAKE_UPDATE_RATE                            = 0x87,
+	CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_GYRO      = 0x88,
+	CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_GYRO      = 0x88,
+
+	CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_LIGHT       = 0x90,
+	LIGHT_SENSORS_STATUS                             = 0x90,
+	LIGHT_UPDATE_PERIOD                              = 0x96,
+	CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_LIGHT     = 0x98,
+	CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_LIGHT     = 0x98,
+	LIGHT_SENSORS_CALIBRATION_DATA                   = 0x98,
+	CW_I2C_REG_SENSORS_SET_LEVEL_LIGHT               = 0x99,
+
+	PROXIMITY_SENSORS_STATUS                         = 0xA0,
+	PROXIMITY_SENSORS_CALIBRATION_DATA               = 0xA8,
+	CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_PROXIMITY = 0xA8,
+	CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_PROXIMITY = 0xA8,
+
+	CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_PRESSURE    = 0xB0,
+	PRESSURE_UPDATE_RATE                             = 0xB6,
+	PRESSURE_WAKE_UPDATE_RATE                        = 0xB7,
+	CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_PRESSURE  = 0xB8,
+	CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_PRESSURE  = 0xB8,
+
+	ORIE_UPDATE_RATE                                 = 0xC0,
+	ROTA_UPDATE_RATE                                 = 0xC1,
+	LINE_UPDATE_RATE                                 = 0xC2,
+	GRAV_UPDATE_RATE                                 = 0xC3,
+	MAGN_UNCA_UPDATE_RATE                            = 0xC4,
+	GYRO_UNCA_UPDATE_RATE                            = 0xC5,
+	GAME_ROTA_UPDATE_RATE                            = 0xC6,
+	GEOM_ROTA_UPDATE_RATE                            = 0xC7,
+	SIGN_UPDATE_RATE                                 = 0xC8,
+	ORIE_WAKE_UPDATE_RATE                            = 0xC9,
+	ROTA_WAKE_UPDATE_RATE                            = 0xCA,
+	LINE_WAKE_UPDATE_RATE                            = 0xCB,
+	GRAV_WAKE_UPDATE_RATE                            = 0xCC,
+	MAGN_UNCA_WAKE_UPDATE_RATE                       = 0xCD,
+	GYRO_UNCA_WAKE_UPDATE_RATE                       = 0xCE,
+	GAME_ROTA_WAKE_UPDATE_RATE                       = 0xCF,
+
+	CW_CPU_STATUS_REG                                = 0xD1,
+	GEOM_ROTA_WAKE_UPDATE_RATE                       = 0xD2,
+	STEP_COUNTER_UPDATE_PERIOD                       = 0xD3,
+	GESTURE_MOTION_UPDATE_ATTRIBUTE                  = 0xDF,
+
+	CW_I2C_REG_EVENT_SIZE                            = 0xE4,
+	CW_I2C_REG_EVENT_DATA                            = 0xE5,
+	CW_I2C_REG_WATCHDOG_STATUS                       = 0xE6,
+	CW_I2C_REG_DUMP_BACKUP_REG                       = 0xE7,
+	CW_I2C_REG_CAPTURE_RAMDUMP                       = 0xE8,
+	CW_I2C_REG_TRIGGER_CRASH                         = 0xE9,
+	CW_I2C_REG_LOG_LEVEL                             = 0xEB,
+	CW_I2C_REG_LOG_MASK                              = 0xEC,
+	CW_I2C_REG_LOG_SIZE                              = 0xED,
+	CW_I2C_REG_LOG_DATA                              = 0xEE,
+
+	TOUCH_STATUS_REGISTER                            = 0xF2,
+	CW_I2C_REG_WATCH_DOG_ENABLE                      = 0xF9,
+	CW_I2C_REG_WARN_MSG_ENABLE                       = 0xFA,
+	CW_I2C_REG_WARN_MSG_BUFFER_LEN                   = 0xFB,
+	CW_I2C_REG_WARN_MSG_BUFFER                       = 0xFC,
+	CW_I2C_REG_EXCEPTION_BUFFER_LEN                  = 0xFD,
+	CW_I2C_REG_EXCEPTION_BUFFER                      = 0xFE,
+} CWMCU_I2C_REGISTER;
+
 
 #define NS_PER_US 1000000LL
 
-#define FIRMWARE_VERSION 0x10
-#define FIRMWARE_INFO    0x15
-
 int touch_solution(u8 solution);
-#define HTC_SYSTEM_STATUS_REG                      0x1E
 
 #if defined(CONFIG_SYNC_TOUCH_STATUS)
 int touch_status(u8 status);
-#define TOUCH_STATUS_REGISTER                      0xF2
+#endif
+
+
 #define TOUCH_STATUS_TURN_HUB_OFF                  0
 #define TOUCH_STATUS_TURN_HUB_ON                   1
-#endif
 
 #define TOUCH_SOLUTION_MAXIM1187X                  0
 #define TOUCH_SOLUTION_SYNAPTICS3351               1
 
-#define CW_I2C_REG_FLASH_CHECKSUM                               0x12
+
 typedef struct {
     uint32_t calculate_done;
     uint32_t check_sum;
 } mcu_fw_checksum_t;
-#define CW_I2C_REG_REBOOT_MODE                                  0x13
-#define TOUCH_SOLUTION_REGISTER 					0x14
+
 #define MCU_SYS_STATUS_DLOAD                    (0x776655AA)
 #define MCU_SYS_STATUS_SHUB                     (0x77665500)
-#define CW_I2C_REG_DISPLAY_STATE                                0x16
-#define CW_I2C_REG_DOTVIEW_STATUS                               0x17
-
-#define CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_ACC                0x60
-#define CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_ACC              0x68
-#define CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_ACC              0x68
-#define CW_I2C_REG_SENSORS_CALIBRATOR_TARGET_ACC	        0x69
-#define CW_I2C_REG_SENSORS_CALIBRATOR_RESULT_RL_ACC             0x6A
-
-#define CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_MAG                0x70
-#define CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_MAG              0x78
-#define CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_MAG              0x78
-#define CW_I2C_REG_SENSORS_ACCURACY_MAG                         0x79
-
-
-#define CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_GYRO               0x80
-#define CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_GYRO             0x88
-#define CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_GYRO             0x88
-
-#define CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_LIGHT              0x90
-#define CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_LIGHT            0x98
-#define CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_LIGHT            0x98
-#define CW_I2C_REG_SENSORS_SET_LEVEL_LIGHT                      0x99
-#define CW_I2C_REG_SENSORS_SET_LEVEL_LIGHT                      0x99
-#define CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_PROXIMITY        0xA8
-#define CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_PROXIMITY        0xA8
-
-#define CW_I2C_REG_SENSORS_CALIBRATOR_STATUS_PRESSURE           0xB0
-#define CW_I2C_REG_SENSORS_CALIBRATOR_GET_DATA_PRESSURE         0xB8
-#define CW_I2C_REG_SENSORS_CALIBRATOR_SET_DATA_PRESSURE         0xB8
-#define PRESSURE_UPDATE_RATE                                    0xB6
-#define PRESSURE_WAKE_UPDATE_RATE                               0xB7
 
 #define CWMCU_MAX_DELAY	                1000
 #define CWMCU_NO_POLLING_DELAY         	10000
 #define CWMCU_LIGHT_POLLING_DELAY	1000
 
-#define G_SENSORS_STATUS                                        0x60
-#define ACCE_UPDATE_RATE                                        0x66
-#define ACCE_WAKE_UPDATE_RATE                                   0x67
-#define ECOMPASS_SENSORS_STATUS                                 0x70
-#define MAGN_UPDATE_RATE                                        0x76
-#define MAGN_WAKE_UPDATE_RATE                                   0x77
-#define GYRO_SENSORS_STATUS                                     0x80
-#define GYRO_UPDATE_RATE                                        0x86
-#define GYRO_WAKE_UPDATE_RATE                                   0x87
-#define LIGHT_SENSORS_STATUS                                    0x90
-#define LIGHT_UPDATE_PERIOD                                     0x96
-#define LIGHT_SENSORS_CALIBRATION_DATA				0x98
-#define PROXIMITY_SENSORS_STATUS				0xA0
-#define PROXIMITY_SENSORS_CALIBRATION_DATA			0xA8
-
-#define ORIE_UPDATE_RATE                                        0xC0
-#define ROTA_UPDATE_RATE                                        0xC1
-#define LINE_UPDATE_RATE                                        0xC2
-#define GRAV_UPDATE_RATE                                        0xC3
-#define MAGN_UNCA_UPDATE_RATE                                   0xC4
-#define GYRO_UNCA_UPDATE_RATE                                   0xC5
-#define GAME_ROTA_UPDATE_RATE                                   0xC6
-#define GEOM_ROTA_UPDATE_RATE                                   0xC7
-#define SIGN_UPDATE_RATE                                        0xC8
-
-#define ORIE_WAKE_UPDATE_RATE                                   0xC9
-#define ROTA_WAKE_UPDATE_RATE                                   0xCA
-#define LINE_WAKE_UPDATE_RATE                                   0xCB
-#define GRAV_WAKE_UPDATE_RATE                                   0xCC
-#define MAGN_UNCA_WAKE_UPDATE_RATE                              0xCD
-#define GYRO_UNCA_WAKE_UPDATE_RATE                              0xCE
-#define GAME_ROTA_WAKE_UPDATE_RATE                              0xCF
-#define GEOM_ROTA_WAKE_UPDATE_RATE                              0xD2
-#define STEP_COUNTER_UPDATE_PERIOD                              0xD3
-
-#define GESTURE_MOTION_UPDATE_ATTRIBUTE                         0xDF
 #define GESTURE_MOTION_UPDATE_ATTRIBUTE_LEN                     (4)
 
 #define STEP_COUNTER_MASK ((1ULL << CW_STEP_COUNTER) | \
@@ -208,43 +282,26 @@ typedef struct {
 			     (1ULL << CW_STEP_DETECTOR_W) | \
 			     (1ULL << CW_STEP_COUNTER_W))
 
-#define CW_I2C_REG_WATCHDOG_STATUS                              0xE6
-#define WATCHDOG_STATUS_LEN                                     12
 
-#define CW_I2C_REG_EVENT_SIZE                                   0xE4
-#define CW_I2C_REG_EVENT_DATA                                   0xE5
-#define I2C_EVENT_READ_LEN                                      24
-
-#define CW_I2C_REG_DUMP_BACKUP_REG                              0xE7
-#define CW_I2C_REG_CAPTURE_RAMDUMP                              0xE8
 struct cwmcu_ramdump_param {
     u32 start_addr;
     u32 size;
 };
-#define CW_I2C_REG_TRIGGER_CRASH                                0xE9
-#define CW_I2C_REG_LOG_LEVEL                                    0xEB
-#define CW_I2C_REG_LOG_MASK                                     0xEC
-#define CW_I2C_REG_LOG_SIZE                                     0xED
-#define CW_I2C_REG_LOG_DATA                                     0xEE
 
 
+#define WATCHDOG_STATUS_LEN                                     12
+#define I2C_EVENT_READ_LEN                                      24
 #define I2C_RAMDUMP_READ_LEN 128
 #define I2C_LOG_READ_LEN 32
 
-#define CW_I2C_REG_EXCEPTION_BUFFER_LEN                   0xFD
 #define EXCEPTION_BUFFER_LEN_SIZE                         4
-#define CW_I2C_REG_EXCEPTION_BUFFER                       0xFE
 #define EXCEPTION_BLOCK_LEN                               16
 #define EXCEPTION_LEN_MAX                                 1024
 
-#define CW_I2C_REG_WARN_MSG_ENABLE                        0xFA
-#define CW_I2C_REG_WARN_MSG_BUFFER_LEN                    0xFB
 #define WARN_MSG_BUFFER_LEN_SIZE                          8
-#define CW_I2C_REG_WARN_MSG_BUFFER                        0xFC
 #define WARN_MSG_BLOCK_LEN                                16
 #define WARN_MSG_PER_ITEM_LEN                             120
 
-#define CW_I2C_REG_WATCH_DOG_ENABLE                       0xF9
 
 #define DEFAULT_DELAY_US           300000
 
@@ -256,13 +313,6 @@ struct cwmcu_ramdump_param {
 #define UPDATE_RATE_RATE_10Hz           5
 #define UPDATE_RATE_RATE_25Hz           6
 
-#define GENSOR_POSITION			0x65
-#define COMPASS_POSITION		0x75
-#define GYRO_POSITION			0x85
-
-#define CW_I2C_REG_GSENSOR_HW_ID           0x63
-#define CW_I2C_REG_COMPASS_HW_ID           0x73
-#define CW_I2C_REG_GYRO_HW_ID              0x83
 
 #define standardbase			0
 #define	acceleration			CW_ACCELERATION
@@ -287,21 +337,7 @@ struct cwmcu_ramdump_param {
 
 #define num_sensors			CW_SENSORS_ID_TOTAL
 
-#define CWSTM32_BATCH_MODE_COMMAND	0x40  
 
-#define CWSTM32_BATCH_MODE_DATA_QUEUE	0x45  
-#define CWSTM32_BATCH_MODE_TIMEOUT	0x46  
-#define CWSTM32_BATCH_MODE_DATA_COUNTER	0x47  
-#define CWSTM32_BATCH_FLUSH		0x48  
-
-#define CWSTM32_WAKE_UP_BATCH_MODE_DATA_QUEUE	0x55  
-#define CWSTM32_WAKE_UP_BATCH_MODE_TIMEOUT      0x56  
-#define CWSTM32_WAKE_UP_BATCH_MODE_DATA_COUNTER	0x57  
-
-#define SYNC_TIMESTAMP_BIT		(1 << 1)
-#define TIMESTAMP_SYNC_CODE		(98)
-
-#define CW_I2C_REG_MCU_TIME                     0x11
 typedef struct {
     uint32_t boot_sec;
     uint32_t boot_nsec;
@@ -318,25 +354,6 @@ typedef struct {
 
 #define CWMCU_NODATA	0xFF
 
-#define CWSTM32_ENABLE_REG			0x01
-#define CWSTM32_READ_SEQUENCE_DATA_REG  	0x0F
-
-#define CWSTM32_WRITE_POSITION_Acceleration	0x20
-#define CWSTM32_WRITE_POSITION_Magnetic		0x21
-#define CWSTM32_WRITE_POSITION_Gyro		0x22
-
-#define CWSTM32_WRITE_CLEAN_COUNT_Pedometer	0x30
-
-#define CWSTM32_INT_ST1                         0x08
-#define CWSTM32_INT_ST2                         0x09
-#define CWSTM32_INT_ST3                         0x0A
-#define CWSTM32_INT_ST4                         0x0B
-#define CWSTM32_ERR_ST                          0x1F
-
-#define CW_BATCH_ENABLE_REG                     0x41
-#define CW_WAKE_UP_BATCH_ENABLE_REG             0x51
-
-#define CW_CPU_STATUS_REG                       0xD1
 
 #define CW_MCU_INT_BIT_LIGHT                    (1 << 3)
 #define CW_MCU_INT_BIT_PROXIMITY                (1 << 4)
@@ -371,30 +388,6 @@ typedef struct {
 #define FW_UPDATE_QUEUED                        (1 << 1)
 #define FW_ERASE_FAILED                         (1 << 2)
 #define FW_FLASH_FAILED                         (1 << 3)
-
-#define	CW_MCU_I2C_SENSORS_REG_START		(0x20)
-
-#define CWSTM32_READ_Gesture_Flip                               (CW_MCU_I2C_SENSORS_REG_START + HTC_GESTURE_FLIP)
-#define CWSTM32_READ_Acceleration    		(CW_MCU_I2C_SENSORS_REG_START + CW_ACCELERATION)
-#define CWSTM32_READ_Magnetic						(CW_MCU_I2C_SENSORS_REG_START + CW_MAGNETIC)
-#define CWSTM32_READ_Gyro    						(CW_MCU_I2C_SENSORS_REG_START + CW_GYRO)
-#define CWSTM32_READ_Light    					(CW_MCU_I2C_SENSORS_REG_START + CW_LIGHT)
-#define CWSTM32_READ_Proximity					(CW_MCU_I2C_SENSORS_REG_START + CW_PROXIMITY)
-#define CWSTM32_READ_Pressure	    			(CW_MCU_I2C_SENSORS_REG_START + CW_PRESSURE)
-#define CWSTM32_READ_Orientation    		(CW_MCU_I2C_SENSORS_REG_START + CW_ORIENTATION)
-#define CWSTM32_READ_RotationVector    	(CW_MCU_I2C_SENSORS_REG_START + CW_ROTATIONVECTOR)
-#define CWSTM32_READ_LinearAcceleration (CW_MCU_I2C_SENSORS_REG_START + CW_LINEARACCELERATION)
-#define CWSTM32_READ_Gravity    				(CW_MCU_I2C_SENSORS_REG_START + CW_GRAVITY)
-#define CWSTM32_READ_MAGNETIC_UNCALIBRATED			0x30
-#define CWSTM32_READ_GYROSCOPE_UNCALIBRATED			0x31
-#define CWSTM32_READ_GAME_ROTATION_VECTOR			0x32
-#define CWSTM32_READ_GEOMAGNETIC_ROTATION_VECTOR		0x33
-#define CWSTM32_READ_SIGNIFICANT_MOTION				0x34
-#define CWSTM32_READ_STEP_DETECTOR				0x35
-#define CWSTM32_READ_STEP_COUNTER				0x36
-#define CWSTM32_READ_Gesture_Motion				0x38
-#define CWSTM32_READ_Any_Motion					0x3F
-
 
 #define HTC_GESTURE_MOTION_TYPE_SWIPE_UP             2
 #define HTC_GESTURE_MOTION_TYPE_SWIPE_DOWN           3

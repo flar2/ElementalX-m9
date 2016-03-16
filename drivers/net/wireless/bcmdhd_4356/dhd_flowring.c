@@ -53,7 +53,11 @@ int BCMFASTPATH dhd_flow_queue_overflow(flow_queue_t *queue, void *pkt);
 #define FLOW_QUEUE_PKT_NEXT(p)          PKTLINK(p)
 #define FLOW_QUEUE_PKT_SETNEXT(p, x)    PKTSETLINK((p), (x))
 
+#ifdef EAPOL_PKT_PRIO
+const uint8 prio2ac[8] = { 0, 1, 1, 0, 2, 2, 3, 7 };
+#else
 const uint8 prio2ac[8] = { 0, 1, 1, 0, 2, 2, 3, 3 };
+#endif 
 const uint8 prio2tid[8] = { 0, 1, 2, 3, 4, 5, 6, 7 };
 
 int BCMFASTPATH
@@ -170,7 +174,7 @@ dhd_flow_rings_init(dhd_pub_t *dhdp, uint32 num_flow_rings)
 {
 	uint32 idx;
 	uint32 flow_ring_table_sz;
-	uint32 if_flow_lkup_sz;
+	uint32 if_flow_lkup_sz = 0;
 	void * flowid_allocator;
 	flow_ring_table_t *flow_ring_table;
 	if_flow_lkup_t *if_flow_lkup = NULL;
@@ -270,7 +274,7 @@ fail:
 		kfree(dhdp->bus->delete_flow_map);
 #endif
 	
-	if (dhdp->if_flow_lkup != NULL) {
+	if (if_flow_lkup != NULL) {
 		DHD_OS_PREFREE(dhdp, if_flow_lkup, if_flow_lkup_sz);
 	}
 	if (flow_ring_table != NULL) {
@@ -779,7 +783,7 @@ int dhd_update_flow_prio_map(dhd_pub_t *dhdp, uint8 map)
 	uint16 flowid;
 	flow_ring_node_t *flow_ring_node;
 
-	if (map > DHD_FLOW_PRIO_TID_MAP)
+	if (map > DHD_FLOW_PRIO_LLR_MAP)
 		return BCME_BADOPTION;
 
 	

@@ -114,6 +114,13 @@ static void log_modem_sfr(void)
 		skip_ssr_on_fatal =1;
 	}
 
+	if(!strncmp(reason, "mcpm_resrc_modem_clk.c:", strlen("mcpm_resrc_modem_clk.c:")))
+	{
+		pr_err("RIL debug: trigger kernel panic to get full ramdump.\n");
+		panic("Panic triggered by RIL debugging");
+		skip_ssr_on_fatal =1;
+	}
+
 #if defined(CONFIG_HTC_DEBUG_SSR)
        if (strstr(reason, "oem-98") || strstr(reason, "oem-96") || strstr(reason, "oem-95")) {
            skip_ssr_on_fatal = 1;
@@ -265,7 +272,7 @@ static int modem_ramdump(int enable, const struct subsys_desc *subsys)
 	if (ret < 0)
 		pr_err("Unable to dump modem fw memory (rc = %d).\n", ret);
 
-	ret = pil_mss_deinit_image(&drv->q6->desc);
+	ret = __pil_mss_deinit_image(&drv->q6->desc, false);
 	if (ret < 0)
 		pr_err("Unable to free up resources (rc = %d).\n", ret);
 

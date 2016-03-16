@@ -49,15 +49,20 @@
 #define ONDEMAND_REGULATOR true
 #define STATIC_REGULATOR (!ONDEMAND_REGULATOR)
 
+/* Number of return values needs to be checked for each
+ * registration of Slimbus of I2C bus for each codec
+ */
 #define NUM_WCD9XXX_REG_RET	9
 
 #define SLIM_USR_MC_REPEAT_CHANGE_VALUE 0x0
 #define SLIM_REPEAT_WRITE_MAX_SLICE 16
 
+//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//htc audio --
 
 struct wcd9xxx_i2c {
 	struct i2c_client *client;
@@ -84,7 +89,7 @@ static int extcodec_get_pinctrl(struct device *dev)
 		return -EINVAL;
 	}
 	pinctrl_info.pinctrl = pinctrl;
-	
+	/* get all the states handles from Device Tree */
 	pinctrl_info.extncodec_sus = pinctrl_lookup_state(pinctrl, "suspend");
 	if (IS_ERR(pinctrl_info.extncodec_sus)) {
 		pr_err("%s: Unable to get pinctrl disable state handle, err: %ld\n",
@@ -382,6 +387,13 @@ int wcd9xxx_slim_write_repeat(struct wcd9xxx *wcd9xxx, unsigned short reg,
 }
 EXPORT_SYMBOL(wcd9xxx_slim_write_repeat);
 
+/*
+ * wcd9xxx_slim_reserve_bw: API to reserve the slimbus bandwidth
+ * @wcd9xxx: Handle to the wcd9xxx core
+ * @bw_ops: value of the bandwidth that is requested
+ * @commit: Flag to indicate if bandwidth change is to be commited
+ *	    right away
+ */
 int wcd9xxx_slim_reserve_bw(struct wcd9xxx *wcd9xxx,
 		u32 bw_ops, bool commit)
 {
@@ -396,6 +408,9 @@ int wcd9xxx_slim_reserve_bw(struct wcd9xxx *wcd9xxx,
 }
 EXPORT_SYMBOL(wcd9xxx_slim_reserve_bw);
 
+/* Interface specifies whether the write is to the interface or general
+ * registers.
+ */
 static int wcd9xxx_slim_write_device(struct wcd9xxx *wcd9xxx,
 		unsigned short reg, int bytes, void *src, bool interface)
 {
@@ -471,7 +486,7 @@ static const struct wcd9xxx_codec_type wcd9xxx_codecs[] = {
 		WCD9XXX_SLIM_SLAVE_ADDR_TYPE_TABLA, 0x03
 	},
 	{
-		
+		/* Siter version 1 has same major chip id with Tabla */
 		TABLA_MAJOR, cpu_to_le16(0x0), sitar_devs,
 		ARRAY_SIZE(sitar_devs), SITAR_NUM_IRQS, -1,
 		WCD9XXX_SLIM_SLAVE_ADDR_TYPE_TABLA, 0x01
@@ -532,7 +547,7 @@ static void wcd9xxx_bring_up(struct wcd9xxx *wcd9xxx)
 	if (cdc_var == WCD9330) {
 		__wcd9xxx_reg_write(wcd9xxx, WCD9330_A_LEAKAGE_CTL, 0x4);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9330_A_CDC_CTL, 0);
-		
+		/* wait for 5ms after codec reset for it to complete */
 		usleep_range(5000, 5100);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9330_A_CDC_CTL, 0x1);
 		__wcd9xxx_reg_write(wcd9xxx, WCD9330_A_LEAKAGE_CTL, 0x3);
@@ -579,7 +594,7 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 	}
 	if (wcd9xxx->reset_gpio) {
 		if (pdata->use_pinctrl) {
-			
+			/* Reset the CDC PDM TLMM pins to a default state */
 			ret = pinctrl_select_state(pinctrl_info.pinctrl,
 					pinctrl_info.extncodec_sus);
 			if (ret != 0) {
@@ -693,6 +708,10 @@ static int wcd9xxx_num_irq_regs(const struct wcd9xxx *wcd9xxx)
 		((wcd9xxx->codec_type->num_irqs % 8) ? 1 : 0);
 }
 
+/*
+ * Interrupt table for v1 corresponds to newer version
+ * codecs (wcd9304 and wcd9310)
+ */
 static const struct intr_data intr_tbl_v1[] = {
 	{WCD9XXX_IRQ_SLIMBUS, false},
 	{WCD9XXX_IRQ_MBHC_INSERTION, true},
@@ -720,6 +739,10 @@ static const struct intr_data intr_tbl_v1[] = {
 	{WCD9XXX_IRQ_RESERVED_1, false},
 };
 
+/*
+ * Interrupt table for v2 corresponds to newer version
+ * codecs (wcd9320 and wcd9306)
+ */
 static const struct intr_data intr_tbl_v2[] = {
 	{WCD9XXX_IRQ_SLIMBUS, false},
 	{WCD9XXX_IRQ_MBHC_INSERTION, true},
@@ -756,6 +779,10 @@ static const struct intr_data intr_tbl_v2[] = {
 	{WCD9XXX_IRQ_VBAT_MONITOR_RELEASE, false},
 };
 
+/*
+ * Interrupt table for v3 corresponds to newer version
+ * codecs (wcd9330)
+ */
 static const struct intr_data intr_tbl_v3[] = {
 	{WCD9XXX_IRQ_SLIMBUS, false},
 	{WCD9XXX_IRQ_MBHC_INSERTION, true},
@@ -922,7 +949,7 @@ static ssize_t wcd9xxx_slimslave_reg_show(char __user *ubuf, size_t count,
 {
 	int i, reg_val, len;
 	ssize_t total = 0;
-	char tmp_buf[20]; 
+	char tmp_buf[20]; /* each line is 12 bytes but 20 for margin of error */
 
 	for (i = (int) *ppos / 12; i <= SLIM_MAX_REG_ADDR; i++) {
 		reg_val = wcd9xxx_interface_reg_read(debugCodec, i);
@@ -967,6 +994,10 @@ static ssize_t codec_debug_read(struct file *file, char __user *ubuf,
 	return ret_cnt;
 }
 
+/*
+ * Place inside CONFIG_DEBUG section as this function is only used by debugfs
+ * function
+ */
 static void wcd9xxx_set_reset_pin_state(struct wcd9xxx *wcd9xxx,
 					struct wcd9xxx_pdata *pdata,
 					bool active)
@@ -1038,7 +1069,7 @@ static ssize_t codec_debug_write(struct file *filp,
 	lbuf[cnt] = '\0';
 
 	if (!strcmp(access_str, "slimslave_poke")) {
-		
+		/* write */
 		rc = get_parameters(lbuf, param, 2);
 		if ((param[0] <= 0x3FF) && (param[1] <= 0xFF) &&
 			(rc == 0))
@@ -1047,7 +1078,7 @@ static ssize_t codec_debug_write(struct file *filp,
 		else
 			rc = -EINVAL;
 	} else if (!strcmp(access_str, "slimslave_peek")) {
-		
+		/* read */
 		rc = get_parameters(lbuf, param, 1);
 		if ((param[0] <= 0x3FF) && (rc == 0))
 			read_data = wcd9xxx_interface_reg_read(debugCodec,
@@ -1260,7 +1291,7 @@ int wcd9xxx_i2c_write_device(u16 reg, u8 *value,
 	data[1] = *value;
 	msg->buf = data;
 	ret = i2c_transfer(wcd9xxx->client->adapter, wcd9xxx->xfer_msg, 1);
-	
+	/* Try again if the write fails */
 	if (ret != 1) {
 		ret = i2c_transfer(wcd9xxx->client->adapter,
 						wcd9xxx->xfer_msg, 1);
@@ -1304,7 +1335,7 @@ int wcd9xxx_i2c_read_device(unsigned short reg,
 		ret = i2c_transfer(wcd9xxx->client->adapter,
 				wcd9xxx->xfer_msg, 2);
 
-		
+		/* Try again if read fails first time */
 		if (ret != 2) {
 			ret = i2c_transfer(wcd9xxx->client->adapter,
 							wcd9xxx->xfer_msg, 2);
@@ -1592,6 +1623,10 @@ static int wcd9xxx_dt_parse_micbias_info(struct device *dev,
 	wcd9xxx_read_of_property_u32(dev, "qcom,cdc-micbias-cfilt3-mv",
 				&micbias->cfilt3_mv);
 
+	/* Read micbias values for codec. Does not matter even if a few
+	 * micbias values are not defined in the Device Tree. Codec will
+	 * anyway not use those values
+	 */
 	if (!(wcd9xxx_read_of_property_u32(dev, "qcom,cdc-micbias1-cfilt-sel",
 				&prop_val)))
 		micbias->bias1_cfilt_sel = (u8)prop_val;
@@ -1608,7 +1643,7 @@ static int wcd9xxx_dt_parse_micbias_info(struct device *dev,
 				&prop_val)))
 		micbias->bias4_cfilt_sel = (u8)prop_val;
 
-	
+	/* micbias external cap */
 	micbias->bias1_cap_mode =
 	    (of_property_read_bool(dev->of_node, "qcom,cdc-micbias1-ext-cap") ?
 	     MICBIAS_EXT_BYP_CAP : MICBIAS_NO_EXT_BYP_CAP);
@@ -1715,6 +1750,18 @@ err:
 
 }
 
+/*
+ * wcd9xxx_validate_dmic_sample_rate:
+ *	Given the dmic_sample_rate and mclk rate, validate the
+ *	dmic_sample_rate. If dmic rate is found to be invalid,
+ *	assign the dmic rate as undefined, so individual codec
+ *	drivers can use thier own defaults
+ * @dev: the device for which the dmic is to be configured
+ * @dmic_sample_rate: The input dmic_sample_rate
+ * @mclk_rate: The input codec mclk rate
+ * @dmic_rate_type: String to indicate the type of dmic sample
+ *		    rate, used for debug/error logging.
+ */
 static u32 wcd9xxx_validate_dmic_sample_rate(struct device *dev,
 		u32 dmic_sample_rate, u32 mclk_rate,
 		const char *dmic_rate_type)
@@ -1732,18 +1779,18 @@ static u32 wcd9xxx_validate_dmic_sample_rate(struct device *dev,
 	case 3:
 	case 4:
 	case 16:
-		
+		/* Valid dmic DIV factors */
 		dev_dbg(dev,
 			"%s: DMIC_DIV = %u, mclk_rate = %u\n",
 			__func__, div_factor, mclk_rate);
 		break;
 	case 6:
-		
+		/* DIV 6 is valid only for 12.288 MCLK */
 		if (mclk_rate != WCD9XXX_MCLK_CLK_12P288MHZ)
 			goto undefined_rate;
 		break;
 	default:
-		
+		/* Any other DIV factor is invalid */
 		goto undefined_rate;
 	}
 
@@ -1759,6 +1806,49 @@ undefined_rate:
 	return dmic_sample_rate;
 }
 
+/*
+ * wcd9xxx_validate_spkdrv_ocp_curr_limit:
+ *	Validate the spkdrv_ocp_curr_limit.
+ *	If spkdrv_ocp_curr_limit is found to be invalid,
+ *	assign the spkdrv_ocp_curr_limit as undefined, so individual codec
+ *	drivers can use thier own defaults
+ * @dev: the device for which the spkdrv_ocp_curr_limit is to be configured
+ * @spkdrv_ocp_curr_limit: The input spkdrv_ocp_curr_limit to be configured
+ */
+static u32 wcd9xxx_validate_spkdrv_ocp_curr_limit(struct device *dev,
+		u32 spkdrv_ocp_curr_limit)
+{
+	switch (spkdrv_ocp_curr_limit) {
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_0P0_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_0P375_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_0P750_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_1P125_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_1P500_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_1P875_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_2P250_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_2P625_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_3P000_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_3P375_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_3P750_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_4P125_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_4P500_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_4P875_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_5P250_A:
+	case WCD9XXX_SPKDRV_OCP_CURR_LIMIT_I_5P625_A:
+		break;
+	default:
+		/* Any other spkdrv_ocp_curr_limit values are invalid */
+		dev_info(dev, "%s: Invalid spkdrv_ocp_curr_limit = %u\n",
+				__func__, spkdrv_ocp_curr_limit);
+		spkdrv_ocp_curr_limit = WCD9XXX_SPKDRV_OCP_CURR_LIMIT_UNDEFINED;
+	}
+
+	dev_dbg(dev, "%s: spkdrv_ocp_curr_limit = %u\n", __func__,
+			spkdrv_ocp_curr_limit);
+
+	return spkdrv_ocp_curr_limit;
+}
+
 static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 {
 	struct wcd9xxx_pdata *pdata;
@@ -1766,6 +1856,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	u32 mclk_rate = 0;
 	u32 dmic_sample_rate = 0;
 	u32 mad_dmic_sample_rate = 0;
+	u32 spkdrv_ocp_curr_limit = 0;
 	const char *static_prop_name = "qcom,cdc-static-supplies";
 	const char *ond_prop_name = "qcom,cdc-on-demand-supplies";
 	const char *cp_supplies_name = "qcom,cdc-cp-supplies";
@@ -1784,12 +1875,12 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 		goto err;
 	}
 
-	
+	/* On-demand supply list is an optional property */
 	ond_cnt = of_property_count_strings(dev->of_node, ond_prop_name);
 	if (IS_ERR_VALUE(ond_cnt))
 		ond_cnt = 0;
 
-	
+	/* cp-supplies list is an optional property */
 	cp_supplies_cnt = of_property_count_strings(dev->of_node,
 							cp_supplies_name);
 	if (IS_ERR_VALUE(cp_supplies_cnt))
@@ -1900,6 +1991,22 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 			pdata->cdc_variant = WCD9XXX;
 	}
 
+
+	ret = of_property_read_u32(dev->of_node,
+				"qcom,cdc-spkdrv-ocp-curr-limit-mA",
+				&spkdrv_ocp_curr_limit);
+	if (ret) {
+		dev_dbg(dev, "Looking up %s property in node %s failed, err = %d",
+			"qcom,cdc-spkdrv-ocp-curr-limit-mA",
+			dev->of_node->full_name, ret);
+		spkdrv_ocp_curr_limit = WCD9XXX_SPKDRV_OCP_CURR_LIMIT_UNDEFINED;
+	}
+	pdata->ocp.spkdrv_ocp_curr_limit =
+		wcd9xxx_validate_spkdrv_ocp_curr_limit(dev,
+							spkdrv_ocp_curr_limit);
+
+
+
 	return pdata;
 err:
 	devm_kfree(dev, pdata);
@@ -1917,7 +2024,7 @@ static int wcd9xxx_slim_get_laddr(struct slim_device *sb,
 		ret = slim_get_logical_addr(sb, e_addr, e_len, laddr);
 		if (!ret)
 			break;
-		
+		/* Give SLIMBUS time to report present and be ready. */
 		usleep_range(1000, 1100);
 		pr_debug_ratelimited("%s: retyring get logical addr\n",
 				     __func__);

@@ -184,6 +184,7 @@ struct mhl_dev_context {
 	struct  work_struct         mhl_disconnect_notifier_work;
 	struct 	delayed_work		irq_timeout_work;
 	bool 	fake_cable_out;
+	struct  delayed_work		mhl_status_work;
 
 #define DEV_FLAG_SHUTDOWN	0x01	
 #define DEV_FLAG_COMM_MODE	0x02	

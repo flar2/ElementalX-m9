@@ -21,7 +21,7 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
- * $Id: dhd_sdio.c 542237 2015-03-19 06:49:27Z $
+ * $Id: dhd_sdio.c 586744 2015-09-16 08:19:27Z $
  */
 
 #include <typedefs.h>
@@ -2968,6 +2968,62 @@ done:
 }
 #endif 
 
+static int
+dhdsdio_mem_dump(dhd_bus_t *bus)
+{
+	int ret = 0;
+	int size; 
+	int start = bus->dongle_ram_base; 
+	int read_size = 0; 
+	uint8 *buf = NULL, *databuf = NULL;
+
+	
+	size = bus->ramsize;
+	buf = MALLOC(bus->dhd->osh, size);
+	if (!buf) {
+		printf("%s: Out of memory (%d bytes)\n", __FUNCTION__, size);
+		return -1;
+	}
+
+	
+	printf("Dump dongle memory");
+	databuf = buf;
+	while (size)
+	{
+		read_size = MIN(MEMBLOCK, size);
+		if ((ret = dhdsdio_membytes(bus, FALSE, start, databuf, read_size)))
+		{
+			printf("%s: Error membytes %d\n", __FUNCTION__, ret);
+			if (buf) {
+				MFREE(bus->dhd->osh, buf, size);
+			}
+			return -1;
+		}
+		printf(".");
+
+		
+		size -= read_size;
+		start += read_size;
+		databuf += read_size;
+	}
+	printf("Done\n");
+
+	
+	if (write_to_file(bus->dhd, buf, bus->ramsize))
+	{
+		printf("%s: Error writing to files\n", __FUNCTION__);
+		return -1;
+	}
+
+	
+	return 0;
+}
+
+int
+dhd_socram_dump(dhd_bus_t * bus)
+{
+	return (dhdsdio_mem_dump(bus));
+}
 
 int
 dhdsdio_downloadvars(dhd_bus_t *bus, void *arg, int len)

@@ -1,0 +1,172 @@
+/*
+ * htc_hima-family: common configs of hima*
+ */
+
+&blsp1_uart3 {
+	status= "ok";
+	rst = <&pm8994_gpios 12 0x00>;
+	cir_ls_en = <&msm_gpio 41 0x00>;
+	qcom,config-gpio = <2>;
+	qcom,tx-gpio = <&msm_gpio 8 0x00>;
+	qcom,rx-gpio = <&msm_gpio 9 0x00>;
+	pinctrl-names = "default", "sleep", "disable";
+	pinctrl-0 = <&uart_cir_active>;
+	pinctrl-1 = <&uart_cir_sleep>;
+	pinctrl-2 = <&uart_cir_disable>;
+	qcom,power-save;
+	vddcir-supply = <&pm8994_l23>;	/* Regulator for cir */
+	htc,cir-dynamic-disable;
+};
+
+&soc {
+	htc,railways-info@fc1a2b70 {
+		compatible = "htc,railways-info";
+		reg = <0xfc1a2b70 0x30>;
+	};
+
+	headset_mgr {
+		compatible   = "htc_headset,mgr";
+		pinctrl-names = "headset_gpios";
+		pinctrl-0 = <&headset_gpios>;
+		//mgr,tx_gpio  = <&msm_gpio 0 0>;
+		//mgr,rx_gpio  = <&msm_gpio 96 0>;
+		//mgr,oe_gpio  = <&msm_gpio 0 0>;
+		mgr,bias_gpio  = <&pmi8994_gpios 4 0>;
+		mgr,wire_alt = <2>;
+		mgr,hs_typenum   = <2>;
+		mgr,hs_type      = <2 1>;
+		mgr,adc_max      = <1541 254>;
+		mgr,adc_min      = <255 0>;
+	};
+
+	headset_pmic {
+		compatible = "htc_headset,pmic";
+		interrupt-parent = <&msm_gpio>;
+		hs_pmic,key_gpio 	= <&msm_gpio 96 0x00>;
+		hs_pmic,driver_flag     = <4>;
+		hs_pmic,hpin_gpio       = <&msm_gpio 53 0x00>;
+		hs_pmic,hpin_irq        = <0>;
+		hs_pmic,key_irq         = <0>;
+		hs_pmic,key_enable_gpio = <0>;
+		hs_pmic,adc_mic         = <0>;
+		hs_pmic,adc_remote      = <0 56 57 146 147 339>;
+		hs_pmic,adc_channel	= <19>;		//MPP4
+		hs_pmic,adc_mpp         = <0>;
+		hs_pmic,adc_amux        = <0>;
+		hs_pmic,hs_controller   = <0>;
+		hs_pmic,hs_switch       = <0>;
+		qcom,headset-vadc	= <&pm8994_vadc>;
+	};
+
+//	headset_onewire {
+//		compatible = "htc_headset,1wire";
+//		hs_1wire,tx_level_shift_en = <&msm_gpio 0 0x00>;
+//		hs_1wire,one_wire_remote = <0x7E 0x7F 0x7D 0x7F 0x7B 0x7F>;
+//		hs_1wire,onewire_tty_dev = "ttyHSL1";
+//	};
+
+	hall_ak8789 {
+		compatible = "hall_sensor,ak8789";
+		hall,att_used = <2>;
+		hall,att_gpio = <&pm8994_gpios 11 0>;
+		hall,att_gpio_s = <&pm8994_gpios 2 0>;
+	};
+
+//htc audio ++
+	sound {
+		tert_mi2s_pinctrl {
+			compatible = "aud_pinctrl_dev";
+			pinctrl_type = <0>;
+			dev_id = <2>;
+			pinctrl-names = "tert_mi2s_sleep",
+					"tert_mi2s_active";
+
+			pinctrl-0 = <&tert_mi2s_sleep>, <&tert_mi2s_sd0_sleep>;
+			pinctrl-1 = <&tert_mi2s_active>, <&tert_mi2s_sd0_active>;
+		};
+	};
+//htc audio --
+
+	gpio_keys {
+		compatible = "gpio-keys";
+		input-name = "gpio-keys";
+		pinctrl-names = "tlmm_gpio_key_active", "tlmm_gpio_key_suspend";
+		pinctrl-0 = <&key_vol_active &key_pwr_active>;
+		pinctrl-1 = <&key_vol_suspend &key_pwr_suspend>;
+
+		power_key {
+			label = "power_key";
+			gpios = <&msm_gpio 64 0x1>;
+			linux,input-type = <1>;
+			linux,code = <116>;
+			gpio-key,wakeup;
+			debounce-interval = <20>;
+		};
+
+		vol_up {
+			label = "volume_up";
+			gpios = <&msm_gpio 77 0x1>;
+			linux,input-type = <1>;
+			linux,code = <115>;
+			debounce-interval = <20>;
+		};
+
+		vol_down {
+			label = "volume_down";
+			gpios = <&msm_gpio 54 0x1>;
+			linux,input-type = <1>;
+			linux,code = <114>;
+			debounce-interval = <20>;
+		};
+	};
+
+	keycombo {
+		compatible = "keycombo";
+		/* clear_hw_reset */
+		clr_gpio	= <&msm_gpio 12 0x1>;
+		key_down_delay	= <0>;		/* ms */
+		keys_down	= <116 0>;
+		/* cancel clear_hw_reset */
+		keys_up		= <115 0>;
+	};
+
+	keyreset {
+		compatible	= "keyreset";
+		key_down_delay = <9000>;
+		keys_down	= <116 115 0>;
+	};
+};
+
+&pm8994_gpios {
+	gpio@c100 { /* GPIO 2 */
+		/* hall pole s (COVER_INT2#) */
+		qcom,mode = <0>;                /* QPNP_PIN_MODE_DIG_IN */
+		qcom,pull = <5>;                /* QPNP_PIN_NO_PULL */
+		qcom,vin-sel = <2>;             /* QPNP_PIN_VIN2 */
+		qcom,src-sel = <0>;             /* GPIO */
+		qcom,master-en = <1>;
+		status = "okay";
+	};
+
+	gpio@ca00 { /* GPIO 11 */
+		/* hall pole n (COVER_INT1#) */
+		qcom,mode = <0>;                /* QPNP_PIN_MODE_DIG_IN */
+		qcom,pull = <5>;                /* QPNP_PIN_NO_PULL */
+		qcom,vin-sel = <2>;             /* QPNP_PIN_VIN2 */
+		qcom,src-sel = <0>;             /* GPIO */
+		qcom,master-en = <1>;
+		status = "okay";
+	};
+
+	gpio@cb00 { /* GPIO 12 */
+		qcom,mode = <0>;		/* Digital in */
+		qcom,pull = <5>;                /* NO PULL */
+		qcom,output-type = <0>;		/* CMOS logic */
+		qcom,invert = <1>;		/* Output high */
+		qcom,vin-sel = <2>;		/* VPH_PWR */
+		qcom,src-sel = <0>;		/* Constant */
+		qcom,out-strength = <1>;	/* High drive strength */
+		qcom,master-en = <1>;		/* Enable GPIO */
+		status = "okay";
+	};
+};

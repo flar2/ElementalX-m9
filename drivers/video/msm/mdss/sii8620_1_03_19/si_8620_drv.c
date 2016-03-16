@@ -5396,6 +5396,10 @@ static void cbus_reset(struct drv_hw_context *hw_context)
 static void disconnect_mhl(struct drv_hw_context *hw_context,
 			   bool do_interrupt_clear, bool disable_hdmi)
 {
+	struct mhl_dev_context *dev_context;
+	dev_context = container_of((void *)hw_context,
+	struct mhl_dev_context, drv_context);
+
 	disable_gen2_write_burst_rcv(hw_context);
 	disable_gen2_write_burst_xmit(hw_context);
 
@@ -5477,8 +5481,10 @@ static void disconnect_mhl(struct drv_hw_context *hw_context,
 	mhl_tx_write_reg(hw_context, REG_DISC_CTRL1, 0x25);
 
 	
-	if(true == disable_hdmi)
+	if(true == disable_hdmi) {
+		cancel_delayed_work(&dev_context->mhl_status_work);
 		enable_hdmi(false);
+	}
 
 	if (do_interrupt_clear)
 		clear_and_disable_on_disconnect(hw_context);

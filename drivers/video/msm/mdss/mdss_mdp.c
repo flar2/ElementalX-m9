@@ -570,19 +570,96 @@ void mdss_mdp_irq_disable_nosync(u32 intr_type, u32 intf_num)
 	}
 }
 
+#define RPM_MISC_REQ_TYPE 0x6373696d
+#define RPM_MISC_REQ_SVS_PLUS_KEY 0x2B737673
+
+static void mdss_mdp_config_cx_voltage(struct mdss_data_type *mdata, int enable)
+{
+	int ret = 0;
+	static struct msm_rpm_kvp rpm_kvp;
+	static uint8_t svs_en;
+
+	if (!mdata->en_svs_high && !mdss_has_quirk(mdata,
+				MDSS_QUIRK_SVS_PLUS_VOTING))
+		return;
+
+	if (!rpm_kvp.key) {
+		rpm_kvp.key = RPM_MISC_REQ_SVS_PLUS_KEY;
+		rpm_kvp.length = sizeof(unsigned);
+		pr_err("%s: Initialized rpm_kvp structure\n", __func__);
+	}
+
+	if (enable) {
+		svs_en = 1;
+		rpm_kvp.data = &svs_en;
+		pr_debug("voting for svs high\n");
+		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("vote for active_set svs high failed: %d\n",
+					ret);
+		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("vote for sleep_set svs high failed: %d\n",
+					ret);
+	} else {
+		svs_en = 0;
+		rpm_kvp.data = &svs_en;
+		pr_debug("removing vote for svs high\n");
+		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("Remove vote:active_set svs high failed: %d\n",
+					ret);
+		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
+					RPM_MISC_REQ_TYPE, 0,
+					&rpm_kvp, 1);
+		if (ret)
+			pr_err("Remove vote:sleep_set svs high failed: %d\n",
+					ret);
+	}
+}
+
 static int mdss_mdp_clk_update(u32 clk_idx, u32 enable)
 {
 	int ret = -ENODEV;
 	struct clk *clk = mdss_mdp_get_clk(clk_idx);
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	u32 rate;
 
 	if (clk) {
 		pr_debug("clk=%d en=%d\n", clk_idx, enable);
 		if (enable) {
-			if (clk_idx == MDSS_CLK_MDP_VSYNC)
+			if (clk_idx == MDSS_CLK_MDP_VSYNC) {
 				clk_set_rate(clk, 19200000);
+			} else if (clk_idx == MDSS_CLK_MDP_CORE &&
+					mdss_has_quirk(mdata,
+						MDSS_QUIRK_SVS_PLUS_VOTING)) {
+				rate = clk_get_rate(clk);
+				if (__is_mdp_clk_svs_plus_range(mdata, rate)
+						&& (!mdata->svs_plus_vote)) {
+					mdata->svs_plus_vote = 1;
+					pr_debug("Send svs plus enable request\n");
+					mdss_mdp_config_cx_voltage(mdata, 1);
+				}
+
+			}
 			ret = clk_prepare_enable(clk);
 		} else {
 			clk_disable_unprepare(clk);
+			if (clk_idx == MDSS_CLK_MDP_CORE &&
+					mdss_has_quirk(mdata,
+						MDSS_QUIRK_SVS_PLUS_VOTING)) {
+				if (mdata->svs_plus_vote) {
+					mdata->svs_plus_vote = 0;
+					pr_debug("Send svs plus disable request\n");
+					mdss_mdp_config_cx_voltage(mdata, 0);
+				}
+			}
 			ret = 0;
 		}
 	}
@@ -620,6 +697,24 @@ void mdss_mdp_set_clk_rate(unsigned long rate)
 		if (IS_ERR_VALUE(clk_rate)) {
 			pr_err("unable to round rate err=%ld\n", clk_rate);
 		} else if (clk_rate != clk_get_rate(clk)) {
+			if (mdss_has_quirk(mdata, MDSS_QUIRK_SVS_PLUS_VOTING)) {
+				if (__is_mdp_clk_svs_plus_range(mdata,
+							clk_rate)) {
+					if (!(mdata->svs_plus_vote) &&
+							mdata->clk_ena) {
+						mdata->svs_plus_vote = 1;
+						pr_debug("Send svs plus enable request\n");
+						mdss_mdp_config_cx_voltage(
+								mdata, 1);
+					} else {
+						pr_debug("Already sent svs plus request\n");
+					}
+				} else if (mdata->svs_plus_vote) {
+					mdata->svs_plus_vote = 0;
+					pr_debug("Send svs plus disable request\n");
+					mdss_mdp_config_cx_voltage(mdata, 0);
+				}
+			}
 			if (IS_ERR_VALUE(clk_set_rate(clk, clk_rate)))
 				pr_err("clk_set_rate failed\n");
 			else
@@ -672,7 +767,7 @@ int mdss_iommu_ctrl(int enable)
 	if (enable) {
 		if (!mdata->iommu_attached && !mdata->handoff_pending) {
 			if (mdata->needs_iommu_bw_vote)
-				mdss_bus_scale_set_quota(MDSS_HW_IOMMU,
+				mdss_bus_scale_set_quota(MDSS_IOMMU_RT,
 					SZ_1M, SZ_1M);
 			rc = mdss_iommu_attach(mdata);
 		}
@@ -683,7 +778,7 @@ int mdss_iommu_ctrl(int enable)
 			if (mdata->iommu_ref_cnt == 0) {
 				rc = mdss_iommu_dettach(mdata);
 				if (mdata->needs_iommu_bw_vote)
-					mdss_bus_scale_set_quota(MDSS_HW_IOMMU,
+					mdss_bus_scale_set_quota(MDSS_IOMMU_RT,
 						0, 0);
 			}
 		} else {
@@ -882,7 +977,7 @@ static int mdss_iommu_tlb_timeout_notify(struct notifier_block *self,
 	switch (action) {
 	case TLB_SYNC_TIMEOUT:
 		pr_err("cb for TLB SYNC timeout. Dumping XLOG's\n");
-		MDSS_XLOG_TOUT_HANDLER("vbif", "mdp");
+		MDSS_XLOG_TOUT_HANDLER_FATAL_DUMP("vbif", "mdp", "mdp_dbg_bus");
 		break;
 	}
 
@@ -1124,20 +1219,34 @@ static u32 mdss_get_props(void)
 	return props;
 }
 
+static void __mdss_mdp_enable_svs_plus_vote(struct mdss_data_type *mdata, u32
+		min_lvl, u32 max_lvl)
+{
+	mdss_set_quirk(mdata, MDSS_QUIRK_SVS_PLUS_VOTING);
+	mdata->svs_plus_min = min_lvl;
+	mdata->svs_plus_max = max_lvl;
+}
+
 static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 {
 	
 	mdata->min_prefill_lines = 0xffff;
 
+	mdss_mdp_hw_rev_debug_caps_init(mdata);
+
 	switch (mdata->mdp_rev) {
 	case MDSS_MDP_HW_REV_105:
 	case MDSS_MDP_HW_REV_109:
 		mdss_set_quirk(mdata, MDSS_QUIRK_BWCPANIC);
+		mdss_set_quirk(mdata, MDSS_QUIRK_DOWNSCALE_HFLIP_MDPCLK);
 		mdata->max_target_zorder = 7; 
 		mdata->max_cursor_size = 128;
 		break;
 	case MDSS_MDP_HW_REV_110:
+		__mdss_mdp_enable_svs_plus_vote(mdata,
+				SVS_PLUS_MIN_HW_110, SVS_PLUS_MAX_HW_110);
 		mdss_set_quirk(mdata, MDSS_QUIRK_BWCPANIC);
+		mdss_set_quirk(mdata, MDSS_QUIRK_DOWNSCALE_HFLIP_MDPCLK);
 		mdata->max_target_zorder = 4; 
 		mdata->max_cursor_size = 128;
 		mdata->min_prefill_lines = 12;
@@ -1149,6 +1258,7 @@ static void mdss_mdp_hw_rev_caps_init(struct mdss_data_type *mdata)
 		mdata->min_prefill_lines = 21;
 		break;
 	default:
+		mdss_set_quirk(mdata, MDSS_QUIRK_DOWNSCALE_HFLIP_MDPCLK);
 		mdata->max_target_zorder = 4; 
 		mdata->max_cursor_size = 64;
 	}
@@ -1427,13 +1537,14 @@ static ssize_t mdss_mdp_show_capabilities(struct device *dev,
 	SPRINT("dma_pipes=%d\n", mdata->ndma_pipes);
 	SPRINT("blending_stages=%d\n", mdata->max_target_zorder);
 	SPRINT("cursor_pipes=%d\n", mdata->ncursor_pipes);
+	SPRINT("max_cursor_size=%d\n", mdata->max_cursor_size);
 	SPRINT("smp_count=%d\n", mdata->smp_mb_cnt);
 	SPRINT("smp_size=%d\n", mdata->smp_mb_size);
 	SPRINT("smp_mb_per_pipe=%d\n", mdata->smp_mb_per_pipe);
 	SPRINT("max_downscale_ratio=%d\n", MAX_DOWNSCALE_RATIO);
 	SPRINT("max_upscale_ratio=%d\n", MAX_UPSCALE_RATIO);
 	if (mdata->props)
-		SPRINT("props=%d", mdata->props);
+		SPRINT("props=%d\n", mdata->props);
 	if (mdata->max_bw_low)
 		SPRINT("max_bandwidth_low=%u\n", mdata->max_bw_low);
 	if (mdata->max_bw_high)
@@ -2201,10 +2312,17 @@ static int mdss_mdp_parse_dt_pipe(struct platform_device *pdev)
 			goto parse_fail;
 
 		rc = mdss_mdp_parse_dt_handler(pdev,
-			"qcom,mdss-pipe-dma-xin-id", xin_id,
+			"qcom,mdss-pipe-cursor-xin-id", xin_id,
 			mdata->ncursor_pipes);
 		if (rc)
 			goto parse_fail;
+
+		rc = mdss_mdp_parse_dt_pipe_clk_ctrl(pdev,
+			"qcom,mdss-pipe-cursor-clk-ctrl-offsets",
+			mdata->cursor_pipes, mdata->ncursor_pipes);
+		if (rc)
+			pr_err("cursor-clk-ctrl-offsets is not set\n");
+
 		
 		for (i = 0; i < mdata->ncursor_pipes; i++)
 			ftch_id[i] = -1;
@@ -3005,7 +3123,7 @@ int mdss_panel_get_boot_cfg(void)
 
 	if (!mdss_res || !mdss_res->pan_cfg.init_done)
 		return -EPROBE_DEFER;
-	if (mdss_res->pan_cfg.lk_cfg)
+	if (mdss_res->handoff_pending)
 		rc = 1;
 	else
 		rc = 0;
@@ -3019,17 +3137,23 @@ int mdss_mdp_wait_for_xin_halt(u32 xin_id, bool is_vbif_nrt)
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
 	u32 idle_mask = BIT(xin_id);
 	int rc;
+	int retries = 0;
 
 	vbif_base = is_vbif_nrt ? mdata->vbif_nrt_io.base :
 				mdata->vbif_io.base;
 
+l_timeout:
+
 	rc = readl_poll_timeout(vbif_base + MMSS_VBIF_XIN_HALT_CTRL1,
 		status, (status & idle_mask),
 		1000, XIN_HALT_TIMEOUT_US);
-	if (rc == -ETIMEDOUT) {
+
+	if ((rc == -ETIMEDOUT && retries++ >= XIN_HALT_RETRY)) {
 		pr_err("VBIF client %d not halting. TIMEDOUT.\n",
 			xin_id);
-		MDSS_XLOG_TOUT_HANDLER("mdp", "vbif", "panic");
+		MDSS_XLOG_TOUT_HANDLER("mdp", "vbif", "mdp_dbg_bus", "panic");
+	} else if (rc == -ETIMEDOUT) {
+		goto l_timeout;
 	} else {
 		pr_debug("VBIF client %d is halted\n", xin_id);
 	}
@@ -3176,59 +3300,6 @@ void mdss_mdp_set_ot_limit(struct mdss_mdp_set_ot_params *params)
 
 exit:
 	return;
-}
-
-#define RPM_MISC_REQ_TYPE 0x6373696d
-#define RPM_MISC_REQ_SVS_PLUS_KEY 0x2B737673
-
-static void mdss_mdp_config_cx_voltage(struct mdss_data_type *mdata, int enable)
-{
-	int ret = 0;
-	static struct msm_rpm_kvp rpm_kvp;
-	static uint8_t svs_en;
-
-	if (!mdata->en_svs_high)
-		return;
-
-	if (!rpm_kvp.key) {
-		rpm_kvp.key = RPM_MISC_REQ_SVS_PLUS_KEY;
-		rpm_kvp.length = sizeof(unsigned);
-		pr_debug("%s: Initialized rpm_kvp structure\n", __func__);
-	}
-
-	if (enable) {
-		svs_en = 1;
-		rpm_kvp.data = &svs_en;
-		pr_debug("%s: voting for svs high\n", __func__);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("vote for active_set svs high failed: %d\n",
-					ret);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("vote for sleep_set svs high failed: %d\n",
-					ret);
-	} else {
-		svs_en = 0;
-		rpm_kvp.data = &svs_en;
-		pr_debug("%s: Removing vote for svs high\n", __func__);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_ACTIVE_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("Remove vote:active_set svs high failed: %d\n",
-					ret);
-		ret = msm_rpm_send_message(MSM_RPM_CTX_SLEEP_SET,
-					RPM_MISC_REQ_TYPE, 0,
-					&rpm_kvp, 1);
-		if (ret)
-			pr_err("Remove vote:sleep_set svs high failed: %d\n",
-					ret);
-	}
 }
 
 static int mdss_mdp_cx_ctrl(struct mdss_data_type *mdata, int enable)

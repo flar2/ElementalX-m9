@@ -30,5 +30,5 @@ extern int fpc1020_regulator_release(fpc1020_data_t *fpc1020);
 
 extern int fpc1020_regulator_set(fpc1020_data_t *fpc1020, bool enable);
 
-#endif 
+#endif /* LINUX_SPI_FPC1020_REGULATOR_H */
 

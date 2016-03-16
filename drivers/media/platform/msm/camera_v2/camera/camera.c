@@ -650,7 +650,7 @@ static int camera_v4l2_close(struct file *filep)
 	pr_info("%s: E\n", __func__); 
 
 	opn_idx = atomic_read(&pvdev->opened);
-	pr_debug("%s: close stream_id=%d\n", __func__, sp->stream_id);
+	pr_info("%s: close stream_id=%d\n", __func__, sp->stream_id);
 	mask = (1 << sp->stream_id);
 	opn_idx &= ~mask;
 	atomic_set(&pvdev->opened, opn_idx);

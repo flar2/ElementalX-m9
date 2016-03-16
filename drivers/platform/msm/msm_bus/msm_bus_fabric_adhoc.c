@@ -371,7 +371,7 @@ static int flush_clk_data(struct device *node_device, int ctx)
 #endif
 	}
 exit_flush_clk_data:
-	
+	/* Reset the aggregated clock rate for fab devices*/
 	if (node && node->node_info->is_fab_dev)
 		node->cur_clk_hz[ctx] = 0;
 
@@ -389,7 +389,7 @@ int msm_bus_commit_data(int *dirty_nodes, int ctx, int num_dirty)
 	int ret = 0;
 	int i = 0;
 
-	
+	/* Aggregate the bus clocks */
 	bus_for_each_dev(&msm_bus_type, NULL, (void *)&ctx,
 				msm_bus_agg_fab_clks);
 
@@ -440,7 +440,7 @@ int msm_bus_commit_data(int *dirty_nodes, int ctx, int num_dirty)
 #endif
 
 	kfree(dirty_nodes);
-	
+	/* Aggregate the bus clocks */
 	bus_for_each_dev(&msm_bus_type, NULL, (void *)&ctx,
 				msm_bus_reset_fab_clks);
 	return ret;
@@ -682,6 +682,11 @@ static int msm_bus_qos_enable_clk(struct msm_bus_node_device_type *node)
 		goto exit_enable_qos_clk;
 	}
 
+	/* Check if the bus clk is already set before trying to set it
+	 * Do this only during
+	 *	a. Bootup
+	 *	b. Only for bus clks
+	 **/
 	if (!clk_get_rate(bus_node->clk[DUAL_CTX].clk)) {
 		rounded_rate = clk_round_rate(bus_node->clk[DUAL_CTX].clk, 1);
 		ret = setrate_nodeclk(&bus_node->clk[DUAL_CTX], rounded_rate);
@@ -1054,6 +1059,9 @@ static struct device *msm_bus_device_init(
 		bus_dev = NULL;
 		goto exit_device_init;
 	}
+	/**
+	* Init here so we can use devm calls
+	*/
 	device_initialize(bus_dev);
 
 	bus_node = devm_kzalloc(bus_dev,
@@ -1123,7 +1131,7 @@ static int msm_bus_setup_dev_conn(struct device *bus_dev, void *data)
 		goto exit_setup_dev_conn;
 	}
 
-	
+	/* Setup parent bus device for this node */
 	if (!bus_node->node_info->is_fab_dev) {
 		struct device *bus_parent_device =
 			bus_find_device(&msm_bus_type, NULL,
@@ -1213,7 +1221,7 @@ static int msm_bus_device_probe(struct platform_device *pdev)
 	unsigned int i, ret;
 	struct msm_bus_device_node_registration *pdata;
 
-	
+	/* If possible, get pdata from device-tree */
 	if (pdev->dev.of_node)
 		pdata = msm_bus_of_to_pdata(pdev);
 	else {
@@ -1240,7 +1248,7 @@ static int msm_bus_device_probe(struct platform_device *pdev)
 		}
 
 		ret = msm_bus_init_clk(node_dev, &pdata->info[i]);
-		
+		/*Is this a fabric device ?*/
 		if (pdata->info[i].node_info->is_fab_dev) {
 			MSM_BUS_DBG("%s: %d is a fab", __func__,
 						pdata->info[i].node_info->id);
@@ -1267,7 +1275,7 @@ static int msm_bus_device_probe(struct platform_device *pdev)
 	}
 
 
-	
+	/* Register the arb layer ops */
 	msm_bus_arb_setops_adhoc(&arb_ops);
 
 #ifdef CONFIG_HTC_DEBUG_MSMBUS

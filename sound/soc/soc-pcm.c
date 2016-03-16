@@ -1850,7 +1850,7 @@ static int dpcm_fe_dai_prepare(struct snd_pcm_substream *substream)
 				fe->dai_link->name);
 #ifdef CONFIG_HTC_DEBUG_DSP
 		pr_err("%s: trigger ramdump here to check mixer paths!", __func__);
-		BUG();
+		
 #endif
 		ret = -EINVAL;
 		goto out;

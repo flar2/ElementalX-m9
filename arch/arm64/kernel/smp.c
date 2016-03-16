@@ -133,6 +133,8 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 
 	notify_cpu_starting(cpu);
 
+	cpuinfo_store_cpu();
+
 	set_cpu_online(cpu, true);
 	complete(&cpu_running);
 

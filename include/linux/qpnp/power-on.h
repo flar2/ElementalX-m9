@@ -58,6 +58,7 @@ int qpnp_get_reset_en(int pon_type);
 #endif 
 int qpnp_pon_set_restart_reason(enum pon_restart_reason reason);
 bool qpnp_pon_check_hard_reset_stored(void);
+int downgrade_hvdcp_9v_to_5v(void);
 
 #else
 static int qpnp_pon_system_pwr_off(enum pon_power_off_type type)
@@ -93,6 +94,10 @@ static inline int qpnp_pon_set_restart_reason(enum pon_restart_reason reason)
 static inline bool qpnp_pon_check_hard_reset_stored(void)
 {
 	return false;
+}
+static inline int downgrade_hvdcp_9v_to_5v(void)
+{
+	return -ENODEV;
 }
 #endif
 

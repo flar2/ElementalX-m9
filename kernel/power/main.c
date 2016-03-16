@@ -15,7 +15,6 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
-#include <linux/time.h>
 
 #include "power.h"
 
@@ -276,12 +275,12 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 {
 	char *s = buf;
 #ifdef CONFIG_SUSPEND
-	int i;
+	suspend_state_t i;
 
-	for (i = 0; i < PM_SUSPEND_MAX; i++) {
-		if (pm_states[i] && valid_state(i))
-			s += sprintf(s,"%s ", pm_states[i]);
-	}
+	for (i = PM_SUSPEND_MIN; i < PM_SUSPEND_MAX; i++)
+		if (pm_states[i].state)
+			s += sprintf(s,"%s ", pm_states[i].label);
+
 #endif
 #ifdef CONFIG_HIBERNATION
 	s += sprintf(s, "%s\n", "disk");
@@ -297,7 +296,7 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
 	suspend_state_t state = PM_SUSPEND_MIN;
-	const char * const *s;
+	struct pm_sleep_state *s;
 #endif
 	char *p;
 	int len;
@@ -311,8 +310,9 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 
 #ifdef CONFIG_SUSPEND
 	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++)
-		if (*s && len == strlen(*s) && !strncmp(buf, *s, len))
-			return state;
+		if (s->state && len == strlen(s->label)
+		    && !strncmp(buf, s->label, len))
+			return s->state;
 #endif
 
 	return PM_SUSPEND_ON;
@@ -428,8 +428,8 @@ static ssize_t autosleep_show(struct kobject *kobj,
 
 #ifdef CONFIG_SUSPEND
 	if (state < PM_SUSPEND_MAX)
-		return sprintf(buf, "%s\n", valid_state(state) ?
-						pm_states[state] : "error");
+		return sprintf(buf, "%s\n", pm_states[state].state ?
+					pm_states[state].label : "error");
 #endif
 #ifdef CONFIG_HIBERNATION
 	return sprintf(buf, "disk\n");
@@ -560,38 +560,6 @@ power_attr(pm_freeze_timeout);
 
 #endif	
 
-#ifdef CONFIG_HTC_PNPMGR
-int grp_alarm_sec = 0;
-
-int nightmode_enabled = 0;
-static ssize_t
-nightmode_show(struct kobject *kobj, struct kobj_attribute *attr,
-                char *buf)
-{
-        return sprintf(buf, "%d\n", nightmode_enabled);
-}
-
-static ssize_t
-nightmode_store(struct kobject *kobj, struct kobj_attribute *attr,
-                const char *buf, size_t n)
-{
-        unsigned long val;
-        struct timespec ts;
-
-        if (strict_strtoul(buf, 10, &val))
-                return -EINVAL;
-
-        nightmode_enabled = val;
-        if(nightmode_enabled == 1){
-            getnstimeofday(&ts);
-            grp_alarm_sec = ts.tv_sec % 60;
-        }
-        printk(KERN_INFO "Set nightmode to %d, group alarm second to %d\n", nightmode_enabled, grp_alarm_sec);
-        sysfs_notify(kobj, NULL, "nightmode");
-        return n;
-}
-power_attr(nightmode);
-
 int powersave_enabled = 0;
 static ssize_t
 powersave_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -615,36 +583,6 @@ powersave_store(struct kobject *kobj, struct kobj_attribute *attr,
 	return n;
 }
 power_attr(powersave);
-
-int screenoff_policy = 0;
-extern void screenoff_policy_change(void);
-static ssize_t
-screenoff_policy_show(struct kobject *kobj, struct kobj_attribute *attr,
-                char *buf)
-{
-	return sprintf(buf, "%d\n", screenoff_policy);
-}
-
-static ssize_t
-screenoff_policy_store(struct kobject *kobj, struct kobj_attribute *attr,
-                const char *buf, size_t n)
-{
-	unsigned long val;
-
-	if (strict_strtoul(buf, 10, &val))
-		return -EINVAL;
-
-	printk(KERN_INFO "Change screeoff policy from %d to %ld\n", screenoff_policy, val);
-	if (screenoff_policy != val) {
-		screenoff_policy = val;
-		screenoff_policy_change();
-		sysfs_notify(kobj, NULL, "screenoff_policy");
-	}
-	return n;
-}
-power_attr(screenoff_policy);
-#endif
-
 static struct attribute * g[] = {
 	&state_attr.attr,
 #ifdef CONFIG_PM_TRACE
@@ -672,9 +610,7 @@ static struct attribute * g[] = {
 	&pm_freeze_timeout_attr.attr,
 #endif
 #ifdef CONFIG_HTC_PNPMGR
-	&nightmode_attr.attr,
 	&powersave_attr.attr,
-	&screenoff_policy_attr.attr,
 #endif
 	NULL,
 };

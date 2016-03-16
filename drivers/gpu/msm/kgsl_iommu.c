@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1324,15 +1324,6 @@ static int kgsl_iommu_start(struct kgsl_mmu *mmu)
 
 	kgsl_iommu_disable_clk(mmu, KGSL_IOMMU_MAX_UNITS);
 
-	if (mmu->secured) {
-		kgsl_regwrite(mmu->device, A4XX_RBBM_SECVID_TRUST_CONFIG, 0x2);
-		kgsl_regwrite(mmu->device, A4XX_RBBM_SECVID_TSB_CONTROL, 0x0);
-		kgsl_regwrite(mmu->device, A4XX_RBBM_SECVID_TSB_TRUSTED_BASE,
-						KGSL_IOMMU_SECURE_MEM_BASE);
-		kgsl_regwrite(mmu->device, A4XX_RBBM_SECVID_TSB_TRUSTED_SIZE,
-						KGSL_IOMMU_SECURE_MEM_SIZE);
-	}
-
 done:
 	return status;
 }
@@ -1405,14 +1396,16 @@ struct scatterlist *_create_sg_no_large_pages(struct kgsl_memdesc *memdesc)
 	struct page *page;
 	struct scatterlist *s, *s_temp, *sg_temp;
 	int sglen_alloc = 0;
-	uint64_t offset, dist;
+	uint64_t offset, pg_size;
 	int i;
 
 	for_each_sg(memdesc->sg, s, memdesc->sglen, i) {
-		if (SZ_1M <= s->length)
-			sglen_alloc += DIV_ROUND_UP(s->length, SZ_64K);
-		else
+		if (SZ_1M <= s->length) {
+			sglen_alloc += s->length >> 16;
+			sglen_alloc += ((s->length & 0xF000) >> 12);
+		} else {
 			sglen_alloc++;
+		}
 	}
 	
 	if (sglen_alloc == memdesc->sglen)
@@ -1429,9 +1422,10 @@ struct scatterlist *_create_sg_no_large_pages(struct kgsl_memdesc *memdesc)
 		page = sg_page(s);
 		if (SZ_1M <= s->length) {
 			for (offset = 0; offset < s->length; s_temp++) {
-				dist = s->length - offset;
-				sg_set_page(s_temp, page, dist >= SZ_64K? SZ_64K : dist, offset);
-				offset += SZ_64K;
+				pg_size = ((s->length - offset) >= SZ_64K) ?
+						SZ_64K : SZ_4K;
+				sg_set_page(s_temp, page, pg_size, offset);
+				offset += pg_size;
 			}
 		} else {
 			sg_set_page(s_temp, page, s->length, 0);
