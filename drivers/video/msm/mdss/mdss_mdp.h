@@ -21,6 +21,7 @@
 #include <linux/notifier.h>
 #include <linux/irqreturn.h>
 #include <linux/kref.h>
+#include <linux/kthread.h>
 
 #include "mdss.h"
 #include "mdss_mdp_hwio.h"
@@ -555,6 +556,10 @@ struct mdss_overlay_private {
 	bool kickoff_released;
 	u32 cursor_ndx[2];
 	bool dyn_mode_switch; 
+
+	struct kthread_worker worker;
+	struct kthread_work vsync_work;
+	struct task_struct *thread;
 };
 
 struct mdss_mdp_set_ot_params {
