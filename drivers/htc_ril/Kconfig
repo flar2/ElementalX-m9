@@ -1,0 +1,23 @@
+config HTC_RADIO_SMEM
+	bool "RADIO SMEM"
+	default N
+	---help---
+	Enable to move necessary non-secure data to shared memory
+
+config HTC_MODEM_NOTIFIER
+	bool "MODEM NOTIFIER"
+	default N
+	---help---
+	Enable to notify modem APP is rebooting
+
+config HTC_DEBUG_RIL_PCN0002_DUMP_STACK
+	tristate "HTC_DEBUG_RIL_PCN0002_DUMP_STACK"
+	default Y
+	help
+         Say Y here if you want dump call stack when modem crash
+
+config HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK
+	tristate "HTC_DEBUG_RIL_PCN0009_SSR_DUMP_TASK"
+	default Y
+	---help---
+	Dump busy task and disk sleep task if modem ssr over 5 seconds. If device enable radio flag 8 8, It will trigger panic if SSR timeout over 20 seconds.

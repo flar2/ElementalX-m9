@@ -1,0 +1,167 @@
+# bcmdhd
+#
+#
+#
+#
+#
+
+DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DBCMDRIVER               \
+	-DCUSTOMER_HW_ONE -DGSCAN_SUPPORT                                                    \
+	-DBCMDONGLEHOST -DUNRELEASEDCHIP -DBCMDMA32 -DBCMFILEIMAGE            \
+	-DDHDTHREAD -DDHD_DEBUG -DSHOW_EVENTS -DBCMDBG -DCUSTOMER_HW2 -DWLP2P \
+	-DWIFI_ACT_FRAME -DARP_OFFLOAD_SUPPORT                                \
+	-DKEEP_ALIVE -DGET_CUSTOM_MAC_ENABLE -DPKT_FILTER_SUPPORT             \
+	-DEMBEDDED_PLATFORM -DPNO_SUPPORT          \
+	-DSET_RANDOM_MAC_SOFTAP -DROAM_ENABLE -DVSDB      \
+	-DWL_CFG80211_VSDB_PRIORITIZE_SCAN_REQUEST                            \
+	-DESCAN_RESULT_PATCH -DSUPPORT_PM2_ONLY -DWLTDLS                      \
+	-DDHD_DONOT_FORWARD_BCMEVENT_AS_NETWORK_PKT -DRXFRAME_THREAD       \
+	-DMIRACAST_AMPDU_SIZE=8	-DWL_IFACE_COMB_NUM_CHANNELS	\
+	-DDHD_SET_FW_HIGHSPEED -DHTC_TX_TRACKING -DSOFTAP \
+	-DSUPPORT_2G_HT40 -DENABLE_FW_ROAM_SUSPEND -DDHD_RX_DUMP -DDHD_TX_DUMP \
+	-Idrivers/net/wireless/bcmdhd -Idrivers/net/wireless/bcmdhd/include   \
+	-Idrivers/net/wireless/bcmdhd/common/include
+
+DHDOFILES = aiutils.o siutils.o sbutils.o bcmutils.o bcmwifi_channels.o \
+	dhd_linux.o dhd_linux_platdev.o dhd_linux_sched.o dhd_pno.o \
+	dhd_common.o dhd_ip.o dhd_linux_wq.o dhd_custom_gpio.o \
+	bcmevent.o hndpmu.o linux_osl.o wldev_common.o wl_android.o \
+	hnd_pktq.o hnd_pktpool.o dhd_debug.o dhd_debug_linux.o
+
+obj-$(CONFIG_BCMDHD) += bcmdhd.o
+bcmdhd-objs += $(DHDOFILES)
+ifneq ($(CONFIG_WIRELESS_EXT),)
+bcmdhd-objs += wl_iw.o
+DHDCFLAGS += -DSOFTAP -DWL_WIRELESS_EXT -DUSE_IW
+endif
+ifneq ($(CONFIG_CFG80211),)
+bcmdhd-objs += wl_cfg80211.o wl_cfgp2p.o wl_linux_mon.o dhd_cfg80211.o wl_cfg_btcoex.o wl_cfgvendor.o
+DHDCFLAGS += -DWL_CFG80211 -DWL_CFG80211_STA_EVENT -DWL_ENABLE_P2P_IF -DWL_VENDOR_EXT_SUPPORT
+DHDCFLAGS += -DCUSTOM_ROAM_TRIGGER_SETTING=-75
+DHDCFLAGS += -DCUSTOM_ROAM_DELTA_SETTING=15
+DHDCFLAGS += -DCUSTOM_KEEP_ALIVE_SETTING=55000
+DHDCFLAGS += -DCUSTOM_PNO_EVENT_LOCK_xTIME=7
+DHDCFLAGS += -DWL11U -DMFP
+endif
+ifneq ($(CONFIG_DHD_USE_SCHED_SCAN),)
+DHDCFLAGS += -DWL_SCHED_SCAN
+endif
+EXTRA_CFLAGS = $(DHDCFLAGS)
+ifeq ($(CONFIG_BCMDHD),m)
+EXTRA_LDFLAGS += --strip-debug
+else
+DHDCFLAGS += -DENABLE_INSMOD_NO_FW_LOAD
+DHDCFLAGS += -DMODULE_INIT_ASYNC
+endif
+
+ifneq ($(CONFIG_DHD_USE_STATIC_BUF),)
+DHDCFLAGS += -DDHD_USE_STATIC_IOCTLBUF
+#DHDCFLAGS += -DMEM_DEBUG
+DHDCFLAGS += -DUSE_STATIC_MEMDUMP
+endif
+
+#########################
+# Chip dependent feature
+#########################
+ifneq ($(CONFIG_BCM4339),)
+DHDCFLAGS += -DCUSTOM_GLOM_SETTING=8 -DCUSTOM_RXCHAIN=1
+DHDCFLAGS += -DUSE_DYNAMIC_F2_BLKSIZE -DDYNAMIC_F2_BLKSIZE_FOR_NONLEGACY=128
+DHDCFLAGS += -DBCMSDIOH_TXGLOM -DCUSTOM_TXGLOM=1 -DBCMSDIOH_TXGLOM_HIGHSPEED
+DHDCFLAGS += -DCUSTOM_SDIO_F2_BLKSIZE=512
+DHDCFLAGS += -DDHDTCPACK_SUPPRESS
+DHDCFLAGS += -DUSE_WL_TXBF
+DHDCFLAGS += -DUSE_WL_FRAMEBURST
+DHDCFLAGS += -DCUSTOM_AMPDU_BA_WSIZE=32
+DHDCFLAGS += -DPROP_TXSTATUS_VSDB
+DHDCFLAGS += -DCUSTOM_MAX_TXGLOM_SIZE=32
+DHDCFLAGS += -DREPEAT_READFRAME
+DHDCFLAGS += -DROAM_AP_ENV_DETECTION
+endif
+
+ifneq ($(CONFIG_BCM4356),)
+DHDCFLAGS += -DDONGLE_ENABLE_ISOLATION
+DHDCFLAGS += -DCUSTOM_DHD_WATCHDOG_MS=125
+DHDCFLAGS += -DUSE_WL_TXBF
+DHDCFLAGS += -DUSE_WL_FRAMEBURST
+#DHDCFLAGS += -DDHDTCPACK_SUPPRESS
+DHDCFLAGS += -DCUSTOM_AMPDU_BA_WSIZE=64
+DHDCFLAGS += -DDISABLE_FRAMEBURST_VSDB
+DHDCFLAGS += -DDHD_TXBOUND=32
+DHDCFLAGS += -DEAPOL_PKT_PRIO
+DHDCFLAGS += -Idrivers/net/wireless/bcmdhd_4356 -Idrivers/net/wireless/bcmdhd_4356/include   \
+	-Idrivers/net/wireless/bcmdhd_4356/common/include
+endif
+
+bcmdhd-$(CONFIG_BCMDHD_SDIO) += \
+		bcmsdh.o \
+		bcmsdh_linux.o \
+		bcmsdh_sdmmc.o \
+		bcmsdh_sdmmc_linux.o \
+		dhd_sdio.o \
+		dhd_cdc.o \
+		dhd_wlfc.o
+bcmdhd-$(CONFIG_BCMDHD_PCIE) += \
+		dhd_pcie.o \
+		dhd_pcie_linux.o \
+		dhd_msgbuf.o \
+		dhd_log.o \
+		circularbuf.o \
+		pcie_core.o \
+		dhd_flowring.o
+ccflags-$(CONFIG_BCMDHD_SDIO) += \
+	-DSDTEST -DBDC -DDHD_BCMEVENTS -DPROP_TXSTATUS -DOOB_INTR_ONLY \
+	-DHW_OOB -DMMC_SDIO_ABORT -DBCMSDIO -DBCMLXSDMMC -DSDIO_CRC_ERROR_FIX \
+	-DCUSTOM_SDIO_F2_BLKSIZE=128 -DUSE_SDIOFIFO_IOVAR
+ccflags-$(CONFIG_BCMDHD_PCIE) += \
+	-DPCIE_FULL_DONGLE -DBCMPCIE -DCUSTOM_DPC_PRIO_SETTING=-1 \
+	-DSUPPORT_LINKDOWN_RECOVERY \
+	-DBCMPCIE_DISABLE_ASYNC_SUSPEND \
+	-DBCMPCIE_OOB_HOST_WAKE
+
+# HTC_WIFI_START
+# only enable voice enterprise for HIMA TMUS
+ifneq ($(filter htc_hima% ,$(TARGET_PRODUCT)),)
+ifeq (TMOUS, $(findstring TMOUS, $(PRIVATE_RCMS_SKU)))
+$(warning set WLFBT for HIMA TMUS)
+DHDCFLAGS += -DWLFBT
+endif
+
+# HTC_WIFI_START
+# Pop up message for OTP empty
+ifeq ($(CONFIG_DEBUG_OBJECTS), y)
+DHDCFLAGS += -DOTPDIALOG
+endif
+# HTC_WIFI_END
+endif
+
+## Enable WAPI support
+DHDCFLAGS += -DBCMWAPI_WPI -DBCMWAPI_WAI
+
+# HTC_WIFI_END
+
+# HTC_WIFI_START
+# [HPKB#28650] Reduce log size on non-debug ROM
+ifdef HTC_CFLAG_DEBUG
+DHDCFLAGS += -DHTC_DEBUG_FLAG
+endif
+# HTC_WIFI_END
+
+DHDCFLAGS += -DREPORT_ROAM_DONE_EARLY
+DHDCFLAGS += -DCUSTOM_WL_EVT_PRIO_SETTING=98
+DHDCFLAGS += -DPACKET_FILTER2
+# HTC_WIFI_START
+ifneq ($(filter htc_b3% ,$(TARGET_PRODUCT)),)
+DHDCFLAGS += -DDHD_USE_IDLECOUNT -DMAX_IDLE_COUNT=16 -DMAX_RESUME_WAIT=100 -DDHD_USE_IDLEACTIVE
+endif
+# HTC_WIFI_END
+#DHDCFLAGS += -DDISABLE_LDPC
+#DHDCFLAGS += -DDHD_L2_FILTER
+#DHDCFLAGS += -DSHOW_LOGTRACE
+DHDCFLAGS += -DLINKSTAT_SUPPORT
+
+# HTC_WIFI_START
+# Use different country reversion in different project.
+ifneq ($(filter htc_aca% ,$(TARGET_PRODUCT)),)
+DHDCFLAGS += -DHTC_ACA_FLAG
+endif
+# HTC_WIFI_END

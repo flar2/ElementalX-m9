@@ -1,0 +1,213 @@
+OUTLINE
+
+/*************************************************/
+	HTC_F40_WG03H_0006_2
+						LPDSP VERSION	05050506_2
+						ATMEL VERSION	0506
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.06.22
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.WriteCalDataF40 bug fix.
+
+[Reason]
+ 1.DMIO wait bit mask correction.
+
+[File]
+ 1.FlsCmd.c
+
+/*************************************************/
+	HTC_F40_WG03H_0006
+						LPDSP VERSION	05050506
+						ATMEL VERSION	0506
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.06.22
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.Modified the linearity correction change point.
+ 2.Insert wait at WriteCalDataF40 function..
+
+[Reason]
+ 1.Change linearity correction calcurate.(FromCode.h)
+ 2.Change linearity correction data write format.(Atmel)
+ 3.Modified WriteCalDataF40 functtion for write error.
+
+[File]
+ 1.Ois.h
+ 2.FromCode.h
+ 3.OisCmd.c
+ 4.FlsCmd.c
+
+/*************************************************/
+	HTC_F40_WG03H_0005
+						LPDSP VERSION	05050505
+						ATMEL VERSION	0505
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.06.21
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.Move direction modified for CrossTalk calibration.
+
+[Reason]
+ 1.Adjusted for image capture jig of Primax.
+ 2.Version number only change FromCode.h
+
+[File]
+ 1.Ois.h
+ 2.FromCode.h
+ 3.OisCmd.c
+
+/*************************************************/
+	HTC_F40_WG03H_0004
+						LPDSP VERSION	05050504
+						ATMEL VERSION	0504
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.06.17
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.Gyro filter coefficient update.
+ 2.FRA measurement function update.
+ 3.Add Oscillation detect function.
+ 4.Modified the parameter for TneADO.
+
+[Reason]
+ 1.Improve FRA measurement accuracy.
+ 2.Adjusted the gyro filter for 1/4 sampling rate.
+ 3.Add FrqDet function for oscillation detect.
+ 4.Change the definition of sensor pixel size.
+
+[File]
+ 1.Ois.h
+ 2.FromCode.h
+ 3.OisLc898123F40.h
+ 4.OisAPI.h
+ 5.OisCmd.c
+ 6.OisFra.c
+
+
+/*************************************************/
+	HTC_F40_WG03H_0003
+						LPDSP VERSION	05050503
+						ATMEL VERSION	0503
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.06.08
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.Focus FST parameter adjusted
+ 2.Strictly error check for flash memory erase.
+
+[Reason]
+ 1.Atmel code update
+ 2.FromCode.h update
+
+[File]
+ 1.Ois.h
+ 2.FromCode.h
+ 3.FlsCmd.c
+
+/*************************************************/
+	HTC_F40_WG03H_0002
+						LPDSP VERSION	05050502
+						ATMEL VERSION	0502
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.05.19
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.GyroReCalib() function bug fix
+ 2.Change ram map define
+ 3.FRA function bug fix
+ 4.I2c 2ch support
+ 5.Add User area Int32 write
+
+[Reason]
+ 1.Atmel code update
+ 2.FromCode.h update
+ 3,Add FlashInt32Write() to Atmel code
+
+[File]
+ 1.Ois.h
+ 2.OisAPI.h
+ 3.FromCode.h
+ 4.OisCmd.c
+ 5.OisLc898123F40.h
+ 6.OisFRA.c
+ 7.FlsCmd.c
+
+/*************************************************/
+	HTC_F40_WG03H_0001
+						LPDSP VERSION	05050501
+						ATMEL VERSION	0501
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.05.10
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.FST calibration parameter change
+ 2.Add hall linearity calibration data write function
+ 3.Add erase calibration data function
+
+[Reason]
+ 1.DAC value change to 0xF2000000 from 0xFD000000
+ 2.Atmel code update
+
+[File]
+ 1.Ois.h
+ 2.OisAPI.h
+ 3.FromCode.h
+ 4.OisCmd.c
+
+/*************************************************/
+	HTC_F40_WG03H_0000
+						LPDSP VERSION	05050500
+						ATMEL VERSION	0500
+						CALIBRATION ID	00000000
+/*************************************************/
+[Date]
+	2016.04.28
+[Name]
+	Y.Hayashi
+	
+[Change point]
+ 1.reference code first release
+
+[Reason]
+ 1.first release
+
+[File]
+ 1.Ois.h
+ 2.OisAPI.h
+ 3.OisLc898123F40.h
+ 4.FromCode.h
+ 5.PmemCode.h
+ 6.MeasurementLibrary.h
+ 7.OisFRA.h
+ 8.FlsCmd.c
+ 9.OisCmd.c
+10.OisFRA.c

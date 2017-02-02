@@ -1,0 +1,118 @@
+#
+# HTC_DEBUG stability Kconfig
+#
+
+config HTC_DEBUG_RAMOOPS
+	bool "Log panic/oops to a RAM buffer"
+	default n
+	depends on PSTORE_CONSOLE
+	help
+	  This enables panic and oops messages to be logged to a circular
+	  buffer in RAM where it can be read back at some later point.
+
+config HTC_DEBUG_BOOTLOADER_LOG
+	bool "HTC style ram console debug features"
+	default n
+	depends on PSTORE_CONSOLE && HTC_DEBUG_RAMOOPS
+	help
+	  Say Y here if you want the HTC style ram console debug features
+
+config HTC_HELPER_FUNCTIONS
+	bool "HTC helper functions"
+	default n
+	help
+	  Extract debug flag from kernel cmdline and define read-only
+	  functions to global kernel space
+
+config HTC_DEBUG_WORKQUEUE
+	default y
+	depends on HTC_DEBUG
+	bool "HTC style workqueue debug features"
+	help
+	  Say Y here if you want the HTC style workqueue debug features
+
+config HTC_NC_GPIO_PIN_SETTING
+	bool "HTC style nc pin setting features"
+	default n
+	help
+	  Say Y here if you want the HTC style nc pin setting features
+
+config HTC_PROCESS_DEBUG
+	bool "process/thread debug support"
+	default y
+	help
+	  This option enables kernel debug log to check if any
+	  assigned process receives signal or unexpected exit
+
+config HTC_DEBUG_KP
+	default y
+	depends on HTC_DEBUG
+	bool "HTC style kernel panic debug features"
+	help
+	  Say Y here if you want the HTC style kernel panic debug features
+
+config HTC_DEBUG_VMALLOC_DUMP
+	default y
+	bool "HTC style vmalloc fail debug features"
+	depends on HTC_DEBUG
+	help
+	  This option enables the dump for vmalloc info when vmalloc failed.
+	  The same information could also be get under /proc/vmallocinfo
+
+config HTC_DEBUG_SAVE_BOOT_MSG
+	default y
+	depends on HTC_DEBUG
+	bool "HTC debug: saving kernel log of booting to memory"
+
+config SLUB_LIGHT_WEIGHT_DEBUG_ON
+	bool "SLUB light weight debugging on by default"
+	depends on SLUB && SLUB_DEBUG && SLUB_DEBUG_ON && !KMEMCHECK
+	default n
+	help
+	  Light weight memory corruption debugging for slub. Only SLAB_STORE_USER
+	  and SLAB_DEBUG_FREE was choosen.
+
+config HTC_DEBUG_DYING_PROCS
+	default y
+	bool "HTC debug feature for recording dying processes"
+	help
+	  This option enables the recording of latest 10 killed processes in
+	  /proc/dying_processes
+
+config HTC_WFE_DISABLE
+       default n
+       bool "Disable WFE instruction to avoid CPU issue"
+       help
+         Disable ARM wfe instruction which might cause CPU hang and trigger
+         watchdog reset.
+
+config HTC_EARLY_RTB
+       bool "HTC debug feature for enabling RTB before driver is initial"
+       default y
+       depends on MSM_RTB && HTC_DEBUG && OF && OF_ADDRESS
+       help
+         This option enables the RTB mechanism before RTB driver is brought up.
+         The RTB Log buffer start-address and buffer-size is defined by device-tree.
+
+config HTC_DEBUG_RESTART_TIMER
+       bool "add a timer in restart flow"
+       default y
+       depends on HTC_DEBUG
+
+config HTC_DEBUG_PAGE_USER_TRACE
+	bool "Record call trace of page user in page structure"
+	depends on PAGE_POISONING
+	default n
+	help
+	  For debugging purpose, add call trace of user (freer and
+	  allocator) to page structure
+
+config HTC_DEBUG_PAGE_ENTRIES_NR
+	int
+	default 4
+
+config HTC_REBOOT_BLOCK
+	bool "Store reboot reason / msg ...etc. in IMEM or storage"
+	default n
+	help
+	  Say Y here if you want the HTC Reboot Block features

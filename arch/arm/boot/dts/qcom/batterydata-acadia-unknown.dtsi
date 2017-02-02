@@ -1,0 +1,52 @@
+qcom,acadia-unknown-batterydata {
+	qcom,max-voltage-uv = <4400000>;
+	qcom,v-cutoff-uv = <3400000>;
+	qcom,chg-term-ua = <100000>;
+	qcom,nom-batt-capacity-mah = <3200>;
+	qcom,batt-id-kohm = <99>;
+	qcom,battery-beta = <4360>;
+	qcom,battery-type = "acadia_id_unknown";
+	qcom,chg-rslow-comp-c1 = <3133719>;
+	qcom,chg-rslow-comp-c2 = <4503843>;
+	qcom,chg-rs-to-rslow = <942788>;
+	qcom,chg-rslow-comp-thr = <0xA6>;
+	qcom,checksum = <0x4916>;
+	qcom,gui-version = "PMI8994GUI - 2.1.6.9";
+	htc,batt_id = <255>;
+	htc,id_raw_min =  <(-1)>;
+	htc,id_raw_max =  <(-1)>;
+	qcom,fg-profile-data = [
+		 E0 83 D2 7C
+		 1C 81 43 77
+		 5C 83 F4 6C
+		 5C 88 65 8F
+		 55 82 0C 98
+		 57 B5 BE C0
+		 52 16 FF 83
+		 8F 7D A2 81
+		 1B 7C 52 83
+		 DC 69 28 7B
+		 A9 8C 7A 82
+		 0C 98 00 B6
+		 FF C1 52 12
+		 BF 0C 38 5A
+		 14 70 B8 FE
+		 93 3C 0F 45
+		 97 40 00 00
+		 0A 47 16 39
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 E9 6B EB 6A
+		 B7 6A AB 89
+		 88 75 A7 68
+		 F9 64 B5 7B
+		 A5 74 A8 62
+		 BA 6D F8 A9
+		 1A 9F 62 2B
+		 65 A0 71 0C
+		 28 00 FF 36
+		 F0 11 30 03
+		 00 00 00 0C
+	];
+};

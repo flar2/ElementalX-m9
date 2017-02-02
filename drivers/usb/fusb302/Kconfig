@@ -1,0 +1,5 @@
+config FUSB_30X
+	bool "Fairchild Type-C interface support"
+	default y
+	---help---
+	  Fairchild type-c interface is a chip support USB PD protocol device

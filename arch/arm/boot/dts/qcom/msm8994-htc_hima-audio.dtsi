@@ -1,0 +1,37 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/*
+ * msm8994-audio-hima: audio path setting
+ */
+
+&soc {
+  i2c@f9966000 {
+		nxp_tfa9887_amp@34 {
+			compatible = "nxp,tfa9895-amp";
+			reg = <0x34>;
+		};
+		nxp_tfa9887l_amp@35 {
+			compatible = "nxp,tfa9895l-amp";
+			reg = <0x35>;
+		};
+		richteck_rt5501_amp@52 {
+			compatible = "richtek,rt5506-amp";
+			reg = <0x52>;
+			richtek,power-gpio = <&pm8994_gpios 4 0x00>;
+			richtek,enable-gpio = <&msm_gpio 43 0x00>;
+			power_supply = "8941_s3";
+		};
+
+	};
+};
+

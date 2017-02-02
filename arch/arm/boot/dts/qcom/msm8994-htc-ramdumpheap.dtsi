@@ -1,0 +1,56 @@
+/*
+ * htc_hima-family: ramdump heaps configs for hima*
+ */
+
+&peripheral_mem {
+        htc,ramdump-heap;
+};
+
+&modem_mem {
+        htc,ramdump-heap;
+};
+
+&adsp_mem {
+        htc,ramdump-heap;
+};
+
+&secure_mem {
+	htc,ramdump-heap;
+};
+
+&qsecom_mem {
+	htc,ramdump-heap;
+};
+
+&audio_mem {
+	htc,ramdump-heap;
+};
+
+&htc_smlog_mem {
+	htc,ramdump-heap;
+};
+
+/ {
+        memory {
+                venus_mem: venus_region@0 {
+                        htc,ramdump-heap;
+                };
+
+                lpass_mem: lpass_region@0 {
+                        htc,ramdump-heap;
+                };
+        };
+};
+
+
+&soc {
+        qcom,ion {
+                qcom,ion-heap@8 { /* CP_MM HEAP */
+			htc,ramdump-heap;
+                };
+
+                qcom,ion-heap@22 { /* adsp heap */
+			htc,ramdump-heap;
+                };
+	};
+};
